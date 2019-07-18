@@ -1,9 +1,6 @@
 use lazy_static::lazy_static;
-
+use redis::Commands;
 use regex::Regex;
-
-use std::env;
-
 use serenity::{
     model::{
         channel::Message, channel::PermissionOverwrite, channel::PermissionOverwriteType,
@@ -11,15 +8,24 @@ use serenity::{
     },
     prelude::*,
 };
+use std::env;
+use std::sync::Arc;
 
 lazy_static! {
     static ref CREATE_CHANNEL_REGEX: Regex =
         Regex::new(r"^!createchannel\s+(?P<channelname>(?:[0-9a-zA-Z_]+\-?)+)\s*$").unwrap();
+    static ref SETMYMEETUPID_REGEX: Regex =
+        Regex::new(r"^!setmeetupid\s+(?P<meetupid>[0-9]+)\s*$").unwrap();
 }
 
 struct BotIdKey;
 impl TypeMapKey for BotIdKey {
     type Value = UserId;
+}
+
+struct RedisConnectionKey;
+impl TypeMapKey for RedisConnectionKey {
+    type Value = Arc<Mutex<redis::Connection>>;
 }
 
 struct Handler;
@@ -48,6 +54,31 @@ impl EventHandler for Handler {
             if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!") {
                 println!("Error sending message: {:?}", why);
             }
+        } else if msg.content.starts_with("!setmeetupid") {
+            if let Some(captures) = SETMYMEETUPID_REGEX.captures(&msg.content) {
+                let user_id = msg.author.id.0;
+                let meetup_id = captures.name("meetupid").unwrap().as_str();
+                let redis_key = format!("user:{}:meetupid", user_id);
+                let redis_connection_mutex = {
+                    ctx.data
+                        .read()
+                        .get::<RedisConnectionKey>()
+                        .expect("Redis connection was not set")
+                        .clone()
+                };
+                {
+                    let mut redis_connection = redis_connection_mutex.lock();
+                    if let Ok(()) = redis_connection.sadd("users", user_id) {
+                        if let Ok(()) = redis_connection.set(&redis_key, meetup_id) {
+                            let _ = msg.channel_id.say(&ctx.http, format!("Assigned meetup id"));
+                            return;
+                        }
+                    }
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "Could not assign meetup id (internal error)");
+                }
+            }
         } else if msg.content.starts_with("!createchannel") {
             // TODO: check permission
             if let Some(captures) = CREATE_CHANNEL_REGEX.captures(&msg.content) {
@@ -59,6 +90,12 @@ impl EventHandler for Handler {
                             .permissions(Permissions::empty())
                     }) {
                         Ok(role_channel) => {
+                            // Make sure that the user that issued this command is assigned the new role
+                            let _ = ctx.http.add_member_role(
+                                guild_id.0,
+                                msg.author.id.0,
+                                role_channel.id.0,
+                            );
                             // The @everyone role has the same id as the guild
                             let role_everyone_id = RoleId(guild_id.0);
                             // The bot's user id is stored in the context
@@ -79,7 +116,8 @@ impl EventHandler for Handler {
                                     kind: PermissionOverwriteType::Role(role_everyone_id),
                                 },
                                 PermissionOverwrite {
-                                    allow: Permissions::READ_MESSAGES,
+                                    allow: Permissions::READ_MESSAGES
+                                        | Permissions::MENTION_EVERYONE,
                                     deny: Permissions::empty(),
                                     kind: PermissionOverwriteType::Role(role_channel.id),
                                 },
@@ -116,6 +154,13 @@ impl EventHandler for Handler {
 }
 
 fn main() {
+    // Connect to the local Redis server
+    let client =
+        redis::Client::open("redis://127.0.0.1/").expect("Could not create a Redis client");
+    let connection = client
+        .get_connection()
+        .expect("Could not create a Redis connection");
+
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
 
@@ -134,6 +179,7 @@ fn main() {
     {
         let mut data = client.data.write();
         data.insert::<BotIdKey>(bot_id);
+        data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(connection)));
     }
 
     // Finally, start a single shard, and start listening to events.
