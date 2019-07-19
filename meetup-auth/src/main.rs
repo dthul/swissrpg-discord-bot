@@ -26,6 +26,8 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use url::Url;
 
+const BASE_URL: &'static str = "http://bot.8na.de";
+
 fn meetup_auth(
     oauth_client: &BasicClient,
     csrf_token: &Arc<Mutex<Option<CsrfToken>>>,
@@ -48,7 +50,8 @@ fn meetup_auth(
             Response::new(html_body.into())
         }
         (&Method::GET, "/redirect") => {
-            let req_url = Url::parse(&req.uri().to_string()).unwrap();
+            let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
+            let req_url = Url::parse(&full_uri).unwrap();
             let params: Vec<_> = req_url.query_pairs().collect();
             let code = params
                 .iter()
@@ -116,7 +119,7 @@ fn main() {
     // This example will be running its own server at localhost:8080.
     // See below for the server implementation.
     .set_redirect_url(RedirectUrl::new(
-        Url::parse("http://bot.8na.de/redirect").expect("Invalid redirect URL"),
+        Url::parse(format!("{}/redirect", BASE_URL).as_str()).expect("Invalid redirect URL"),
     ));
     let client = Arc::new(client);
     let csrf_token = Arc::new(Mutex::new(None));
