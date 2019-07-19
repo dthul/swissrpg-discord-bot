@@ -135,6 +135,7 @@ fn main() {
         auth_url,
         Some(token_url),
     )
+    .set_auth_type(oauth2::AuthType::RequestBody)
     // This example will be running its own server at localhost:8080.
     // See below for the server implementation.
     .set_redirect_url(RedirectUrl::new(
