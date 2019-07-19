@@ -1,4 +1,6 @@
-use redis::Commands;
+pub mod meetup;
+
+use redis::{Commands, RedisResult};
 use regex::Regex;
 use serenity::{
     model::{
@@ -83,6 +85,11 @@ impl TypeMapKey for RegexesKey {
     type Value = Arc<Regexes>;
 }
 
+struct MeetupAccessTokenKey;
+impl TypeMapKey for MeetupAccessTokenKey {
+    type Value = String;
+}
+
 struct Handler;
 
 impl EventHandler for Handler {
@@ -92,14 +99,18 @@ impl EventHandler for Handler {
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
     fn message(&self, ctx: Context, msg: Message) {
-        let (bot_id, regexes) = {
+        let (bot_id, regexes, meetup_access_token) = {
             let data = ctx.data.read();
             let regexes = data
                 .get::<RegexesKey>()
                 .expect("Regexes were not compiled")
                 .clone();
             let bot_id = data.get::<BotIdKey>().expect("Bot ID was not set").clone();
-            (bot_id, regexes)
+            let meetup_access_token = data
+                .get::<MeetupAccessTokenKey>()
+                .expect("Meetup access token was not set")
+                .clone();
+            (bot_id, regexes, meetup_access_token)
         };
         // Ignore all messages written by the bot itself
         if msg.author.id == bot_id {
@@ -128,6 +139,16 @@ impl EventHandler for Handler {
         if let Some(captures) = regexes.link_meetup(is_dm).captures(&msg.content) {
             let user_id = msg.author.id.0;
             let meetup_id = captures.name("meetupid").unwrap().as_str();
+            // Try to convert the specified ID to an integer
+            let meetup_id = match meetup_id.parse::<u64>() {
+                Ok(id) => id,
+                _ => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "Seems like the specified Meetup ID is invalid");
+                    return;
+                }
+            };
             let redis_key = format!("user:{}:meetupid", user_id);
             let redis_connection_mutex = {
                 ctx.data
@@ -136,17 +157,72 @@ impl EventHandler for Handler {
                     .expect("Redis connection was not set")
                     .clone()
             };
+            // Check if there is already a meetup id linked to this user
+            // and issue a warning
             {
-                let mut redis_connection = redis_connection_mutex.lock();
-                if let Ok(()) = redis_connection.sadd("users", user_id) {
-                    if let Ok(()) = redis_connection.set(&redis_key, meetup_id) {
-                        let _ = msg.channel_id.say(&ctx.http, format!("Assigned meetup id"));
+                let linked_meetup_id: RedisResult<u64> = {
+                    let mut redis_connection = redis_connection_mutex.lock();
+                    redis_connection.get(&redis_key)
+                };
+                if let Ok(linked_meetup_id) = linked_meetup_id {
+                    if linked_meetup_id == meetup_id {
+                        let _ = msg.channel_id.say(
+                            &ctx.http,
+                            "All good, your Meetup account was already linked",
+                        );
+                        return;
+                    } else {
+                        let _ = msg.channel_id.say(
+                            &ctx.http,
+                            format!(
+                                "You are already linked to a different Meetup account. \
+                                 If you really want to change this, unlink your currently \
+                                 linked meetup account first by writing:\n\
+                                 {} unlink meetup",
+                                regexes.bot_mention
+                            ),
+                        );
                         return;
                     }
                 }
-                let _ = msg
-                    .channel_id
-                    .say(&ctx.http, "Could not assign meetup id (internal error)");
+            }
+            // The user has not yet linked their meetup account.
+            // Test whether the specified Meetup user actually exists.
+            {
+                let meetup_client = meetup::Client::new(&meetup_access_token);
+                if let Some(meetup_user) = meetup_client.get_user(meetup_id) {
+                    let mut redis_connection = redis_connection_mutex.lock();
+                    if let Ok(()) = redis_connection.sadd("users", user_id) {
+                        if let Ok(()) = redis_connection.set(&redis_key, meetup_id) {
+                            let photo_url =
+                                meetup_user.photo.as_ref().map(|p| p.thumb_link.as_str());
+                            let _ = msg.channel_id.send_message(&ctx.http, |message| {
+                                message.embed(|embed| {
+                                    embed.title("Linked Meetup account");
+                                    embed.description(format!(
+                                        "Successfully linked to {}'s Meetup account",
+                                        meetup_user.name
+                                    ));
+                                    if let Some(photo_url) = photo_url {
+                                        embed.image(photo_url)
+                                    } else {
+                                        embed
+                                    }
+                                })
+                            });
+                            return;
+                        }
+                    }
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "Could not assign meetup id (internal error)");
+                } else {
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        "It looks like this Meetup profile does not exist",
+                    );
+                    return;
+                }
             }
         } else if let Some(captures) = regexes.create_channel(is_dm).captures(&msg.content) {
             // TODO: check permission
@@ -224,6 +300,8 @@ fn main() {
 
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let meetup_token =
+        env::var("MEETUP_TOKEN").expect("Expected a meetup token in the environment");
 
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
@@ -245,6 +323,7 @@ fn main() {
         data.insert::<BotIdKey>(bot_id);
         data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(connection)));
         data.insert::<RegexesKey>(Arc::new(regexes));
+        data.insert::<MeetupAccessTokenKey>(meetup_token);
     }
 
     // Finally, start a single shard, and start listening to events.
