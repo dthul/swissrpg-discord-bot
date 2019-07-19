@@ -92,15 +92,6 @@ impl EventHandler for Handler {
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
     fn message(&self, ctx: Context, msg: Message) {
-        let channel = match msg.channel_id.to_channel(&ctx) {
-            Ok(channel) => channel,
-            _ => return,
-        };
-        // Is this a direct message to the bot?
-        let mut is_dm = match channel {
-            Channel::Private(_) => true,
-            _ => false,
-        };
         let (bot_id, regexes) = {
             let data = ctx.data.read();
             let regexes = data
@@ -110,15 +101,22 @@ impl EventHandler for Handler {
             let bot_id = data.get::<BotIdKey>().expect("Bot ID was not set").clone();
             (bot_id, regexes)
         };
-        println!("{}", msg.content);
         // Ignore all messages written by the bot itself
         if msg.author.id == bot_id {
             return;
         }
+        let channel = match msg.channel_id.to_channel(&ctx) {
+            Ok(channel) => channel,
+            _ => return,
+        };
+        // Is this a direct message to the bot?
+        let mut is_dm = match channel {
+            Channel::Private(_) => true,
+            _ => false,
+        };
         // If the message is not a direct message and does not start with a
         // mention of the bot, ignore it
         if !is_dm && !msg.content.starts_with(&regexes.bot_mention) {
-            let _ = msg.channel_id.say(&ctx.http, "Message ignored");
             return;
         }
         // If the message is a direct message but starts with a mention of the bot,
