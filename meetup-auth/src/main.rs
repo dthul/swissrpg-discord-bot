@@ -17,7 +17,7 @@ use hyper::rt::Future;
 use hyper::service::service_fn_ok;
 use hyper::{Body, Method, Request, Response, Server};
 use oauth2::basic::BasicClient;
-use oauth2::reqwest::http_client;
+use oauth2::curl::http_client;
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
     TokenResponse, TokenUrl,
