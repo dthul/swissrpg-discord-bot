@@ -82,10 +82,19 @@ fn meetup_auth(
                                 );
                                 return Response::new("Thanks for logging in :)".into());
                             }
+                            else {
+                                return Response::new("Could not exchange code for an access token".into());
+                            }
+                        }
+                        else {
+                            return Response::new(format!("CSRF tokens do not match: {} vs {}", csrf_state.secret(), state).into());
                         }
                     }
+                    else {
+                        return Response::new("No CSRF token on server".into());
+                    }
                 }
-                _ => (),
+                _ => return Response::new("Request parameters missing".into()),
             };
             Response::new("Whoops, something went wrong".into())
         }
