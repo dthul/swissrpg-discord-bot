@@ -73,7 +73,11 @@ fn meetup_auth(
                             let token_res = oauth_client.exchange_code(code).request(http_client);
                             if let Ok(token_res) = token_res {
                                 println!("Access token: {}", token_res.access_token().secret());
-                                println!("Refresh token: {:?}", token_res.refresh_token().map(|t| t.secret()));
+                                println!(
+                                    "Refresh token: {:?}",
+                                    token_res.refresh_token().map(|t| t.secret())
+                                );
+                                return Response::new("Thanks for logging in :)".into());
                             }
                         }
                     }
