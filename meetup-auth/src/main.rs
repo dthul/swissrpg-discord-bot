@@ -74,23 +74,33 @@ fn meetup_auth(
                             // Exchange the code with a token.
                             let code = AuthorizationCode::new(code.to_string());
                             let token_res = oauth_client.exchange_code(code).request(http_client);
-                            if let Ok(token_res) = token_res {
-                                println!("Access token: {}", token_res.access_token().secret());
-                                println!(
-                                    "Refresh token: {:?}",
-                                    token_res.refresh_token().map(|t| t.secret())
-                                );
-                                return Response::new("Thanks for logging in :)".into());
-                            }
-                            else {
-                                return Response::new("Could not exchange code for an access token".into());
-                            }
+                            match token_res {
+                                Ok(token_res) => {
+                                    println!("Access token: {}", token_res.access_token().secret());
+                                    println!(
+                                        "Refresh token: {:?}",
+                                        token_res.refresh_token().map(|t| t.secret())
+                                    );
+                                    return Response::new("Thanks for logging in :)".into());
+                                }
+                                Err(err) => {
+                                    eprintln!("Request token error: {:?}", err);
+                                    return Response::new(
+                                        "Could not exchange code for an access token".into(),
+                                    );
+                                }
+                            };
+                        } else {
+                            return Response::new(
+                                format!(
+                                    "CSRF tokens do not match: {} vs {}",
+                                    csrf_state.secret(),
+                                    state
+                                )
+                                .into(),
+                            );
                         }
-                        else {
-                            return Response::new(format!("CSRF tokens do not match: {} vs {}", csrf_state.secret(), state).into());
-                        }
-                    }
-                    else {
+                    } else {
                         return Response::new("No CSRF token on server".into());
                     }
                 }
