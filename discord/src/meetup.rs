@@ -42,7 +42,6 @@ impl Client {
             "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
             BASE_URL, id
         );
-        println!("Request: {}", url);
         let url = url.parse()?;
         let mut response = self.client.execute(Request::new(Method::GET, url))?;
         if let Ok(user) = response.json::<User>() {
