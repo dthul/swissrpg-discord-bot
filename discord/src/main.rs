@@ -139,6 +139,21 @@ impl Handler {
                 return Ok(());
             }
         }
+        // Check if this meetup id is already linked
+        // and issue a warning
+        let linked_discord_id: Option<u64> = {
+            let mut redis_connection = redis_connection_mutex.lock();
+            redis_connection.get(&redis_key_m2d)?
+        };
+        if let Some(_linked_discord_id) = linked_discord_id {
+            let _ = msg.channel_id.say(
+                &ctx.http,
+                "This Meetup account is alread linked to someone else. \
+                 If you are sure that you specified the correct Meetup id, \
+                 please contact an @Organiser",
+            );
+            return Ok(());
+        }
         // The user has not yet linked their meetup account.
         // Test whether the specified Meetup user actually exists.
         let meetup_access_token = ctx
@@ -161,22 +176,28 @@ impl Handler {
                 {
                     let mut redis_connection = redis_connection_mutex.lock();
                     // Try to atomically set the meetup id
-                    redis::transaction(&mut *redis_connection, &[&redis_key_d2m], |con, pipe| {
-                        let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m)?;
-                        if linked_meetup_id.is_some() {
-                            // The meetup id was linked in the meantime, abort
-                            successful = false;
-                            pipe.query(con)
-                        } else {
-                            pipe.sadd("meetup_users", meetup_id)
-                                .sadd("discord_users", user_id)
-                                .set(&redis_key_d2m, meetup_id)
-                                .set(&redis_key_m2d, user_id)
-                                .ignore();
-                            successful = true;
-                            pipe.query(con)
-                        }
-                    })?;
+                    redis::transaction(
+                        &mut *redis_connection,
+                        &[&redis_key_d2m, &redis_key_m2d],
+                        |con, pipe| {
+                            let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m)?;
+                            let linked_discord_id: Option<u64> = con.get(&redis_key_m2d)?;
+                            if linked_meetup_id.is_some() || linked_discord_id.is_some() {
+                                // The meetup id was linked in the meantime, abort
+                                successful = false;
+                                // Execute empty transaction just to get out of the closure
+                                pipe.query(con)
+                            } else {
+                                pipe.sadd("meetup_users", meetup_id)
+                                    .sadd("discord_users", user_id)
+                                    .set(&redis_key_d2m, meetup_id)
+                                    .set(&redis_key_m2d, user_id)
+                                    .ignore();
+                                successful = true;
+                                pipe.query(con)
+                            }
+                        },
+                    )?;
                 }
                 if successful {
                     let photo_url = meetup_user.photo.as_ref().map(|p| p.thumb_link.as_str());
