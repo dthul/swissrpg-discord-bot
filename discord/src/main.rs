@@ -25,6 +25,8 @@ struct Regexes {
     create_channel_mention: Regex,
     link_meetup_dm: Regex,
     link_meetup_mention: Regex,
+    unlink_meetup_dm: Regex,
+    unlink_meetup_mention: Regex,
 }
 
 impl Regexes {
@@ -41,6 +43,14 @@ impl Regexes {
             &self.link_meetup_dm
         } else {
             &self.link_meetup_mention
+        }
+    }
+
+    fn unlink_meetup(&self, is_dm: bool) -> &Regex {
+        if is_dm {
+            &self.unlink_meetup_dm
+        } else {
+            &self.unlink_meetup_mention
         }
     }
 }
@@ -64,12 +74,21 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         link_meetup = link_meetup
     );
+    let unlink_meetup = r"unlink[ -]?meetup";
+    let unlink_meetup_dm = format!(r"^{unlink_meetup}\s*$", unlink_meetup = unlink_meetup);
+    let unlink_meetup_mention = format!(
+        r"^{bot_mention}\s+{unlink_meetup}\s*$",
+        bot_mention = bot_mention,
+        unlink_meetup = unlink_meetup
+    );
     Regexes {
         bot_mention: bot_mention,
         create_channel_dm: Regex::new(create_channel_dm.as_str()).unwrap(),
         create_channel_mention: Regex::new(create_channel_mention.as_str()).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm.as_str()).unwrap(),
         link_meetup_mention: Regex::new(link_meetup_mention.as_str()).unwrap(),
+        unlink_meetup_dm: Regex::new(unlink_meetup_dm.as_str()).unwrap(),
+        unlink_meetup_mention: Regex::new(unlink_meetup_mention.as_str()).unwrap(),
     }
 }
 
@@ -225,6 +244,36 @@ impl Handler {
             }
         }
     }
+
+    fn unlink_meetup(ctx: &Context, msg: &Message, _regexes: &Regexes, user_id: u64) -> Result<()> {
+        let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
+        let redis_connection_mutex = {
+            ctx.data
+                .read()
+                .get::<RedisConnectionKey>()
+                .ok_or_else(|| Box::new(SimpleError::new("Redis connection was not set")))?
+                .clone()
+        };
+        let mut redis_connection = redis_connection_mutex.lock();
+        // Check if there is actually a meetup id linked to this user
+        let linked_meetup_id: Option<u64> = redis_connection.get(&redis_key_d2m)?;
+        match linked_meetup_id {
+            Some(meetup_id) => {
+                let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
+                redis_connection.del(&[&redis_key_d2m, &redis_key_m2d])?;
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, "Unlinked your Meetup account");
+            }
+            None => {
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    "There was seemingly no meetup account linked to you",
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 impl EventHandler for Handler {
@@ -281,6 +330,16 @@ impl EventHandler for Handler {
                 }
             };
             match Self::link_meetup(&ctx, &msg, &regexes, user_id, meetup_id) {
+                Err(err) => {
+                    eprintln!("Error: {}", err);
+                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    return;
+                }
+                _ => return,
+            }
+        } else if let Some(_) = regexes.unlink_meetup(is_dm).captures(&msg.content) {
+            let user_id = msg.author.id.0;
+            match Self::unlink_meetup(&ctx, &msg, &regexes, user_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
                     let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
