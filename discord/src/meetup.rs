@@ -2,6 +2,8 @@ use reqwest::header::{HeaderMap, AUTHORIZATION};
 use reqwest::{Method, Request};
 use serde::Deserialize;
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 const BASE_URL: &'static str = "https://api.meetup.com";
 
 pub struct Client {
@@ -35,20 +37,18 @@ impl Client {
         }
     }
 
-    pub fn get_user(&self, id: u64) -> Option<User> {
+    pub fn get_user(&self, id: u64) -> Result<Option<User>> {
         let url = format!(
             "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
             BASE_URL, id
         );
         println!("Request: {}", url);
-        let url = url.parse().unwrap();
-        if let Ok(mut response) = self.client.execute(Request::new(Method::GET, url)) {
-            if let Ok(user) = response.json::<User>() {
-                return Some(user);
-            } else {
-                eprintln!("Could not deserialize the meetup API response");
-            }
+        let url = url.parse()?;
+        let mut response = self.client.execute(Request::new(Method::GET, url))?;
+        if let Ok(user) = response.json::<User>() {
+            return Ok(Some(user));
+        } else {
+            return Ok(None);
         }
-        None
     }
 }
