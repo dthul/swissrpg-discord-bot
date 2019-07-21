@@ -1,6 +1,7 @@
 pub mod meetup;
 
-use redis::{Commands, PipelineCommands};
+use oauth2::TokenResponse;
+use redis::{Commands, PipelineCommands, RedisResult};
 use regex::Regex;
 use serenity::{
     model::{
@@ -107,9 +108,9 @@ impl TypeMapKey for RegexesKey {
     type Value = Arc<Regexes>;
 }
 
-struct MeetupAccessTokenKey;
-impl TypeMapKey for MeetupAccessTokenKey {
-    type Value = String;
+struct MeetupClientKey;
+impl TypeMapKey for MeetupClientKey {
+    type Value = Arc<Mutex<meetup::Client>>;
 }
 
 struct Handler;
@@ -124,12 +125,16 @@ impl Handler {
     ) -> Result<()> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
         let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
-        let redis_connection_mutex = {
-            ctx.data
-                .read()
-                .get::<RedisConnectionKey>()
-                .ok_or_else(|| Box::new(SimpleError::new("Redis connection was not set")))?
-                .clone()
+        let (redis_connection_mutex, meetup_client_mutex) = {
+            let data = ctx.data.read();
+            (
+                data.get::<RedisConnectionKey>()
+                    .ok_or_else(|| Box::new(SimpleError::new("Redis connection was not set")))?
+                    .clone(),
+                data.get::<MeetupClientKey>()
+                    .ok_or_else(|| Box::new(SimpleError::new("Meetup client was not set")))?
+                    .clone(),
+            )
         };
         // Check if there is already a meetup id linked to this user
         // and issue a warning
@@ -175,14 +180,8 @@ impl Handler {
         }
         // The user has not yet linked their meetup account.
         // Test whether the specified Meetup user actually exists.
-        let meetup_access_token = ctx
-            .data
-            .read()
-            .get::<MeetupAccessTokenKey>()
-            .ok_or_else(|| Box::new(SimpleError::new("Meetup access token was not set")))?
-            .clone();
-        let meetup_client = meetup::Client::new(&meetup_access_token);
-        match meetup_client.get_user(meetup_id)? {
+        let meetup_user = meetup_client_mutex.lock().get_user(meetup_id)?;
+        match meetup_user {
             None => {
                 let _ = msg.channel_id.say(
                     &ctx.http,
@@ -415,16 +414,23 @@ impl EventHandler for Handler {
 
 fn main() {
     // Connect to the local Redis server
-    let client =
+    let redis_client =
         redis::Client::open("redis://127.0.0.1/").expect("Could not create a Redis client");
-    let connection = client
+    let mut redis_connection = redis_client
         .get_connection()
         .expect("Could not create a Redis connection");
 
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let meetup_token =
-        env::var("MEETUP_TOKEN").expect("Expected a meetup token in the environment");
+    let meetup_access_token: Option<String> = redis_connection.get("meetup_access_token").expect("Meetup access token could not be loaded from Redis");
+    let meetup_access_token = match meetup_access_token {
+        Some(t) => t,
+        None => {
+            eprintln!("No Meetup access token in Redis");
+            return;
+        }
+    };
+    let meetup_client = Arc::new(Mutex::new(meetup::Client::new(&meetup_access_token)));
 
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
@@ -444,10 +450,59 @@ fn main() {
     {
         let mut data = client.data.write();
         data.insert::<BotIdKey>(bot_id);
-        data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(connection)));
+        data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(redis_connection)));
         data.insert::<RegexesKey>(Arc::new(regexes));
-        data.insert::<MeetupAccessTokenKey>(meetup_token);
+        data.insert::<MeetupClientKey>(meetup_client.clone());
     }
+
+    let mut redis_connection2 = redis_client
+        .get_connection()
+        .expect("Could not create a Redis connection");
+
+    let meetup_client_id = oauth2::ClientId::new(
+        env::var("MEETUP_CLIENT_ID").expect("Missing the MEETUP_CLIENT_ID environment variable."),
+    );
+    let meetup_client_secret = oauth2::ClientSecret::new(
+        env::var("MEETUP_CLIENT_SECRET")
+            .expect("Missing the MEETUP_CLIENT_SECRET environment variable."),
+    );
+    let auth_url = oauth2::AuthUrl::new(
+        url::Url::parse("https://secure.meetup.com/oauth2/authorize")
+            .expect("Invalid authorization endpoint URL"),
+    );
+    let token_url = oauth2::TokenUrl::new(
+        url::Url::parse("https://secure.meetup.com/oauth2/access")
+            .expect("Invalid token endpoint URL"),
+    );
+
+    // Set up the config for the Github OAuth2 process.
+    let mut oauth2_client = oauth2::basic::BasicClient::new(
+        meetup_client_id,
+        Some(meetup_client_secret),
+        auth_url,
+        Some(token_url),
+    )
+    .set_auth_type(oauth2::AuthType::RequestBody);
+
+    let mut task_scheduler = white_rabbit::Scheduler::new(/*thread_count*/ 1);
+    // TODO: schedule the refresh task. Check Redis for a refresh time. If there is one, use that
+    // if it is in the future. Otherwise schedule the task now
+    let next_refresh_time: Option<String> = redis_connection2
+        .get("meetup_access_token_refresh_time")
+        .expect("Could not query Redis for the next refresh time");
+    // Try to get the next scheduled refresh time from Redis, otherwise
+    // schedule a refresh immediately
+    let next_refresh_time = match next_refresh_time.and_then(|time_string| {
+        white_rabbit::DateTime::parse_from_rfc3339(&time_string)
+            .ok()
+            .map(|date_time| date_time.with_timezone(&white_rabbit::Utc))
+    }) {
+        Some(time) => time,
+        None => white_rabbit::Utc::now(),
+    };
+    task_scheduler.add_task_datetime(next_refresh_time, move |context| {
+        refresh_meetup_access_token_task(&mut oauth2_client, &mut redis_connection2, &meetup_client, context)
+    });
 
     // Finally, start a single shard, and start listening to events.
     //
@@ -456,4 +511,85 @@ fn main() {
     if let Err(why) = client.start() {
         println!("Client error: {:?}", why);
     }
+}
+
+fn refresh_meetup_access_token_task(
+    oauth2_client: &mut oauth2::basic::BasicClient,
+    redis_connection: &mut redis::Connection,
+    meetup_client: &Arc<Mutex<meetup::Client>>,
+    _context: &mut white_rabbit::Context,
+) -> white_rabbit::DateResult {
+    // Try to get the refresh token from Redis
+    let refresh_token: String = match redis_connection.get("meetup_refresh_token") {
+        Ok(refresh_token_option) => match refresh_token_option {
+            Some(refresh_token) => refresh_token,
+            None => {
+                eprintln!("Could not refresh the Meetup access token since there is no refresh token available");
+                // Try to refresh again in an hour
+                return white_rabbit::DateResult::Repeat(
+                    white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
+                );
+            }
+        },
+        Err(err) => {
+            eprintln!(
+                "Could not refresh the Meetup access token. Redis error: {}",
+                err
+            );
+            // Try to refresh again in an hour
+            return white_rabbit::DateResult::Repeat(
+                white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
+            );
+        }
+    };
+    // Try to exchange the refresh token for fresh access and refresh tokens.
+    // Lock the Meetup client in the meantime, such that other code does not
+    // try to use a stale access token
+    let mut meetup_client_lock = meetup_client.lock();
+    let refresh_token = oauth2::RefreshToken::new(refresh_token);
+    let refresh_token_response = match oauth2_client
+        .exchange_refresh_token(&refresh_token)
+        .request(oauth2::curl::http_client)
+    {
+        Ok(refresh_token_response) => refresh_token_response,
+        Err(err) => {
+            eprintln!(
+                "Could not refresh the Meetup access token. OAuth2 error: {}",
+                err
+            );
+            // Try to refresh again in an hour
+            return white_rabbit::DateResult::Repeat(
+                white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
+            );
+        }
+    };
+    let (new_access_token, new_refresh_token) = match refresh_token_response.refresh_token() {
+        Some(refresh_token) => (refresh_token_response.access_token(), refresh_token),
+        None => {
+            eprintln!("Error during Meetup access token refresh. Meetup did not return a new refresh token");
+            // Try to refresh again in an hour
+            return white_rabbit::DateResult::Repeat(
+                white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
+            );
+        }
+    };
+    *meetup_client_lock = meetup::Client::new(new_access_token.secret());
+    drop(meetup_client_lock);
+    // Store the new tokens in Redis
+    let res: RedisResult<()> = redis_connection.set_multiple(&[
+        ("meetup_access_token", new_access_token.secret()),
+        ("meetup_refresh_token", new_refresh_token.secret()),
+    ]);
+    if let Err(err) = res {
+        eprintln!("Error storing new Meetup tokens in Redis: {}", err);
+    }
+    // Refresh the access token in a week from now
+    let next_refresh = white_rabbit::Utc::now() + white_rabbit::Duration::weeks(1);
+    // Store refresh date in Redis, ignore failures
+    let _: redis::RedisResult<()> = redis_connection.set(
+        "meetup_access_token_refresh_time",
+        next_refresh.to_rfc3339(),
+    );
+    // Re-schedule this task
+    white_rabbit::DateResult::Repeat(next_refresh)
 }
