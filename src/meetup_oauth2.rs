@@ -13,6 +13,7 @@
 //! ...and follow the instructions.
 //!
 
+use cookie::Cookie;
 use hyper::rt::Future;
 use hyper::service::service_fn_ok;
 use hyper::{Body, Method, Request, Response, Server};
@@ -22,16 +23,73 @@ use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
     TokenResponse, TokenUrl,
 };
+use rand::Rng;
 use redis::{Commands, RedisResult};
 use serenity::prelude::Mutex;
 use std::sync::Arc;
 use url::Url;
 
+const DOMAIN: &'static str = "bot.8na.de";
 const BASE_URL: &'static str = "http://bot.8na.de";
 
+fn new_random_id(num_bytes: u32) -> String {
+    let random_bytes: Vec<u8> = (0..num_bytes)
+        .map(|_| rand::thread_rng().gen::<u8>())
+        .collect();
+    base64::encode_config(&random_bytes, base64::URL_SAFE_NO_PAD)
+}
+
+fn generate_csrf_cookie(
+    redis_connection_mutex: &Mutex<redis::Connection>,
+    csrf_state: &str,
+) -> crate::Result<Cookie<'static>> {
+    let random_csrf_user_id = new_random_id(16);
+    let redis_csrf_key = format!("csrf:{}", &random_csrf_user_id);
+    let _: () = redis_connection_mutex
+        .lock()
+        .set_ex(&redis_csrf_key, csrf_state, 3600)?;
+    Ok(Cookie::build("csrf_user_id", random_csrf_user_id)
+        .domain(DOMAIN)
+        .http_only(true)
+        .same_site(cookie::SameSite::Lax)
+        .max_age(time::Duration::hours(1))
+        .finish())
+}
+
+fn check_csrf_cookie(
+    redis_connection_mutex: &Mutex<redis::Connection>,
+    headers: &hyper::HeaderMap<hyper::header::HeaderValue>,
+    csrf_state: &str,
+) -> crate::Result<bool> {
+    let csrf_user_id_cookie =
+        headers
+            .get_all(hyper::header::COOKIE)
+            .iter()
+            .find_map(|header_value| {
+                if let Ok(header_value) = header_value.to_str() {
+                    if let Ok(cookie) = Cookie::parse(header_value) {
+                        if cookie.name() == "csrf_user_id" {
+                            return Some(cookie);
+                        }
+                    }
+                }
+                None
+            });
+    let csrf_user_id_cookie = match csrf_user_id_cookie {
+        None => return Ok(false),
+        Some(csrf_user_id_cookie) => csrf_user_id_cookie,
+    };
+    let redis_csrf_key = format!("csrf:{}", csrf_user_id_cookie.value());
+    let csrf_stored_state: String = match redis_connection_mutex.lock().get(&redis_csrf_key)? {
+        None => return Ok(false),
+        Some(csrf_stored_state) => csrf_stored_state,
+    };
+    Ok(csrf_state == csrf_stored_state)
+}
+
 fn meetup_auth(
+    redis_connection_mutex: &Mutex<redis::Connection>,
     oauth_client: &BasicClient,
-    csrf_token: &Arc<Mutex<Option<CsrfToken>>>,
     req: Request<Body>,
 ) -> Response<Body> {
     match (req.method(), req.uri().path()) {
@@ -46,9 +104,19 @@ fn meetup_auth(
                 .url();
             // Store the generated CSRF token so we can compare it to the one
             // returned by Meetup later
-            *csrf_token.lock() = Some(csrf_state);
+            let csrf_cookie =
+                match generate_csrf_cookie(redis_connection_mutex, csrf_state.secret()) {
+                    Ok(csrf_cookie) => csrf_cookie,
+                    Err(err) => {
+                        eprintln!("Error generating a CSRF cookie: {}", err);
+                        return Response::new("Internal Server Error".into());
+                    }
+                };
             let html_body = format!("<a href=\"{}\">Login with Meetup</a>", authorize_url);
-            Response::new(html_body.into())
+            Response::builder()
+                .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
+                .body(html_body.into())
+                .unwrap()
         }
         (&Method::GET, "/redirect") => {
             let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
@@ -67,42 +135,42 @@ fn meetup_auth(
                 return Response::new(format!("OAuth error: {}", error).into());
             }
             match (code, state) {
-                (Some(code), Some(state)) => {
-                    if let Some(ref csrf_state) = *csrf_token.lock() {
-                        // Compare the CSRF state that was returned by Meetup to the one
-                        // we have saved
-                        if csrf_state.secret() == state {
-                            // Exchange the code with a token.
-                            let code = AuthorizationCode::new(code.to_string());
-                            let token_res = oauth_client.exchange_code(code).request(http_client);
-                            match token_res {
-                                Ok(token_res) => {
-                                    println!("Access token: {}", token_res.access_token().secret());
-                                    println!(
-                                        "Refresh token: {:?}",
-                                        token_res.refresh_token().map(|t| t.secret())
-                                    );
-                                    return Response::new("Thanks for logging in :)".into());
-                                }
-                                Err(err) => {
-                                    eprintln!("Request token error: {:?}", err);
-                                    return Response::new(
-                                        "Could not exchange code for an access token".into(),
-                                    );
-                                }
-                            };
-                        } else {
-                            return Response::new(
-                                format!(
-                                    "CSRF tokens do not match: {} vs {}",
-                                    csrf_state.secret(),
-                                    state
-                                )
-                                .into(),
-                            );
-                        }
+                (Some(code), Some(csrf_state)) => {
+                    // Compare the CSRF state that was returned by Meetup to the one
+                    // we have saved
+                    let csrf_is_valid =
+                        match check_csrf_cookie(redis_connection_mutex, req.headers(), &csrf_state)
+                        {
+                            Ok(valid) => valid,
+                            Err(err) => {
+                                eprintln!("Error when checking CSRF cookie: {}", err);
+                                return Response::new("Internal Server Error".into());
+                            }
+                        };
+                    if csrf_is_valid {
+                        // Exchange the code with a token.
+                        let code = AuthorizationCode::new(code.to_string());
+                        let token_res = oauth_client.exchange_code(code).request(http_client);
+                        match token_res {
+                            Ok(token_res) => {
+                                println!("Access token: {}", token_res.access_token().secret());
+                                println!(
+                                    "Refresh token: {:?}",
+                                    token_res.refresh_token().map(|t| t.secret())
+                                );
+                                return Response::new("Thanks for logging in :)".into());
+                            }
+                            Err(err) => {
+                                eprintln!("Request token error: {:?}", err);
+                                return Response::new(
+                                    "Could not exchange code for an access token".into(),
+                                );
+                            }
+                        };
                     } else {
-                        return Response::new("No CSRF token on server".into());
+                        return Response::new(
+                                "CSRF check failed. Please go back to the first page, reload and repeat the process.".into()
+                            );
                     }
                 }
                 _ => return Response::new("Request parameters missing".into()),
@@ -145,15 +213,15 @@ impl OAuth2Consumer {
     pub fn create_auth_server(
         &self,
         addr: std::net::SocketAddr,
-        _redis_client: &redis::Client,
+        redis_connection: redis::Connection,
     ) -> impl Future<Item = (), Error = ()> + Send + 'static {
-        let csrf_token = Arc::new(Mutex::new(None));
         // And a MakeService to handle each connection...
         let client = self.client.clone();
+        let redis_connection_mutex = Arc::new(Mutex::new(redis_connection));
         let make_service = move || {
             let client = client.clone();
-            let csrf_token = csrf_token.clone();
-            service_fn_ok(move |req| meetup_auth(&client, &csrf_token, req))
+            let redis_connection_mutex = redis_connection_mutex.clone();
+            service_fn_ok(move |req| meetup_auth(&redis_connection_mutex, &client, req))
         };
         let server = Server::bind(&addr).serve(make_service).map_err(|e| {
             eprintln!("server error: {}", e);

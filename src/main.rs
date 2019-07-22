@@ -66,8 +66,12 @@ fn main() {
     );
 
     // Start a server to handle Meetup OAuth2 logins
-    let meetup_oauth2_server =
-        meetup_oauth2_consumer.create_auth_server(([127, 0, 0, 1], 3000).into(), &redis_client);
+    let meetup_oauth2_server = meetup_oauth2_consumer.create_auth_server(
+        ([127, 0, 0, 1], 3000).into(),
+        redis_client
+            .get_connection()
+            .expect("Could not connect to Redis"),
+    );
     std::thread::spawn(move || hyper::rt::run(meetup_oauth2_server));
 
     // Finally, start the Discord bot
