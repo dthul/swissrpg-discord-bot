@@ -11,6 +11,7 @@ use oauth2::{
 use rand::Rng;
 use redis::{Commands, RedisResult};
 use serenity::prelude::Mutex;
+use simple_error::SimpleError;
 use std::sync::Arc;
 use url::Url;
 
@@ -72,12 +73,13 @@ fn check_csrf_cookie(
     Ok(csrf_state == csrf_stored_state)
 }
 
-fn meetup_auth(
+fn meetup_http_handler(
     redis_connection_mutex: &Mutex<redis::Connection>,
     oauth2_authorization_client: &BasicClient,
-    _oauth2_link_client: &BasicClient,
+    oauth2_link_client: &BasicClient,
+    _discord_http: &serenity::CacheAndHttp,
     req: Request<Body>,
-) -> Response<Body> {
+) -> crate::Result<Response<Body>> {
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/authorize") => {
             // Generate the authorization URL to which we'll redirect the user.
@@ -90,23 +92,15 @@ fn meetup_auth(
                 .url();
             // Store the generated CSRF token so we can compare it to the one
             // returned by Meetup later
-            let csrf_cookie =
-                match generate_csrf_cookie(redis_connection_mutex, csrf_state.secret()) {
-                    Ok(csrf_cookie) => csrf_cookie,
-                    Err(err) => {
-                        eprintln!("Error generating a CSRF cookie: {}", err);
-                        return Response::new("Internal Server Error".into());
-                    }
-                };
+            let csrf_cookie = generate_csrf_cookie(redis_connection_mutex, csrf_state.secret())?;
             let html_body = format!("<a href=\"{}\">Login with Meetup</a>", authorize_url);
-            Response::builder()
+            Ok(Response::builder()
                 .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
-                .body(html_body.into())
-                .unwrap()
+                .body(html_body.into())?)
         }
         (&Method::GET, "/authorize/redirect") => {
             let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
-            let req_url = Url::parse(&full_uri).unwrap();
+            let req_url = Url::parse(&full_uri)?;
             let params: Vec<_> = req_url.query_pairs().collect();
             let code = params
                 .iter()
@@ -118,55 +112,68 @@ fn meetup_auth(
                 .iter()
                 .find_map(|(key, value)| if key == "error" { Some(value) } else { None });
             if let Some(error) = error {
-                return Response::new(format!("OAuth error: {}", error).into());
+                return Ok(Response::new(format!("OAuth error: {}", error).into()));
             }
             match (code, state) {
                 (Some(code), Some(csrf_state)) => {
                     // Compare the CSRF state that was returned by Meetup to the one
                     // we have saved
                     let csrf_is_valid =
-                        match check_csrf_cookie(redis_connection_mutex, req.headers(), &csrf_state)
-                        {
-                            Ok(valid) => valid,
-                            Err(err) => {
-                                eprintln!("Error when checking CSRF cookie: {}", err);
-                                return Response::new("Internal Server Error".into());
-                            }
-                        };
-                    if csrf_is_valid {
-                        // Exchange the code with a token.
-                        let code = AuthorizationCode::new(code.to_string());
-                        let token_res = oauth2_authorization_client
-                            .exchange_code(code)
-                            .request(http_client);
-                        match token_res {
-                            Ok(token_res) => {
-                                // TODO: check that this token does belong to an organizer,
-                                // store it in Redis and replace the meetup_api::Client
-                                println!("Access token: {}", token_res.access_token().secret());
-                                println!(
-                                    "Refresh token: {:?}",
-                                    token_res.refresh_token().map(|t| t.secret())
-                                );
-                                return Response::new("Thanks for logging in :)".into());
-                            }
-                            Err(err) => {
-                                eprintln!("Request token error: {:?}", err);
-                                return Response::new(
-                                    "Could not exchange code for an access token".into(),
-                                );
-                            }
-                        };
-                    } else {
-                        return Response::new(
+                        check_csrf_cookie(redis_connection_mutex, req.headers(), &csrf_state)?;
+                    if !csrf_is_valid {
+                        return Ok(Response::new(
                                 "CSRF check failed. Please go back to the first page, reload and repeat the process.".into()
-                            );
+                            ));
                     }
+                    // Exchange the code with a token.
+                    let code = AuthorizationCode::new(code.to_string());
+                    let token_res = oauth2_authorization_client
+                        .exchange_code(code)
+                        .request(http_client)
+                        .map_err(|err| SimpleError::new(format!("RequestTokenError: {}", err)))?;
+                    // TODO: check that this token does belong to an organizer,
+                    // store it in Redis and replace the meetup_api::Client
+                    println!("Access token: {}", token_res.access_token().secret());
+                    println!(
+                        "Refresh token: {:?}",
+                        token_res.refresh_token().map(|t| t.secret())
+                    );
+                    return Ok(Response::new("Thanks for logging in :)".into()));
                 }
-                _ => return Response::new("Request parameters missing".into()),
+                _ => return Ok(Response::new("Request parameters missing".into())),
             };
         }
-        _ => Response::new("Unknown route".into()),
+        (&Method::GET, "/link") => {
+            let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
+            let req_url = Url::parse(&full_uri)?;
+            let params: Vec<_> = req_url.query_pairs().collect();
+            let discord_id = params.iter().find_map(|(key, value)| {
+                if key == "discord_id" {
+                    Some(value)
+                } else {
+                    None
+                }
+            });
+            let _discord_id = match discord_id {
+                Some(id) => id,
+                _ => return Ok(Response::new("Invalid request".into())),
+            };
+            // Generate the authorization URL to which we'll redirect the user.
+            let (authorize_url, csrf_state) = oauth2_link_client
+                .authorize_url(CsrfToken::new_random)
+                // This example is requesting access to the user's public repos and email.
+                .add_scope(Scope::new("ageless".to_string()))
+                .add_scope(Scope::new("basic".to_string()))
+                .url();
+            // Store the generated CSRF token so we can compare it to the one
+            // returned by Meetup later
+            let csrf_cookie = generate_csrf_cookie(redis_connection_mutex, csrf_state.secret())?;
+            let html_body = format!("<a href=\"{}\">Link with Meetup</a>", authorize_url);
+            Ok(Response::builder()
+                .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
+                .body(html_body.into())?)
+        }
+        _ => Ok(Response::new("Unknown route".into())),
     }
 }
 
@@ -213,25 +220,37 @@ impl OAuth2Consumer {
         &self,
         addr: std::net::SocketAddr,
         redis_connection: redis::Connection,
+        discord_http: Arc<serenity::CacheAndHttp>,
     ) -> impl Future<Item = (), Error = ()> + Send + 'static {
-        // And a MakeService to handle each connection...
-        let authorization_client = self.authorization_client.clone();
-        let link_client = self.link_client.clone();
         let redis_connection_mutex = Arc::new(Mutex::new(redis_connection));
-        let make_service = move || {
-            let authorization_client = authorization_client.clone();
-            let link_client = link_client.clone();
+        // And a MakeService to handle each connection...
+        let make_meetup_service = {
+            let authorization_client = self.authorization_client.clone();
+            let link_client = self.link_client.clone();
             let redis_connection_mutex = redis_connection_mutex.clone();
-            service_fn_ok(move |req| {
-                meetup_auth(
-                    &redis_connection_mutex,
-                    &authorization_client,
-                    &link_client,
-                    req,
-                )
-            })
+            move || {
+                let authorization_client = authorization_client.clone();
+                let link_client = link_client.clone();
+                let redis_connection_mutex = redis_connection_mutex.clone();
+                let discord_http = discord_http.clone();
+                service_fn_ok(move |req| {
+                    match meetup_http_handler(
+                        &redis_connection_mutex,
+                        &authorization_client,
+                        &link_client,
+                        &discord_http,
+                        req,
+                    ) {
+                        Ok(response) => response,
+                        Err(err) => {
+                            eprintln!("Error in meetup_authorize: {}", err);
+                            Response::new("Internal Server Error".into())
+                        }
+                    }
+                })
+            }
         };
-        let server = Server::bind(&addr).serve(make_service).map_err(|e| {
+        let server = Server::bind(&addr).serve(make_meetup_service).map_err(|e| {
             eprintln!("server error: {}", e);
         });
 

@@ -65,19 +65,20 @@ fn main() {
         ),
     );
 
+    // Finally, start the Discord bot
+    let mut bot =
+        discord_bot::create_discord_client(&discord_token, &redis_client, meetup_client.clone())
+            .expect("Could not create the Discord bot");
+
     // Start a server to handle Meetup OAuth2 logins
     let meetup_oauth2_server = meetup_oauth2_consumer.create_auth_server(
         ([127, 0, 0, 1], 3000).into(),
         redis_client
             .get_connection()
             .expect("Could not connect to Redis"),
+            bot.cache_and_http.clone()
     );
     std::thread::spawn(move || hyper::rt::run(meetup_oauth2_server));
-
-    // Finally, start the Discord bot
-    let mut bot =
-        discord_bot::create_discord_client(&discord_token, &redis_client, meetup_client.clone())
-            .expect("Could not create the Discord bot");
     if let Err(why) = bot.start() {
         println!("Client error: {:?}", why);
     }
