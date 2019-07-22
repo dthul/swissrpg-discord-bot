@@ -21,7 +21,6 @@ pub struct User {
     pub name: String,
     pub photo: Option<Photo>,
 }
-
 impl Client {
     pub fn new(access_token: &str) -> Client {
         let mut headers = HeaderMap::new();
