@@ -1,18 +1,3 @@
-//!
-//! This example showcases the Github OAuth2 process for requesting access to the user's public repos and
-//! email address.
-//!
-//! Before running it, you'll need to generate your own Github OAuth2 credentials.
-//!
-//! In order to run the example call:
-//!
-//! ```sh
-//! GITHUB_CLIENT_ID=xxx GITHUB_CLIENT_SECRET=yyy cargo run --example github
-//! ```
-//!
-//! ...and follow the instructions.
-//!
-
 use cookie::Cookie;
 use hyper::rt::Future;
 use hyper::service::service_fn_ok;
@@ -89,13 +74,14 @@ fn check_csrf_cookie(
 
 fn meetup_auth(
     redis_connection_mutex: &Mutex<redis::Connection>,
-    oauth_client: &BasicClient,
+    oauth2_authorization_client: &BasicClient,
+    _oauth2_link_client: &BasicClient,
     req: Request<Body>,
 ) -> Response<Body> {
     match (req.method(), req.uri().path()) {
-        (&Method::GET, "/") => {
+        (&Method::GET, "/authorize") => {
             // Generate the authorization URL to which we'll redirect the user.
-            let (authorize_url, csrf_state) = oauth_client
+            let (authorize_url, csrf_state) = oauth2_authorization_client
                 .authorize_url(CsrfToken::new_random)
                 // This example is requesting access to the user's public repos and email.
                 .add_scope(Scope::new("ageless".to_string()))
@@ -118,7 +104,7 @@ fn meetup_auth(
                 .body(html_body.into())
                 .unwrap()
         }
-        (&Method::GET, "/redirect") => {
+        (&Method::GET, "/authorize/redirect") => {
             let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
             let req_url = Url::parse(&full_uri).unwrap();
             let params: Vec<_> = req_url.query_pairs().collect();
@@ -150,9 +136,13 @@ fn meetup_auth(
                     if csrf_is_valid {
                         // Exchange the code with a token.
                         let code = AuthorizationCode::new(code.to_string());
-                        let token_res = oauth_client.exchange_code(code).request(http_client);
+                        let token_res = oauth2_authorization_client
+                            .exchange_code(code)
+                            .request(http_client);
                         match token_res {
                             Ok(token_res) => {
+                                // TODO: check that this token does belong to an organizer,
+                                // store it in Redis and replace the meetup_api::Client
                                 println!("Access token: {}", token_res.access_token().secret());
                                 println!(
                                     "Refresh token: {:?}",
@@ -181,8 +171,10 @@ fn meetup_auth(
 }
 
 pub struct OAuth2Consumer {
-    client: Arc<BasicClient>,
+    authorization_client: Arc<BasicClient>,
+    link_client: Arc<BasicClient>,
 }
+
 impl OAuth2Consumer {
     pub fn new(meetup_client_id: String, meetup_client_secret: String) -> Self {
         let meetup_client_id = ClientId::new(meetup_client_id);
@@ -193,21 +185,28 @@ impl OAuth2Consumer {
             TokenUrl::new(Url::parse("https://secure.meetup.com/oauth2/access").unwrap());
 
         // Set up the config for the Github OAuth2 process.
-        let client = BasicClient::new(
+        let authorization_client = BasicClient::new(
             meetup_client_id,
             Some(meetup_client_secret),
             auth_url,
             Some(token_url),
         )
         .set_auth_type(oauth2::AuthType::RequestBody)
-        // This example will be running its own server at localhost:8080.
-        // See below for the server implementation.
         .set_redirect_url(RedirectUrl::new(
-            Url::parse(format!("{}/redirect", BASE_URL).as_str()).unwrap(),
+            Url::parse(format!("{}/authorize/redirect", BASE_URL).as_str()).unwrap(),
         ));
-        let client = Arc::new(client);
+        let link_client = authorization_client
+            .clone()
+            .set_redirect_url(RedirectUrl::new(
+                Url::parse(format!("{}/link/redirect", BASE_URL).as_str()).unwrap(),
+            ));
+        let authorization_client = Arc::new(authorization_client);
+        let link_client = Arc::new(link_client);
 
-        OAuth2Consumer { client: client }
+        OAuth2Consumer {
+            authorization_client: authorization_client,
+            link_client: link_client,
+        }
     }
 
     pub fn create_auth_server(
@@ -216,12 +215,21 @@ impl OAuth2Consumer {
         redis_connection: redis::Connection,
     ) -> impl Future<Item = (), Error = ()> + Send + 'static {
         // And a MakeService to handle each connection...
-        let client = self.client.clone();
+        let authorization_client = self.authorization_client.clone();
+        let link_client = self.link_client.clone();
         let redis_connection_mutex = Arc::new(Mutex::new(redis_connection));
         let make_service = move || {
-            let client = client.clone();
+            let authorization_client = authorization_client.clone();
+            let link_client = link_client.clone();
             let redis_connection_mutex = redis_connection_mutex.clone();
-            service_fn_ok(move |req| meetup_auth(&redis_connection_mutex, &client, req))
+            service_fn_ok(move |req| {
+                meetup_auth(
+                    &redis_connection_mutex,
+                    &authorization_client,
+                    &link_client,
+                    req,
+                )
+            })
         };
         let server = Server::bind(&addr).serve(make_service).map_err(|e| {
             eprintln!("server error: {}", e);
@@ -230,13 +238,14 @@ impl OAuth2Consumer {
         server
     }
 
+    // Refreshes the authorization token
     pub fn token_refresh_task(
         &self,
         mut redis_connection: redis::Connection,
         meetup_client: Arc<Mutex<Option<crate::meetup_api::Client>>>,
     ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static
     {
-        let oauth2_client = self.client.clone();
+        let oauth2_client = self.authorization_client.clone();
         let refresh_meetup_access_token_task =
             move |_context: &mut white_rabbit::Context| -> white_rabbit::DateResult {
                 // Try to get the refresh token from Redis
@@ -317,9 +326,5 @@ impl OAuth2Consumer {
                 white_rabbit::DateResult::Repeat(next_refresh)
             };
         refresh_meetup_access_token_task
-    }
-
-    pub fn client(&self) -> &Arc<BasicClient> {
-        &self.client
     }
 }
