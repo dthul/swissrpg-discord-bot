@@ -65,7 +65,6 @@ fn main() {
         ),
     );
 
-    // Finally, start the Discord bot
     let mut bot =
         discord_bot::create_discord_client(&discord_token, &redis_client, meetup_client.clone())
             .expect("Could not create the Discord bot");
@@ -76,9 +75,12 @@ fn main() {
         redis_client
             .get_connection()
             .expect("Could not connect to Redis"),
-            bot.cache_and_http.clone()
+        bot.cache_and_http.clone(),
+        meetup_client.clone(),
     );
     std::thread::spawn(move || hyper::rt::run(meetup_oauth2_server));
+
+    // Finally, start the Discord bot
     if let Err(why) = bot.start() {
         println!("Client error: {:?}", why);
     }

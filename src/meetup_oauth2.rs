@@ -2,6 +2,7 @@ use cookie::Cookie;
 use hyper::rt::Future;
 use hyper::service::service_fn_ok;
 use hyper::{Body, Method, Request, Response, Server};
+use lazy_static::lazy_static;
 use oauth2::basic::BasicClient;
 use oauth2::curl::http_client;
 use oauth2::{
@@ -9,7 +10,7 @@ use oauth2::{
     TokenResponse, TokenUrl,
 };
 use rand::Rng;
-use redis::{Commands, RedisResult};
+use redis::{Commands, PipelineCommands, RedisResult};
 use serenity::prelude::Mutex;
 use simple_error::SimpleError;
 use std::sync::Arc;
@@ -17,6 +18,12 @@ use url::Url;
 
 const DOMAIN: &'static str = "bot.8na.de";
 const BASE_URL: &'static str = "http://bot.8na.de";
+lazy_static! {
+    static ref LINK_URL_REGEX: regex::Regex =
+        regex::Regex::new(r"^/link/(?P<id>{a-zA-Z0-9\-_}+)$").unwrap();
+    static ref LINK_REDIRECT_URL_REGEX: regex::Regex =
+        regex::Regex::new(r"^/link/(?P<id>{a-zA-Z0-9\-_}+)/redirect$").unwrap();
+}
 
 fn new_random_id(num_bytes: u32) -> String {
     let random_bytes: Vec<u8> = (0..num_bytes)
@@ -78,102 +85,192 @@ fn meetup_http_handler(
     oauth2_authorization_client: &BasicClient,
     oauth2_link_client: &BasicClient,
     _discord_http: &serenity::CacheAndHttp,
+    meetup_client: &Mutex<Option<crate::meetup_api::Client>>,
     req: Request<Body>,
 ) -> crate::Result<Response<Body>> {
-    match (req.method(), req.uri().path()) {
-        (&Method::GET, "/authorize") => {
-            // Generate the authorization URL to which we'll redirect the user.
-            let (authorize_url, csrf_state) = oauth2_authorization_client
-                .authorize_url(CsrfToken::new_random)
-                // This example is requesting access to the user's public repos and email.
-                .add_scope(Scope::new("ageless".to_string()))
-                .add_scope(Scope::new("basic".to_string()))
-                .add_scope(Scope::new("event_management".to_string()))
-                .url();
-            // Store the generated CSRF token so we can compare it to the one
-            // returned by Meetup later
-            let csrf_cookie = generate_csrf_cookie(redis_connection_mutex, csrf_state.secret())?;
-            let html_body = format!("<a href=\"{}\">Login with Meetup</a>", authorize_url);
-            Ok(Response::builder()
-                .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
-                .body(html_body.into())?)
+    let (method, path) = (req.method(), req.uri().path());
+    if let (&Method::GET, "/authorize") = (method, path) {
+        // Generate the authorization URL to which we'll redirect the user.
+        let (authorize_url, csrf_state) = oauth2_authorization_client
+            .authorize_url(CsrfToken::new_random)
+            .add_scope(Scope::new("ageless".to_string()))
+            .add_scope(Scope::new("basic".to_string()))
+            .add_scope(Scope::new("event_management".to_string()))
+            .url();
+        // Store the generated CSRF token so we can compare it to the one
+        // returned by Meetup later
+        let csrf_cookie = generate_csrf_cookie(redis_connection_mutex, csrf_state.secret())?;
+        let html_body = format!("<a href=\"{}\">Login with Meetup</a>", authorize_url);
+        Ok(Response::builder()
+            .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
+            .body(html_body.into())?)
+    } else if let (&Method::GET, "/authorize/redirect") = (method, path) {
+        let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
+        let req_url = Url::parse(&full_uri)?;
+        let params: Vec<_> = req_url.query_pairs().collect();
+        let code = params
+            .iter()
+            .find_map(|(key, value)| if key == "code" { Some(value) } else { None });
+        let state = params
+            .iter()
+            .find_map(|(key, value)| if key == "state" { Some(value) } else { None });
+        let error = params
+            .iter()
+            .find_map(|(key, value)| if key == "error" { Some(value) } else { None });
+        if let Some(error) = error {
+            return Ok(Response::new(format!("OAuth error: {}", error).into()));
         }
-        (&Method::GET, "/authorize/redirect") => {
-            let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
-            let req_url = Url::parse(&full_uri)?;
-            let params: Vec<_> = req_url.query_pairs().collect();
-            let code = params
-                .iter()
-                .find_map(|(key, value)| if key == "code" { Some(value) } else { None });
-            let state = params
-                .iter()
-                .find_map(|(key, value)| if key == "state" { Some(value) } else { None });
-            let error = params
-                .iter()
-                .find_map(|(key, value)| if key == "error" { Some(value) } else { None });
-            if let Some(error) = error {
-                return Ok(Response::new(format!("OAuth error: {}", error).into()));
+        match (code, state) {
+            (Some(code), Some(csrf_state)) => {
+                // Compare the CSRF state that was returned by Meetup to the one
+                // we have saved
+                let csrf_is_valid =
+                    check_csrf_cookie(redis_connection_mutex, req.headers(), &csrf_state)?;
+                if !csrf_is_valid {
+                    return Ok(Response::new(
+                                "CSRF check failed. Please go back to the first page, reload, and repeat the process.".into()
+                            ));
+                }
+                // Exchange the code with a token.
+                let code = AuthorizationCode::new(code.to_string());
+                let token_res = oauth2_authorization_client
+                    .exchange_code(code)
+                    .request(http_client)
+                    .map_err(|err| SimpleError::new(format!("RequestTokenError: {}", err)))?;
+                // Check that this token belongs to an organizer
+                let new_meetup_client =
+                    crate::meetup_api::Client::new(token_res.access_token().secret());
+                let is_organizer = match new_meetup_client.get_user_info()? {
+                    Some(crate::meetup_api::UserInfo {
+                        role: Some(_role), ..
+                    }) => {
+                        // TODO: check role
+                        false
+                    }
+                    _ => false,
+                };
+                if !is_organizer {
+                    return Ok(Response::new("Only organizers can log in".into()));
+                }
+                // Store the new access and refresh tokens in Redis
+                let _: () = redis::transaction(
+                    &mut *redis_connection_mutex.lock(),
+                    &["meetup_access_token", "meetup_refresh_token"],
+                    |con, pipe| match token_res.refresh_token() {
+                        Some(refresh_token) => pipe
+                            .set("meetup_access_token", token_res.access_token().secret())
+                            .set("meetup_refresh_token", refresh_token.secret())
+                            .ignore()
+                            .query(con),
+                        None => pipe
+                            .set("meetup_access_token", token_res.access_token().secret())
+                            .del("meetup_refresh_token")
+                            .ignore()
+                            .query(con),
+                    },
+                )?;
+                // Replace the meetup client
+                *meetup_client.lock() = Some(new_meetup_client);
+                return Ok(Response::new("Thanks for logging in :)".into()));
             }
-            match (code, state) {
-                (Some(code), Some(csrf_state)) => {
-                    // Compare the CSRF state that was returned by Meetup to the one
-                    // we have saved
-                    let csrf_is_valid =
-                        check_csrf_cookie(redis_connection_mutex, req.headers(), &csrf_state)?;
-                    if !csrf_is_valid {
-                        return Ok(Response::new(
+            _ => return Ok(Response::new("Request parameters missing".into())),
+        };
+    } else if let (&Method::GET, Some(captures)) = (method, LINK_URL_REGEX.captures(path)) {
+        // The linking ID was stored in Redis when the linking link was created.
+        // Check that it is still valid
+        let linking_id = match captures.name("id") {
+            Some(id) => id.as_str(),
+            _ => return Ok(Response::new("Invalid request".into())),
+        };
+        let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
+        let discord_id: Option<String> = redis::pipe()
+            .expire(&redis_key, 600)
+            .ignore()
+            .get(&redis_key)
+            .query(&mut *redis_connection_mutex.lock())?;
+        if discord_id.is_none() {
+            return Ok(Response::new("This link seems to have expired. Get a new link from the bot with the \"link meetup\" command".into()));
+        }
+        // Generate the authorization URL to which we'll redirect the user.
+        let (authorize_url, csrf_state) = oauth2_link_client
+            .clone()
+            .set_redirect_url(RedirectUrl::new(
+                Url::parse(format!("{}/link/{}/redirect", BASE_URL, linking_id).as_str()).unwrap(),
+            ))
+            .authorize_url(CsrfToken::new_random)
+            .add_scope(Scope::new("ageless".to_string()))
+            .add_scope(Scope::new("basic".to_string()))
+            .url();
+        // Store the generated CSRF token so we can compare it to the one
+        // returned by Meetup later
+        let csrf_cookie = generate_csrf_cookie(redis_connection_mutex, csrf_state.secret())?;
+        let html_body = format!("<a href=\"{}\">Link with Meetup</a>", authorize_url);
+        Ok(Response::builder()
+            .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
+            .body(html_body.into())?)
+    } else if let (&Method::GET, Some(captures)) = (method, LINK_REDIRECT_URL_REGEX.captures(path))
+    {
+        // The linking ID was stored in Redis when the linking link was created.
+        // Check that it is still valid
+        let linking_id = match captures.name("id") {
+            Some(id) => id.as_str(),
+            _ => return Ok(Response::new("Invalid request".into())),
+        };
+        let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
+        let discord_id: Option<String> = redis::pipe()
+            .expire(&redis_key, 600)
+            .ignore()
+            .get(&redis_key)
+            .query(&mut *redis_connection_mutex.lock())?;
+        let _discord_id = match discord_id {
+            Some(id) => id,
+            None => return Ok(Response::new("This link seems to have expired. Get a new link from the bot with the \"link meetup\" command".into()))
+        };
+        let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
+        let req_url = Url::parse(&full_uri)?;
+        let params: Vec<_> = req_url.query_pairs().collect();
+        let code = params
+            .iter()
+            .find_map(|(key, value)| if key == "code" { Some(value) } else { None });
+        let state = params
+            .iter()
+            .find_map(|(key, value)| if key == "state" { Some(value) } else { None });
+        let error = params
+            .iter()
+            .find_map(|(key, value)| if key == "error" { Some(value) } else { None });
+        if let Some(error) = error {
+            return Ok(Response::new(format!("OAuth error: {}", error).into()));
+        }
+        match (code, state) {
+            (Some(code), Some(csrf_state)) => {
+                // Compare the CSRF state that was returned by Meetup to the one
+                // we have saved
+                let csrf_is_valid =
+                    check_csrf_cookie(redis_connection_mutex, req.headers(), &csrf_state)?;
+                if !csrf_is_valid {
+                    return Ok(Response::new(
                                 "CSRF check failed. Please go back to the first page, reload and repeat the process.".into()
                             ));
-                    }
-                    // Exchange the code with a token.
-                    let code = AuthorizationCode::new(code.to_string());
-                    let token_res = oauth2_authorization_client
-                        .exchange_code(code)
-                        .request(http_client)
-                        .map_err(|err| SimpleError::new(format!("RequestTokenError: {}", err)))?;
-                    // TODO: check that this token does belong to an organizer,
-                    // store it in Redis and replace the meetup_api::Client
-                    println!("Access token: {}", token_res.access_token().secret());
-                    println!(
-                        "Refresh token: {:?}",
-                        token_res.refresh_token().map(|t| t.secret())
-                    );
-                    return Ok(Response::new("Thanks for logging in :)".into()));
                 }
-                _ => return Ok(Response::new("Request parameters missing".into())),
-            };
-        }
-        (&Method::GET, "/link") => {
-            let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
-            let req_url = Url::parse(&full_uri)?;
-            let params: Vec<_> = req_url.query_pairs().collect();
-            let discord_id = params.iter().find_map(|(key, value)| {
-                if key == "discord_id" {
-                    Some(value)
-                } else {
-                    None
-                }
-            });
-            let _discord_id = match discord_id {
-                Some(id) => id,
-                _ => return Ok(Response::new("Invalid request".into())),
-            };
-            // Generate the authorization URL to which we'll redirect the user.
-            let (authorize_url, csrf_state) = oauth2_link_client
-                .authorize_url(CsrfToken::new_random)
-                // This example is requesting access to the user's public repos and email.
-                .add_scope(Scope::new("ageless".to_string()))
-                .add_scope(Scope::new("basic".to_string()))
-                .url();
-            // Store the generated CSRF token so we can compare it to the one
-            // returned by Meetup later
-            let csrf_cookie = generate_csrf_cookie(redis_connection_mutex, csrf_state.secret())?;
-            let html_body = format!("<a href=\"{}\">Link with Meetup</a>", authorize_url);
-            Ok(Response::builder()
-                .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
-                .body(html_body.into())?)
-        }
-        _ => Ok(Response::new("Unknown route".into())),
+                // Exchange the code with a token.
+                let code = AuthorizationCode::new(code.to_string());
+                let token_res = oauth2_authorization_client
+                    .exchange_code(code)
+                    .request(http_client)
+                    .map_err(|err| SimpleError::new(format!("RequestTokenError: {}", err)))?;
+                // TODO: check that this token does belong to an organizer,
+                // store it in Redis and replace the meetup_api::Client
+                println!("Access token: {}", token_res.access_token().secret());
+                println!(
+                    "Refresh token: {:?}",
+                    token_res.refresh_token().map(|t| t.secret())
+                );
+                return Ok(Response::new("Thanks for logging in :)".into()));
+            }
+            _ => return Ok(Response::new("Request parameters missing".into())),
+        };
+    } else {
+        Ok(Response::new("Unknown route".into()))
     }
 }
 
@@ -221,6 +318,7 @@ impl OAuth2Consumer {
         addr: std::net::SocketAddr,
         redis_connection: redis::Connection,
         discord_http: Arc<serenity::CacheAndHttp>,
+        meetup_client: Arc<Mutex<Option<crate::meetup_api::Client>>>,
     ) -> impl Future<Item = (), Error = ()> + Send + 'static {
         let redis_connection_mutex = Arc::new(Mutex::new(redis_connection));
         // And a MakeService to handle each connection...
@@ -228,17 +326,20 @@ impl OAuth2Consumer {
             let authorization_client = self.authorization_client.clone();
             let link_client = self.link_client.clone();
             let redis_connection_mutex = redis_connection_mutex.clone();
+            let meetup_client = meetup_client.clone();
             move || {
                 let authorization_client = authorization_client.clone();
                 let link_client = link_client.clone();
                 let redis_connection_mutex = redis_connection_mutex.clone();
                 let discord_http = discord_http.clone();
+                let meetup_client = meetup_client.clone();
                 service_fn_ok(move |req| {
                     match meetup_http_handler(
                         &redis_connection_mutex,
                         &authorization_client,
                         &link_client,
                         &discord_http,
+                        &meetup_client,
                         req,
                     ) {
                         Ok(response) => response,
