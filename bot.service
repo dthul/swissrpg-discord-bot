@@ -1,0 +1,15 @@
+[Unit]
+Description=SwissRPG Bot
+Requires=redis.service
+After=network.target redis.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=bot
+ExecStart=/home/bot/run.sh
+
+[Install]
+WantedBy=multi-user.target
