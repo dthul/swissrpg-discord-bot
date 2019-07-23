@@ -14,6 +14,8 @@ and to enable it permanently:
 
 `$ systemctl enable bot`
 
+NOTE: call `systemctl daemon-reload` after modifying service files
+
 # Where to find logs (stdout, stderr)
 
 `$ journalctl -u bot`

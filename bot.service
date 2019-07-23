@@ -9,6 +9,7 @@ Type=simple
 Restart=always
 RestartSec=1
 User=bot
+WorkingDirectory=/home/bot
 ExecStart=/home/bot/run.sh
 
 [Install]

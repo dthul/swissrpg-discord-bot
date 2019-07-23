@@ -1,3 +1,3 @@
 #!/bin/sh
-source secrets.sh
+. ./secrets.sh
 ./swissrpg-discord-bot
