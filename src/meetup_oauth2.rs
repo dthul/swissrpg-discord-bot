@@ -16,8 +16,8 @@ use simple_error::SimpleError;
 use std::sync::Arc;
 use url::Url;
 
-const DOMAIN: &'static str = "bot.8na.de";
-const BASE_URL: &'static str = "https://bot.8na.de";
+const DOMAIN: &'static str = "bot.swissrpg.ch";
+const BASE_URL: &'static str = "https://bot.swissrpg.ch";
 lazy_static! {
     static ref LINK_URL_REGEX: regex::Regex =
         regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)$").unwrap();
