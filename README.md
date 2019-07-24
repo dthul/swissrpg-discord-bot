@@ -20,6 +20,10 @@ NOTE: call `systemctl daemon-reload` after modifying service files
 
 `$ journalctl -u bot`
 
+# Nginx
+
+Copy/symlink `bot.conf` to `/etc/nginx/conf.d/` and remember to disable the default configuration that some distributions have in `/etc/nginx/sites-enabled/default`. Then restart nginx: `$ systemctl restart nginx`
+
 # To link statically
 
 ## For OpenSSL
