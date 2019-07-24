@@ -266,7 +266,7 @@ fn meetup_http_handler(
             _ => return Box::new(future::ok(Response::new("Invalid request".into()))),
         };
         let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
-        let discord_id: Option<u64> = match redis::pipe()
+        let (discord_id,): (Option<u64>,) = match redis::pipe()
             .expire(&redis_key, 600)
             .ignore()
             .get(&redis_key)
@@ -311,7 +311,7 @@ fn meetup_http_handler(
             _ => return Box::new(future::ok(Response::new("Invalid request".into()))),
         };
         let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
-        let discord_id: Option<u64> = match redis::pipe()
+        let (discord_id,): (Option<u64>,) = match redis::pipe()
             .expire(&redis_key, 600)
             .ignore()
             .get(&redis_key)
