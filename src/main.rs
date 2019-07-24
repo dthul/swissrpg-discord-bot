@@ -28,11 +28,16 @@ fn main() {
     let meetup_access_token: Option<String> = redis_connection
         .get("meetup_access_token")
         .expect("Meetup access token could not be loaded from Redis");
-    let meetup_client = match meetup_access_token {
-        Some(meetup_access_token) => Arc::new(Mutex::new(Some(meetup_api::Client::new(
-            &meetup_access_token,
-        )))),
-        None => Arc::new(Mutex::new(None)),
+    let (meetup_client, async_meetup_client) = match meetup_access_token {
+        Some(meetup_access_token) => (
+            Arc::new(Mutex::new(Some(meetup_api::Client::new(
+                &meetup_access_token,
+            )))),
+            Arc::new(Mutex::new(Some(meetup_api::AsyncClient::new(
+                &meetup_access_token,
+            )))),
+        ),
+        None => (Arc::new(Mutex::new(None)), Arc::new(Mutex::new(None))),
     };
 
     // Create a Meetup OAuth2 consumer
@@ -78,6 +83,7 @@ fn main() {
             .expect("Could not connect to Redis"),
         bot.cache_and_http.clone(),
         meetup_client.clone(),
+        async_meetup_client,
     );
     std::thread::spawn(move || hyper::rt::run(meetup_oauth2_server));
 

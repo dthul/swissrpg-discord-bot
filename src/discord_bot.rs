@@ -212,7 +212,7 @@ impl Handler {
             .lock()
             .as_ref()
             .ok_or_else(|| SimpleError::new("Meetup API unavailable"))?
-            .get_user(meetup_id)?;
+            .get_member_profile(Some(meetup_id))?;
         match meetup_user {
             None => {
                 let _ = msg.channel_id.say(
@@ -269,7 +269,7 @@ impl Handler {
                 } else {
                     let _ = msg
                         .channel_id
-                        .say(&ctx.http, "Could not assign meetup id (internal error)");
+                        .say(&ctx.http, "Could not assign meetup id (timing error)");
                     return Ok(());
                 }
             }

@@ -129,6 +129,7 @@ fn meetup_http_handler(
     oauth2_link_client: &BasicClient,
     _discord_http: &serenity::CacheAndHttp,
     meetup_client: &Arc<Mutex<Option<crate::meetup_api::Client>>>,
+    async_meetup_client: &Arc<Mutex<Option<crate::meetup_api::AsyncClient>>>,
     req: Request<Body>,
 ) -> ResponseFuture {
     let (method, path) = (req.method(), req.uri().path());
@@ -198,6 +199,7 @@ fn meetup_http_handler(
         let code = AuthorizationCode::new(code.to_string());
         let redis_connection_mutex = redis_connection_mutex.clone();
         let meetup_client = meetup_client.clone();
+        let async_meetup_client = async_meetup_client.clone();
         let future = oauth2_authorization_client
             .exchange_code(code)
             .request_async(async_http_client)
@@ -251,6 +253,7 @@ fn meetup_http_handler(
                         let new_blocking_meetup_client =
                             crate::meetup_api::Client::new(token_res.access_token().secret());
                         *meetup_client.lock() = Some(new_blocking_meetup_client);
+                        *async_meetup_client.lock() = Some(new_async_meetup_client);
                         future::ok(Response::new("Thanks for logging in :)".into()))
                     })
             });
@@ -263,7 +266,7 @@ fn meetup_http_handler(
             _ => return Box::new(future::ok(Response::new("Invalid request".into()))),
         };
         let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
-        let discord_id: Option<String> = match redis::pipe()
+        let discord_id: Option<u64> = match redis::pipe()
             .expire(&redis_key, 600)
             .ignore()
             .get(&redis_key)
@@ -275,6 +278,7 @@ fn meetup_http_handler(
         if discord_id.is_none() {
             return Box::new(future::ok(Response::new("This link seems to have expired. Get a new link from the bot with the \"link meetup\" command".into())));
         }
+        // TODO: check that this Discord ID is not linked yet before generating an authorization URL
         // Generate the authorization URL to which we'll redirect the user.
         let (authorize_url, csrf_state) = oauth2_link_client
             .clone()
@@ -307,7 +311,7 @@ fn meetup_http_handler(
             _ => return Box::new(future::ok(Response::new("Invalid request".into()))),
         };
         let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
-        let discord_id: Option<String> = match redis::pipe()
+        let discord_id: Option<u64> = match redis::pipe()
             .expire(&redis_key, 600)
             .ignore()
             .get(&redis_key)
@@ -316,7 +320,7 @@ fn meetup_http_handler(
             Ok(id) => id,
             Err(err) => return Box::new(future::err((Box::new(err) as BoxedError).into())),
         };
-        let _discord_id = match discord_id {
+        let discord_id = match discord_id {
             Some(id) => id,
             None => return Box::new(future::ok(Response::new("This link seems to have expired. Get a new link from the bot with the \"link meetup\" command".into())))
         };
@@ -361,9 +365,125 @@ fn meetup_http_handler(
                             )));
         }
         // Exchange the code with a token.
-        let _code = AuthorizationCode::new(code.to_string());
-        // TODO
-        Box::new(future::ok(Response::new("Thanks for logging in :)".into())))
+        let code = AuthorizationCode::new(code.to_string());
+        let redis_connection_mutex = redis_connection_mutex.clone();
+        let future = oauth2_authorization_client
+            .exchange_code(code)
+            .request_async(async_http_client)
+            .map_err(|err| {
+                (Box::new(SimpleError::new(format!("RequestTokenError: {}", err))) as BoxedError)
+                    .into()
+            })
+            .and_then(move |token_res| {
+                // Get the user's Meetup ID
+                let async_user_meetup_client =
+                    crate::meetup_api::AsyncClient::new(token_res.access_token().secret());
+                async_user_meetup_client
+                    .get_member_profile(None)
+                    .from_err::<HandlerError>()
+                    .and_then(move |user_info| {
+                        let (meetup_id, meetup_name) = match user_info {
+                            Some(info) => (info.id, info.name),
+                            _ => {
+                                return future::err(
+                                    Response::new("Could not find Meetup ID".to_owned()).into(),
+                                )
+                            }
+                        };
+                        let redis_key_d2m = format!("discord_user:{}:meetup_user", discord_id);
+                        let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
+                        // Check that the Discord ID has not been linked yet
+                        let existing_meetup_id: RedisResult<Option<u64>> =
+                            redis_connection_mutex.lock().get(&redis_key_d2m);
+                        match existing_meetup_id {
+                            Ok(Some(existing_meetup_id)) => {
+                                if existing_meetup_id == meetup_id {
+                                    return future::err(
+                                        Response::new(
+                                            "All good, your Meetup account was already linked"
+                                                .to_owned(),
+                                        )
+                                        .into(),
+                                    );
+                                } else {
+                                    return future::err(
+                                    Response::new(
+                                        "You are already linked to a different Meetup account. \
+                                         If you really want to change this, unlink your currently \
+                                         linked meetup account first by writing:\n\
+                                         {} unlink meetup"
+                                            .to_owned(),
+                                    )
+                                    .into(),
+                                );
+                                }
+                            }
+                            Err(err) => return future::err((Box::new(err) as BoxedError).into()),
+                            _ => (),
+                        }
+                        // Check that the Meetup ID has not been linked to some other Discord ID yet
+                        let existing_discord_id: RedisResult<Option<u64>> =
+                            redis_connection_mutex.lock().get(&redis_key_m2d);
+                        match existing_discord_id {
+                            Ok(Some(_)) => {
+                                return future::err(
+                                    Response::new(
+                                        "This Meetup account is alread linked to someone else. \
+                                         If you are sure that you specified the correct Meetup id, \
+                                         please contact an @Organiser"
+                                            .to_owned(),
+                                    )
+                                    .into(),
+                                );
+                            }
+                            Err(err) => return future::err((Box::new(err) as BoxedError).into()),
+                            _ => (),
+                        }
+                        // Create the link between the Discord and the Meetup ID
+                        let mut successful = false;
+                        let res: RedisResult<()> = {
+                            let mut redis_connection = redis_connection_mutex.lock();
+                            redis::transaction(
+                                &mut *redis_connection,
+                                &[&redis_key_d2m, &redis_key_m2d],
+                                |con, pipe| {
+                                    let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m)?;
+                                    let linked_discord_id: Option<u64> = con.get(&redis_key_m2d)?;
+                                    if linked_meetup_id.is_some() || linked_discord_id.is_some() {
+                                        // The meetup id was linked in the meantime, abort
+                                        successful = false;
+                                        // Execute empty transaction just to get out of the closure
+                                        pipe.query(con)
+                                    } else {
+                                        pipe.sadd("meetup_users", meetup_id)
+                                            .sadd("discord_users", discord_id)
+                                            .set(&redis_key_d2m, meetup_id)
+                                            .set(&redis_key_m2d, discord_id)
+                                            .ignore();
+                                        successful = true;
+                                        pipe.query(con)
+                                    }
+                                },
+                            )
+                        };
+                        if let Err(err) = res {
+                            return future::err((Box::new(err) as BoxedError).into());
+                        }
+                        if !successful {
+                            return future::err(
+                                Response::new(
+                                    "Could not assign meetup id (timing error)".to_owned(),
+                                )
+                                .into(),
+                            );
+                        }
+                        future::ok(Response::new(
+                            format!("Successfully linked to {}'s Meetup account", meetup_name)
+                                .into(),
+                        ))
+                    })
+            });
+        Box::new(future)
     } else {
         Box::new(future::ok(Response::new("Unknown route".into())))
     }
@@ -414,6 +534,7 @@ impl OAuth2Consumer {
         redis_connection: redis::Connection,
         discord_http: Arc<serenity::CacheAndHttp>,
         meetup_client: Arc<Mutex<Option<crate::meetup_api::Client>>>,
+        async_meetup_client: Arc<Mutex<Option<crate::meetup_api::AsyncClient>>>,
     ) -> impl Future<Item = (), Error = ()> + Send + 'static {
         let redis_connection_mutex = Arc::new(Mutex::new(redis_connection));
         // And a MakeService to handle each connection...
@@ -422,12 +543,14 @@ impl OAuth2Consumer {
             let link_client = self.link_client.clone();
             let redis_connection_mutex = redis_connection_mutex.clone();
             let meetup_client = meetup_client.clone();
+            let async_meetup_client = async_meetup_client.clone();
             move || {
                 let authorization_client = authorization_client.clone();
                 let link_client = link_client.clone();
                 let redis_connection_mutex = redis_connection_mutex.clone();
                 let discord_http = discord_http.clone();
                 let meetup_client = meetup_client.clone();
+                let async_meetup_client = async_meetup_client.clone();
                 service_fn(move |req| {
                     meetup_http_handler(
                         &redis_connection_mutex,
@@ -435,6 +558,7 @@ impl OAuth2Consumer {
                         &link_client,
                         &discord_http,
                         &meetup_client,
+                        &async_meetup_client,
                         req,
                     )
                     // Catch all errors and don't let the details of internal server erros leak

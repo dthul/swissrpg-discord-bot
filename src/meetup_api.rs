@@ -76,12 +76,37 @@ impl Client {
         }
     }
 
-    // Gets the user with the specified ID
-    pub fn get_user(&self, id: u64) -> crate::Result<Option<User>> {
-        let url = format!(
+    pub fn get_group_profile(&self, id: Option<u64>) -> crate::Result<Option<User>> {
+        let url = match id {
+            Some(id) => format!(
+            "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
+            BASE_URL, URLNAME, id
+        ),
+        _ =>format!(
+            "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+            BASE_URL, URLNAME
+        ),
+        };
+        let url = url.parse()?;
+        let mut response = self.client.execute(Request::new(Method::GET, url))?;
+        if let Ok(user) = response.json::<User>() {
+            return Ok(Some(user));
+        } else {
+            return Ok(None);
+        }
+    }
+
+    pub fn get_member_profile(&self, id: Option<u64>) -> crate::Result<Option<User>> {
+        let url = match id {
+            Some(id) => format!(
             "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
             BASE_URL, id
-        );
+        ),
+        _ =>format!(
+            "{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+            BASE_URL
+        ),
+        };
         let url = url.parse()?;
         let mut response = self.client.execute(Request::new(Method::GET, url))?;
         if let Ok(user) = response.json::<User>() {
@@ -124,14 +149,47 @@ impl AsyncClient {
     }
 
     // Gets the user with the specified ID
-    pub fn get_user(
+    pub fn get_group_profile(
         &self,
-        id: u64,
+        id: Option<u64>,
     ) -> impl futures::Future<Item = Option<User>, Error = crate::BoxedError> {
-        let url = format!(
+        let url = match id {
+            Some(id) => format!(
+            "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
+            BASE_URL, URLNAME, id
+        ),
+        _ =>format!(
+            "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+            BASE_URL, URLNAME
+        ),
+        };
+        self.client
+            .get(&url)
+            .send()
+            .from_err::<crate::BoxedError>()
+            .and_then(|mut response| {
+                response.json::<User>().then(|user| match user {
+                    Ok(user) => futures::future::ok(Some(user)),
+                    _ => futures::future::ok(None),
+                })
+            })
+    }
+
+    // Gets the user with the specified ID
+    pub fn get_member_profile(
+        &self,
+        id: Option<u64>,
+    ) -> impl futures::Future<Item = Option<User>, Error = crate::BoxedError> {
+        let url = match id {
+            Some(id) => format!(
             "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
             BASE_URL, id
-        );
+        ),
+        _ =>format!(
+            "{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+            BASE_URL
+        ),
+        };
         self.client
             .get(&url)
             .send()
