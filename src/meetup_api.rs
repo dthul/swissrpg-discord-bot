@@ -36,6 +36,14 @@ pub enum UserStatus {
     Blocked,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum Role {
+    AssistantOrganizer,
+    Coorganizer,
+    EventOrganizer,
+    Organizer,
+}
+
 impl<'de> Deserialize<'de> for UserStatus {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -51,6 +59,25 @@ impl<'de> Deserialize<'de> for UserStatus {
             _ => Err(D::Error::invalid_value(
                 serde::de::Unexpected::Enum,
                 &"one of [none, pending, pending_payment, active, blocked]",
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Role {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "assistant_organizer" => Ok(Role::AssistantOrganizer),
+            "coorganizer" => Ok(Role::Coorganizer),
+            "event_organizer" => Ok(Role::EventOrganizer),
+            "organizer" => Ok(Role::Organizer),
+            _ => Err(D::Error::invalid_value(
+                serde::de::Unexpected::Enum,
+                &"one of [assistant_organizer, coorganizer, event_organizer, organizer]",
             )),
         }
     }
@@ -151,6 +178,7 @@ impl AsyncClient {
     }
 
     // Gets the user with the specified ID
+    // TODO: add information about the user's role in the group
     pub fn get_group_profile(
         &self,
         id: Option<u64>,
@@ -205,6 +233,7 @@ impl AsyncClient {
     }
 
     // Gets the currently authenticated user's membership info
+    // TODO: this can be removed and the get_group_profile method used instead
     pub fn get_user_info(
         &self,
     ) -> impl futures::Future<Item = Option<UserInfo>, Error = crate::BoxedError> {
