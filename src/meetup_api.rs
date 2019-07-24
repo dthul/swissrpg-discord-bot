@@ -15,18 +15,19 @@ pub struct AsyncClient {
     client: reqwest::r#async::Client,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Photo {
     pub thumb_link: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct User {
     pub id: u64,
     pub name: String,
     pub photo: Option<Photo>,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum UserStatus {
     None,
     Pending,
@@ -55,7 +56,7 @@ impl<'de> Deserialize<'de> for UserStatus {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct UserInfo {
     pub status: UserStatus,
     pub role: Option<String>,
@@ -79,13 +80,13 @@ impl Client {
     pub fn get_group_profile(&self, id: Option<u64>) -> crate::Result<Option<User>> {
         let url = match id {
             Some(id) => format!(
-            "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
-            BASE_URL, URLNAME, id
-        ),
-        _ =>format!(
-            "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
-            BASE_URL, URLNAME
-        ),
+                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
+                BASE_URL, URLNAME, id
+            ),
+            _ => format!(
+                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+                BASE_URL, URLNAME
+            ),
         };
         let url = url.parse()?;
         let mut response = self.client.execute(Request::new(Method::GET, url))?;
@@ -99,13 +100,13 @@ impl Client {
     pub fn get_member_profile(&self, id: Option<u64>) -> crate::Result<Option<User>> {
         let url = match id {
             Some(id) => format!(
-            "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
-            BASE_URL, id
-        ),
-        _ =>format!(
-            "{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
-            BASE_URL
-        ),
+                "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
+                BASE_URL, id
+            ),
+            _ => format!(
+                "{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+                BASE_URL
+            ),
         };
         let url = url.parse()?;
         let mut response = self.client.execute(Request::new(Method::GET, url))?;
@@ -126,6 +127,7 @@ impl Client {
         let mut response = self.client.execute(Request::new(Method::GET, url))?;
         println!("get_user_info: {:?}", &response);
         if let Ok(user_info) = response.json::<UserInfo>() {
+            println!("\tbody: {:?}", user_info);
             return Ok(Some(user_info));
         } else {
             return Ok(None);
@@ -155,13 +157,13 @@ impl AsyncClient {
     ) -> impl futures::Future<Item = Option<User>, Error = crate::BoxedError> {
         let url = match id {
             Some(id) => format!(
-            "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
-            BASE_URL, URLNAME, id
-        ),
-        _ =>format!(
-            "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
-            BASE_URL, URLNAME
-        ),
+                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
+                BASE_URL, URLNAME, id
+            ),
+            _ => format!(
+                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+                BASE_URL, URLNAME
+            ),
         };
         self.client
             .get(&url)
@@ -182,13 +184,13 @@ impl AsyncClient {
     ) -> impl futures::Future<Item = Option<User>, Error = crate::BoxedError> {
         let url = match id {
             Some(id) => format!(
-            "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
-            BASE_URL, id
-        ),
-        _ =>format!(
-            "{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
-            BASE_URL
-        ),
+                "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
+                BASE_URL, id
+            ),
+            _ => format!(
+                "{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+                BASE_URL
+            ),
         };
         self.client
             .get(&url)
@@ -219,7 +221,10 @@ impl AsyncClient {
                 response
                     .json::<UserInfo>()
                     .then(|user_info| match user_info {
-                        Ok(user_info) => futures::future::ok(Some(user_info)),
+                        Ok(user_info) => {
+                            println!("\tbody: {:?}", user_info);
+                            futures::future::ok(Some(user_info))
+                        }
                         _ => futures::future::ok(None),
                     })
             })
