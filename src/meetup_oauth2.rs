@@ -20,9 +20,9 @@ const DOMAIN: &'static str = "bot.8na.de";
 const BASE_URL: &'static str = "http://bot.8na.de";
 lazy_static! {
     static ref LINK_URL_REGEX: regex::Regex =
-        regex::Regex::new(r"^/link/(?P<id>{a-zA-Z0-9\-_}+)$").unwrap();
+        regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)$").unwrap();
     static ref LINK_REDIRECT_URL_REGEX: regex::Regex =
-        regex::Regex::new(r"^/link/(?P<id>{a-zA-Z0-9\-_}+)/redirect$").unwrap();
+        regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)/redirect$").unwrap();
 }
 
 fn new_random_id(num_bytes: u32) -> String {
