@@ -7,7 +7,8 @@ use serenity::prelude::Mutex;
 use std::env;
 use std::sync::Arc;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type BoxedError = Box<dyn std::error::Error + Send + Sync>;
+type Result<T> = std::result::Result<T, BoxedError>;
 
 fn main() {
     let meetup_client_id =
