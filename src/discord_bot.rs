@@ -54,6 +54,8 @@ struct Regexes {
     create_channel_mention: Regex,
     link_meetup_dm: Regex,
     link_meetup_mention: Regex,
+    link_meetup_direct_dm: Regex,
+    link_meetup_direct_mention: Regex,
     unlink_meetup_dm: Regex,
     unlink_meetup_mention: Regex,
 }
@@ -72,6 +74,14 @@ impl Regexes {
             &self.link_meetup_dm
         } else {
             &self.link_meetup_mention
+        }
+    }
+
+    fn link_meetup_direct(&self, is_dm: bool) -> &Regex {
+        if is_dm {
+            &self.link_meetup_direct_dm
+        } else {
+            &self.link_meetup_direct_mention
         }
     }
 
@@ -96,12 +106,20 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         create_channel = create_channel
     );
-    let link_meetup = r"link[ -]?meetup\s+(?P<meetupid>[0-9]+)";
-    let link_meetup_dm = format!(r"^{link_meetup}\s*$", link_meetup = link_meetup);
+    let link_meetup_dm = r"^link[ -]?meetup\s*$";
     let link_meetup_mention = format!(
-        r"^{bot_mention}\s+{link_meetup}\s*$",
+        r"^{bot_mention}\s+link[ -]?meetup\s*$",
+        bot_mention = bot_mention
+    );
+    let link_meetup_direct = r"link[ -]?meetup\s+(?P<meetupid>[0-9]+)";
+    let link_meetup_direct_dm = format!(
+        r"^{link_meetup_direct}\s*$",
+        link_meetup_direct = link_meetup_direct
+    );
+    let link_meetup_direct_mention = format!(
+        r"^{bot_mention}\s+{link_meetup_direct}\s*$",
         bot_mention = bot_mention,
-        link_meetup = link_meetup
+        link_meetup_direct = link_meetup_direct
     );
     let unlink_meetup = r"unlink[ -]?meetup";
     let unlink_meetup_dm = format!(r"^{unlink_meetup}\s*$", unlink_meetup = unlink_meetup);
@@ -114,8 +132,10 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention: bot_mention,
         create_channel_dm: Regex::new(create_channel_dm.as_str()).unwrap(),
         create_channel_mention: Regex::new(create_channel_mention.as_str()).unwrap(),
-        link_meetup_dm: Regex::new(link_meetup_dm.as_str()).unwrap(),
+        link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
         link_meetup_mention: Regex::new(link_meetup_mention.as_str()).unwrap(),
+        link_meetup_direct_dm: Regex::new(link_meetup_direct_dm.as_str()).unwrap(),
+        link_meetup_direct_mention: Regex::new(link_meetup_direct_mention.as_str()).unwrap(),
         unlink_meetup_dm: Regex::new(unlink_meetup_dm.as_str()).unwrap(),
         unlink_meetup_mention: Regex::new(unlink_meetup_mention.as_str()).unwrap(),
     }
@@ -145,6 +165,79 @@ struct Handler;
 
 impl Handler {
     fn link_meetup(
+        ctx: &Context,
+        msg: &Message,
+        regexes: &Regexes,
+        user_id: u64,
+    ) -> crate::Result<()> {
+        let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
+        let (redis_connection_mutex, meetup_client_mutex) = {
+            let data = ctx.data.read();
+            (
+                data.get::<RedisConnectionKey>()
+                    .ok_or_else(|| Box::new(SimpleError::new("Redis connection was not set")))?
+                    .clone(),
+                data.get::<MeetupClientKey>()
+                    .ok_or_else(|| Box::new(SimpleError::new("Meetup client was not set")))?
+                    .clone(),
+            )
+        };
+        // Check if there is already a meetup id linked to this user
+        // and issue a warning
+        let linked_meetup_id: Option<u64> = {
+            let mut redis_connection = redis_connection_mutex.lock();
+            redis_connection.get(&redis_key_d2m)?
+        };
+        if let Some(linked_meetup_id) = linked_meetup_id {
+            match *meetup_client_mutex.lock() {
+                Some(ref meetup_client) => {
+                    match meetup_client.get_member_profile(Some(linked_meetup_id))? {
+                        Some(user) => {
+                            let _ = msg.channel_id.say(
+                                &ctx.http,
+                                format!(
+                                    "You are already linked to {}'s Meetup account. \
+                                     If you really want to change this, unlink your currently \
+                                     linked meetup account first by writing:\n\
+                                     {} unlink meetup",
+                                    user.name, regexes.bot_mention
+                                ),
+                            );
+                        }
+                        _ => {
+                            let _ = msg.channel_id.say(
+                                &ctx.http,
+                                format!(
+                                    "You are linked to a seemingly non-existent Meetup account. \
+                                     If you want to change this, unlink the currently \
+                                     linked meetup account by writing:\n\
+                                     {} unlink meetup",
+                                    regexes.bot_mention
+                                ),
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        format!(
+                            "You are already linked to a Meetup account. \
+                             If you really want to change this, unlink your currently \
+                             linked meetup account first by writing:\n\
+                             {} unlink meetup",
+                            regexes.bot_mention
+                        ),
+                    );
+                }
+            }
+            // TODO: create OAuth link
+            return Ok(());
+        }
+        Ok(())
+    }
+
+    fn link_meetup_direct(
         ctx: &Context,
         msg: &Message,
         regexes: &Regexes,
@@ -351,7 +444,19 @@ impl EventHandler for Handler {
             is_dm = false;
         }
         // TODO: might want to use a RegexSet here to speed up matching
-        if let Some(captures) = regexes.link_meetup(is_dm).captures(&msg.content) {
+        if let Some(_) = regexes.link_meetup(is_dm).captures(&msg.content) {
+            let user_id = msg.author.id.0;
+            match Self::link_meetup(&ctx, &msg, &regexes, user_id) {
+                Err(err) => {
+                    eprintln!("Error: {}", err);
+                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    return;
+                }
+                _ => return,
+            }
+        }
+        if let Some(captures) = regexes.link_meetup_direct(is_dm).captures(&msg.content) {
+            // TODO: this is only for organizers
             let user_id = msg.author.id.0;
             let meetup_id = captures.name("meetupid").unwrap().as_str();
             // Try to convert the specified ID to an integer
@@ -364,7 +469,7 @@ impl EventHandler for Handler {
                     return;
                 }
             };
-            match Self::link_meetup(&ctx, &msg, &regexes, user_id, meetup_id) {
+            match Self::link_meetup_direct(&ctx, &msg, &regexes, user_id, meetup_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
                     let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
@@ -383,7 +488,9 @@ impl EventHandler for Handler {
                 _ => return,
             }
         } else if let Some(captures) = regexes.create_channel(is_dm).captures(&msg.content) {
-            // TODO: check permission
+            // TODO: this is only for organizers
+            // TODO: needs host
+            // TODO: redis schema
             let channel_name = captures.name("channelname").unwrap().as_str();
             if let Some(guild_id) = msg.guild_id {
                 match guild_id.create_role(&ctx, |role_builder| {
