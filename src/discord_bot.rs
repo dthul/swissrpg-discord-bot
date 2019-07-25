@@ -238,8 +238,8 @@ impl Handler {
         let dm = msg.author.direct_message(ctx, |message| {
             message.content(format!(
                 "Visit the following website to link your Meetup profile: {}\n\
-                 ***This is a private one-time use link and meant just for you.***\n\
-                 Don't share it or others might link your Discord account to their Meetup profile.",
+                 ***This is a private, ephemeral, one-time use link and meant just for you.***\n\
+                 Don't share it with others or they might link your Discord account to their Meetup profile.",
                 url
             ))
         });
