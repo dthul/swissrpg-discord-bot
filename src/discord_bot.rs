@@ -199,7 +199,7 @@ impl Handler {
                                     "You are already linked to {}'s Meetup account. \
                                      If you really want to change this, unlink your currently \
                                      linked meetup account first by writing:\n\
-                                     `{} unlink meetup`",
+                                     {} unlink meetup",
                                     user.name, regexes.bot_mention
                                 ),
                             );
@@ -211,7 +211,7 @@ impl Handler {
                                     "You are linked to a seemingly non-existent Meetup account. \
                                      If you want to change this, unlink the currently \
                                      linked meetup account by writing:\n\
-                                     `{} unlink meetup`",
+                                     {} unlink meetup",
                                     regexes.bot_mention
                                 ),
                             );
@@ -225,7 +225,7 @@ impl Handler {
                             "You are already linked to a Meetup account. \
                              If you really want to change this, unlink your currently \
                              linked meetup account first by writing:\n\
-                             `{} unlink meetup`",
+                             {} unlink meetup",
                             regexes.bot_mention
                         ),
                     );
@@ -233,6 +233,7 @@ impl Handler {
             }
             return Ok(());
         }
+        // TODO: always answer in a DM
         let url =
             crate::meetup_oauth2::generate_meetup_linking_link(&redis_connection_mutex, user_id)?;
         let _ = msg.channel_id.say(
