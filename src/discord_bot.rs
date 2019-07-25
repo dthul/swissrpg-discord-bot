@@ -231,21 +231,19 @@ impl Handler {
                     );
                 }
             }
-            let url = crate::meetup_oauth2::generate_meetup_linking_link(
-                &redis_connection_mutex,
-                user_id,
-            )?;
-            let _ = msg.channel_id.say(
-                &ctx.http,
-                format!(
-                    "Visit the following website to link your Meetup profile: {}\n\
-                     ***This is a private one-time use link and meant just for you.***\n
-                     Don't share it or others might link your Discord account to their Meetup profile.",
-                    url
-                ),
-            );
             return Ok(());
         }
+        let url =
+            crate::meetup_oauth2::generate_meetup_linking_link(&redis_connection_mutex, user_id)?;
+        let _ = msg.channel_id.say(
+            &ctx.http,
+            format!(
+                "Visit the following website to link your Meetup profile: {}\n\
+                    ***This is a private one-time use link and meant just for you.***\n
+                    Don't share it or others might link your Discord account to their Meetup profile.",
+                url
+            ),
+        );
         Ok(())
     }
 
@@ -466,8 +464,7 @@ impl EventHandler for Handler {
                 }
                 _ => return,
             }
-        }
-        if let Some(captures) = regexes.link_meetup_direct(is_dm).captures(&msg.content) {
+        } else if let Some(captures) = regexes.link_meetup_direct(is_dm).captures(&msg.content) {
             // TODO: this is only for organizers
             let user_id = msg.author.id.0;
             let meetup_id = captures.name("meetupid").unwrap().as_str();
