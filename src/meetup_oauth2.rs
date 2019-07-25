@@ -385,7 +385,11 @@ fn meetup_http_handler(
         // Exchange the code with a token.
         let code = AuthorizationCode::new(code.to_string());
         let redis_connection_mutex = redis_connection_mutex.clone();
-        let future = oauth2_authorization_client
+        let future = oauth2_link_client
+            .clone()
+            .set_redirect_url(RedirectUrl::new(
+                Url::parse(format!("{}/link/{}/redirect", BASE_URL, linking_id).as_str()).unwrap(),
+            ))
             .exchange_code(code)
             .request_async(async_http_client)
             .map_err(|err| {
