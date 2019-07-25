@@ -235,15 +235,14 @@ impl Handler {
         }
         let url =
             crate::meetup_oauth2::generate_meetup_linking_link(&redis_connection_mutex, user_id)?;
-        let dm = msg.author.direct_message(
-            ctx,
-            |message| message.content(format!(
+        let dm = msg.author.direct_message(ctx, |message| {
+            message.content(format!(
                 "Visit the following website to link your Meetup profile: {}\n\
-                    ***This is a private one-time use link and meant just for you.***\n
-                    Don't share it or others might link your Discord account to their Meetup profile.",
+                 ***This is a private one-time use link and meant just for you.***\n
+                 Don't share it or others might link your Discord account to their Meetup profile.",
                 url
             ))
-        );
+        });
         match dm {
             Ok(_) => {
                 let _ = msg.react(ctx, '👌');

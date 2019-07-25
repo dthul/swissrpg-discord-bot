@@ -21,13 +21,20 @@ pub struct Photo {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct GroupProfile {
+    pub role: Option<LeadershipRole>,
+    pub status: UserStatus,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct User {
     pub id: u64,
     pub name: String,
     pub photo: Option<Photo>,
+    pub group_profile: Option<GroupProfile>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum UserStatus {
     None,
     Pending,
@@ -36,8 +43,8 @@ pub enum UserStatus {
     Blocked,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum Role {
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum LeadershipRole {
     AssistantOrganizer,
     Coorganizer,
     EventOrganizer,
@@ -64,17 +71,17 @@ impl<'de> Deserialize<'de> for UserStatus {
     }
 }
 
-impl<'de> Deserialize<'de> for Role {
+impl<'de> Deserialize<'de> for LeadershipRole {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
         match s.as_str() {
-            "assistant_organizer" => Ok(Role::AssistantOrganizer),
-            "coorganizer" => Ok(Role::Coorganizer),
-            "event_organizer" => Ok(Role::EventOrganizer),
-            "organizer" => Ok(Role::Organizer),
+            "assistant_organizer" => Ok(LeadershipRole::AssistantOrganizer),
+            "coorganizer" => Ok(LeadershipRole::Coorganizer),
+            "event_organizer" => Ok(LeadershipRole::EventOrganizer),
+            "organizer" => Ok(LeadershipRole::Organizer),
             _ => Err(D::Error::invalid_value(
                 serde::de::Unexpected::Enum,
                 &"one of [assistant_organizer, coorganizer, event_organizer, organizer]",
@@ -107,11 +114,11 @@ impl Client {
     pub fn get_group_profile(&self, id: Option<u64>) -> crate::Result<Option<User>> {
         let url = match id {
             Some(id) => format!(
-                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
+                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
                 BASE_URL, URLNAME, id
             ),
             _ => format!(
-                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
                 BASE_URL, URLNAME
             ),
         };
@@ -143,23 +150,6 @@ impl Client {
             return Ok(None);
         }
     }
-
-    // Gets the currently authenticated user's membership info
-    pub fn get_user_info(&self) -> crate::Result<Option<UserInfo>> {
-        let url = format!(
-            "{}/{}?&only=self&omit=self.actions,self.membership_dues,self.previous_membership_dues,self.visited",
-            BASE_URL, URLNAME
-        );
-        let url = url.parse()?;
-        let mut response = self.client.execute(Request::new(Method::GET, url))?;
-        println!("get_user_info: {:?}", &response);
-        if let Ok(user_info) = response.json::<UserInfo>() {
-            println!("\tbody: {:?}", user_info);
-            return Ok(Some(user_info));
-        } else {
-            return Ok(None);
-        }
-    }
 }
 
 impl AsyncClient {
@@ -178,18 +168,17 @@ impl AsyncClient {
     }
 
     // Gets the user with the specified ID
-    // TODO: add information about the user's role in the group
     pub fn get_group_profile(
         &self,
         id: Option<u64>,
     ) -> impl futures::Future<Item = Option<User>, Error = crate::BoxedError> {
         let url = match id {
             Some(id) => format!(
-                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
+                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
                 BASE_URL, URLNAME, id
             ),
             _ => format!(
-                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
+                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
                 BASE_URL, URLNAME
             ),
         };
@@ -229,33 +218,6 @@ impl AsyncClient {
                     Ok(user) => futures::future::ok(Some(user)),
                     _ => futures::future::ok(None),
                 })
-            })
-    }
-
-    // Gets the currently authenticated user's membership info
-    // TODO: this can be removed and the get_group_profile method used instead
-    pub fn get_user_info(
-        &self,
-    ) -> impl futures::Future<Item = Option<UserInfo>, Error = crate::BoxedError> {
-        let url = format!(
-            "{}/{}?&only=self&omit=self.actions,self.membership_dues,self.previous_membership_dues,self.visited",
-            BASE_URL, URLNAME
-        );
-        self.client
-            .get(&url)
-            .send()
-            .from_err::<crate::BoxedError>()
-            .and_then(|mut response| {
-                println!("get_user_info: {:?}", &response);
-                response
-                    .json::<UserInfo>()
-                    .then(|user_info| match user_info {
-                        Ok(user_info) => {
-                            println!("\tbody: {:?}", user_info);
-                            futures::future::ok(Some(user_info))
-                        }
-                        _ => futures::future::ok(None),
-                    })
             })
     }
 }

@@ -1,3 +1,4 @@
+use crate::meetup_api;
 use crate::BoxedError;
 use cookie::Cookie;
 use futures::future;
@@ -146,8 +147,8 @@ fn meetup_http_handler(
     oauth2_authorization_client: &BasicClient,
     oauth2_link_client: &BasicClient,
     _discord_http: &serenity::CacheAndHttp,
-    meetup_client: &Arc<Mutex<Option<crate::meetup_api::Client>>>,
-    async_meetup_client: &Arc<Mutex<Option<crate::meetup_api::AsyncClient>>>,
+    meetup_client: &Arc<Mutex<Option<meetup_api::Client>>>,
+    async_meetup_client: &Arc<Mutex<Option<meetup_api::AsyncClient>>>,
     req: Request<Body>,
 ) -> ResponseFuture {
     let (method, path) = (req.method(), req.uri().path());
@@ -228,23 +229,25 @@ fn meetup_http_handler(
             .and_then(|token_res| {
                 // Check that this token belongs to an organizer
                 let new_async_meetup_client =
-                    crate::meetup_api::AsyncClient::new(token_res.access_token().secret());
+                    meetup_api::AsyncClient::new(token_res.access_token().secret());
                 new_async_meetup_client
-                    .get_user_info()
+                    .get_group_profile(None)
                     .from_err::<HandlerError>()
-                    .and_then(move |user_info| {
-                        let is_organizer = match user_info {
-                            Some(crate::meetup_api::UserInfo {
-                                role: Some(_role), ..
-                            }) => {
-                                // TODO: check role
-                                false
-                            }
+                    .and_then(move |user| {
+                        let is_organizer = match user {
+                            Some(meetup_api::User {
+                                group_profile:
+                                    Some(meetup_api::GroupProfile {
+                                        status: meetup_api::UserStatus::Active,
+                                        role: Some(role),
+                                    }),
+                                ..
+                            }) => role == meetup_api::LeadershipRole::Organizer,
                             _ => false,
                         };
                         if !is_organizer {
                             return future::err(
-                                Response::new("Only organizers can log in".to_owned()).into(),
+                                Response::new("Only the organizer can log in".to_owned()).into(),
                             );
                         }
                         // Store the new access and refresh tokens in Redis
@@ -269,7 +272,7 @@ fn meetup_http_handler(
                         }
                         // Replace the meetup client
                         let new_blocking_meetup_client =
-                            crate::meetup_api::Client::new(token_res.access_token().secret());
+                            meetup_api::Client::new(token_res.access_token().secret());
                         *meetup_client.lock() = Some(new_blocking_meetup_client);
                         *async_meetup_client.lock() = Some(new_async_meetup_client);
                         future::ok(Response::new("Thanks for logging in :)".into()))
@@ -399,7 +402,7 @@ fn meetup_http_handler(
             .and_then(move |token_res| {
                 // Get the user's Meetup ID
                 let async_user_meetup_client =
-                    crate::meetup_api::AsyncClient::new(token_res.access_token().secret());
+                    meetup_api::AsyncClient::new(token_res.access_token().secret());
                 async_user_meetup_client
                     .get_member_profile(None)
                     .from_err::<HandlerError>()
@@ -555,8 +558,8 @@ impl OAuth2Consumer {
         addr: std::net::SocketAddr,
         redis_connection: redis::Connection,
         discord_http: Arc<serenity::CacheAndHttp>,
-        meetup_client: Arc<Mutex<Option<crate::meetup_api::Client>>>,
-        async_meetup_client: Arc<Mutex<Option<crate::meetup_api::AsyncClient>>>,
+        meetup_client: Arc<Mutex<Option<meetup_api::Client>>>,
+        async_meetup_client: Arc<Mutex<Option<meetup_api::AsyncClient>>>,
     ) -> impl Future<Item = (), Error = ()> + Send + 'static {
         let redis_connection_mutex = Arc::new(Mutex::new(redis_connection));
         // And a MakeService to handle each connection...
@@ -612,7 +615,7 @@ impl OAuth2Consumer {
     pub fn token_refresh_task(
         &self,
         mut redis_connection: redis::Connection,
-        meetup_client: Arc<Mutex<Option<crate::meetup_api::Client>>>,
+        meetup_client: Arc<Mutex<Option<meetup_api::Client>>>,
     ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static
     {
         let oauth2_client = self.authorization_client.clone();
@@ -674,8 +677,7 @@ impl OAuth2Consumer {
                         );
                     }
                 };
-                *meetup_client_lock =
-                    Some(crate::meetup_api::Client::new(new_access_token.secret()));
+                *meetup_client_lock = Some(meetup_api::Client::new(new_access_token.secret()));
                 drop(meetup_client_lock);
                 // Store the new tokens in Redis
                 let res: RedisResult<()> = redis_connection.set_multiple(&[
