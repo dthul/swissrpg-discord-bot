@@ -245,7 +245,7 @@ impl Handler {
         });
         match dm {
             Ok(_) => {
-                let _ = msg.react(ctx, '👌');
+                let _ = msg.react(ctx, "\u{2705}");
             }
             Err(why) => {
                 eprintln!("Error sending Meetup linking DM: {:?}", why);
