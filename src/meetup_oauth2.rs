@@ -82,6 +82,24 @@ fn check_csrf_cookie(
     Ok(csrf_state == csrf_stored_state)
 }
 
+pub fn generate_meetup_linking_link(
+    redis_connection: &Mutex<redis::Connection>,
+    discord_id: u64,
+) -> crate::Result<String> {
+    let linking_id = new_random_id(16);
+    let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
+    let _: () = match redis_connection.lock().set(&redis_key, discord_id) {
+        Ok(id) => id,
+        Err(err) => {
+            return Err(Box::new(SimpleError::new(format!(
+                "Redis error when trying to generate Meetup linking link: {}",
+                err
+            ))))
+        }
+    };
+    return Ok(format!("{}/link/{}", BASE_URL, &linking_id));
+}
+
 // Error type returned by the async handler.
 // An error can either be an HTTP response that will be shown to the user
 // (if the error is a "domain logic" error) or an internal server error,
@@ -311,10 +329,10 @@ fn meetup_http_handler(
             _ => return Box::new(future::ok(Response::new("Invalid request".into()))),
         };
         let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
-        let (discord_id,): (Option<u64>,) = match redis::pipe()
-            .expire(&redis_key, 600)
-            .ignore()
+        // This is a one-time use link. Expire it now.
+        let (discord_id, _): (Option<u64>, u32) = match redis::pipe()
             .get(&redis_key)
+            .del(&redis_key)
             .query(&mut *redis_connection_mutex.lock())
         {
             Ok(id) => id,
