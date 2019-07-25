@@ -233,18 +233,26 @@ impl Handler {
             }
             return Ok(());
         }
-        // TODO: always answer in a DM
         let url =
             crate::meetup_oauth2::generate_meetup_linking_link(&redis_connection_mutex, user_id)?;
-        let _ = msg.channel_id.say(
-            &ctx.http,
-            format!(
+        let dm = msg.author.direct_message(
+            ctx,
+            |message| message.content(format!(
                 "Visit the following website to link your Meetup profile: {}\n\
                     ***This is a private one-time use link and meant just for you.***\n
                     Don't share it or others might link your Discord account to their Meetup profile.",
                 url
-            ),
+            ))
         );
+        match dm {
+            Ok(_) => {
+                let _ = msg.react(ctx, '👌');
+            }
+            Err(why) => {
+                eprintln!("Error sending Meetup linking DM: {:?}", why);
+                let _ = msg.reply(ctx, "There was an error DMing you help.");
+            }
+        }
         Ok(())
     }
 
@@ -415,6 +423,7 @@ impl Handler {
         Ok(())
     }
 }
+
 impl EventHandler for Handler {
     // Set a handler for the `message` event - so that whenever a new message
     // is received - the closure (or function) passed will be called.
