@@ -4,6 +4,18 @@ Use the following URL:
 
 `https://discordapp.com/api/oauth2/authorize?client_id=600752105518792716&permissions=268568592&scope=bot`
 
+# Build using Docker
+
+First, create a Docker image called `swissrpg-bot` that contains the necessary build software:
+
+`$ docker build --tag swissrpg-bot ./docker`
+
+Then, run the compile script which will create a Docker container (or reuse an existing one) and build the project.
+
+`$ ./docker/compile.sh`
+
+On success, the compiled binary will be copied to the root of this repository.
+
 # Install systemd service
 
 Copy `bot.service` to `/etc/systemd/system/`. Then:
