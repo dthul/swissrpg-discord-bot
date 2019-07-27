@@ -1,10 +1,10 @@
 #!/bin/bash
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-num_cont=$(docker container ls -a -f name=swissrpg-compile-container -q | wc -l)
-if [ $num_cont -lt 1 ]
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+num_containers=$(docker container ls --all --quiet --filter name=swissrpg-compile-container | wc -l)
+if [ $num_containers -lt 1 ]
 then
     # Create the container if it doesn't exist yet
-    docker create -it -v "${DIR}/..":/opt --name=swissrpg-compile-container swissrpg-bot
+    docker create -it --volume "${SCRIPT_DIR}/..":/opt --name=swissrpg-compile-container swissrpg-bot
 fi
 # Start the container
 docker start swissrpg-compile-container

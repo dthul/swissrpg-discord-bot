@@ -3,7 +3,7 @@ pub mod meetup_api;
 pub mod meetup_oauth2;
 
 use redis::Commands;
-use serenity::prelude::Mutex;
+use serenity::prelude::{Mutex, RwLock};
 use std::env;
 use std::sync::Arc;
 
@@ -30,14 +30,14 @@ fn main() {
         .expect("Meetup access token could not be loaded from Redis");
     let (meetup_client, async_meetup_client) = match meetup_access_token {
         Some(meetup_access_token) => (
-            Arc::new(Mutex::new(Some(meetup_api::Client::new(
+            Arc::new(RwLock::new(Some(meetup_api::Client::new(
                 &meetup_access_token,
             )))),
-            Arc::new(Mutex::new(Some(meetup_api::AsyncClient::new(
+            Arc::new(RwLock::new(Some(meetup_api::AsyncClient::new(
                 &meetup_access_token,
             )))),
         ),
-        None => (Arc::new(Mutex::new(None)), Arc::new(Mutex::new(None))),
+        None => (Arc::new(RwLock::new(None)), Arc::new(RwLock::new(None))),
     };
 
     // Create a Meetup OAuth2 consumer

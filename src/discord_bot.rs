@@ -17,7 +17,7 @@ const MENTION_PATTERN: &'static str = r"<@[0-9]+>";
 pub fn create_discord_client(
     discord_token: &str,
     redis_client: &redis::Client,
-    meetup_client: Arc<Mutex<Option<crate::meetup_api::Client>>>,
+    meetup_client: Arc<RwLock<Option<crate::meetup_api::Client>>>,
 ) -> crate::Result<Client> {
     let redis_connection = redis_client.get_connection()?;
 
@@ -158,7 +158,7 @@ impl TypeMapKey for RegexesKey {
 
 struct MeetupClientKey;
 impl TypeMapKey for MeetupClientKey {
-    type Value = Arc<Mutex<Option<crate::meetup_api::Client>>>;
+    type Value = Arc<RwLock<Option<crate::meetup_api::Client>>>;
 }
 
 struct Handler;
@@ -189,7 +189,7 @@ impl Handler {
             redis_connection.get(&redis_key_d2m)?
         };
         if let Some(linked_meetup_id) = linked_meetup_id {
-            match *meetup_client_mutex.lock() {
+            match *meetup_client_mutex.read() {
                 Some(ref meetup_client) => {
                     match meetup_client.get_member_profile(Some(linked_meetup_id))? {
                         Some(user) => {
