@@ -3,7 +3,7 @@ pub mod meetup_api;
 pub mod meetup_oauth2;
 
 use redis::Commands;
-use serenity::prelude::{Mutex, RwLock};
+use serenity::prelude::RwLock;
 use std::env;
 use std::sync::Arc;
 

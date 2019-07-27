@@ -320,7 +320,7 @@ impl Handler {
         // The user has not yet linked their meetup account.
         // Test whether the specified Meetup user actually exists.
         let meetup_user = meetup_client_mutex
-            .lock()
+            .read()
             .as_ref()
             .ok_or_else(|| SimpleError::new("Meetup API unavailable"))?
             .get_member_profile(Some(meetup_id))?;

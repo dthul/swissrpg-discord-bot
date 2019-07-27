@@ -644,10 +644,7 @@ impl OAuth2Consumer {
                         );
                     }
                 };
-                // Try to exchange the refresh token for fresh access and refresh tokens.
-                // Lock the Meetup client in the meantime, such that other code does not
-                // try to use a stale access token
-                let mut meetup_client_lock = meetup_client.lock();
+                // Try to exchange the refresh token for fresh access and refresh tokens
                 let refresh_token = oauth2::RefreshToken::new(refresh_token);
                 let refresh_token_response = match oauth2_client
                     .exchange_refresh_token(&refresh_token)
@@ -677,8 +674,7 @@ impl OAuth2Consumer {
                         );
                     }
                 };
-                *meetup_client_lock = Some(meetup_api::Client::new(new_access_token.secret()));
-                drop(meetup_client_lock);
+                *meetup_client.write() = Some(meetup_api::Client::new(new_access_token.secret()));
                 // Store the new tokens in Redis
                 let res: RedisResult<()> = redis_connection.set_multiple(&[
                     ("meetup_access_token", new_access_token.secret()),
