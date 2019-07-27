@@ -1,8 +1,11 @@
-use futures::future::Future;
+use futures::future;
+use futures::stream;
+use futures::{Future, Stream};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
 use reqwest::{Method, Request};
 use serde::de::Error as _;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 const BASE_URL: &'static str = "https://api.meetup.com";
 pub const URLNAME: &'static str = "SwissRPG-Zurich";
@@ -51,6 +54,18 @@ pub enum LeadershipRole {
     Organizer,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct Event {
+    pub id: u64,
+    pub name: String,
+    pub local_date: String,
+    pub local_time: String,
+    pub event_hosts: Vec<User>,
+    pub link: String,
+}
+
+type EventList = HashMap<String, Event>;
+
 impl<'de> Deserialize<'de> for UserStatus {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -94,6 +109,50 @@ impl<'de> Deserialize<'de> for LeadershipRole {
 pub struct UserInfo {
     pub status: UserStatus,
     pub role: Option<String>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum RSVPResponse {
+    Yes,
+    No,
+    Waitlist,
+}
+
+#[derive(Debug, Clone)]
+pub struct RSVP {
+    pub user: User,
+    pub response: RSVPResponse,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct _RSVP {
+    response: RSVPResponse,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct MemberRSVP {
+    member: User,
+    rsvp: _RSVP,
+}
+
+pub type MemberRSVPList = HashMap<String, MemberRSVP>;
+
+impl<'de> Deserialize<'de> for RSVPResponse {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "yes" => Ok(RSVPResponse::Yes),
+            "no" => Ok(RSVPResponse::No),
+            "waitlist" => Ok(RSVPResponse::Waitlist),
+            _ => Err(D::Error::invalid_value(
+                serde::de::Unexpected::Enum,
+                &"one of [yes, no, waitlist]",
+            )),
+        }
+    }
 }
 
 impl Client {
@@ -171,7 +230,7 @@ impl AsyncClient {
     pub fn get_group_profile(
         &self,
         id: Option<u64>,
-    ) -> impl futures::Future<Item = Option<User>, Error = crate::BoxedError> {
+    ) -> impl Future<Item = Option<User>, Error = crate::BoxedError> {
         let url = match id {
             Some(id) => format!(
                 "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
@@ -188,8 +247,8 @@ impl AsyncClient {
             .from_err::<crate::BoxedError>()
             .and_then(|mut response| {
                 response.json::<User>().then(|user| match user {
-                    Ok(user) => futures::future::ok(Some(user)),
-                    _ => futures::future::ok(None),
+                    Ok(user) => future::ok(Some(user)),
+                    _ => future::ok(None),
                 })
             })
     }
@@ -198,7 +257,7 @@ impl AsyncClient {
     pub fn get_member_profile(
         &self,
         id: Option<u64>,
-    ) -> impl futures::Future<Item = Option<User>, Error = crate::BoxedError> {
+    ) -> impl Future<Item = Option<User>, Error = crate::BoxedError> {
         let url = match id {
             Some(id) => format!(
                 "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
@@ -215,9 +274,45 @@ impl AsyncClient {
             .from_err::<crate::BoxedError>()
             .and_then(|mut response| {
                 response.json::<User>().then(|user| match user {
-                    Ok(user) => futures::future::ok(Some(user)),
-                    _ => futures::future::ok(None),
+                    Ok(user) => future::ok(Some(user)),
+                    _ => future::ok(None),
                 })
+            })
+    }
+
+    // Doesn't implement pagination. But since Meetup returns 200 elements per page,
+    // this does not matter for us anyway
+    pub fn get_upcoming_events(&self) -> impl Stream<Item = Event, Error = crate::BoxedError> {
+        let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=event_hosts.id,event_hosts.name,id,link,local_date,local_time,name", BASE_URL, URLNAME);
+        self.client
+            .get(&url)
+            .send()
+            .from_err::<crate::BoxedError>()
+            .and_then(|mut response| response.json::<EventList>().from_err::<crate::BoxedError>())
+            .map(|event_list| stream::iter_ok(event_list.into_iter().map(|(_, event)| event)))
+            .flatten_stream()
+    }
+
+    // Get members that RSVP'd yes
+    pub fn get_rsvps(&self, id: u64) -> impl Future<Item = Vec<RSVP>, Error = crate::BoxedError> {
+        let url = format!("{}/{}/events/{}/attendance?&sign=true&photo-host=public&page=200&omit=member.photo,member.event_context,member.role,rsvp.guests,rsvp.id,rsvp.updated", BASE_URL, URLNAME, id);
+        self.client
+            .get(&url)
+            .send()
+            .from_err::<crate::BoxedError>()
+            .and_then(|mut response| {
+                response
+                    .json::<MemberRSVPList>()
+                    .from_err::<crate::BoxedError>()
+            })
+            .map(|member_rsvp_list| {
+                member_rsvp_list
+                    .into_iter()
+                    .map(|(_, member_rsvp)| RSVP {
+                        user: member_rsvp.member,
+                        response: member_rsvp.rsvp.response,
+                    })
+                    .collect()
             })
     }
 }

@@ -1588,6 +1588,7 @@ dependencies = [
  "serenity 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "simple-error 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 1.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "white_rabbit 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
