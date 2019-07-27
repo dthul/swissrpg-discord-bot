@@ -1,6 +1,6 @@
 #!/bin/bash
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-num_cont=$(docker container ls -f name=swissrpg-compile-container -q | wc -l)
+num_cont=$(docker container ls -a -f name=swissrpg-compile-container -q | wc -l)
 if [ $num_cont -lt 1 ]
 then
     # Create the container if it doesn't exist yet
