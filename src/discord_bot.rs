@@ -249,7 +249,7 @@ impl Handler {
             }
             Err(why) => {
                 eprintln!("Error sending Meetup linking DM: {:?}", why);
-                let _ = msg.reply(ctx, "There was an error DMing you help.");
+                let _ = msg.reply(ctx, "There was an error trying to send you instructions.");
             }
         }
         Ok(())

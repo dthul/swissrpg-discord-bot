@@ -453,9 +453,12 @@ fn meetup_http_handler(
                             Ok(Some(_)) => {
                                 return future::err(
                                     Response::new(
-                                        "This Meetup account is alread linked to someone else. \
-                                         If you are sure that you specified the correct Meetup id, \
-                                         please contact an @Organiser"
+                                        "This Meetup account is already linked to a different Discord user. \
+                                         Did you link this Meetup account to another Discord account in the past? \
+                                         In that case you can first unlink this Meetup account from the other Discord \
+                                         account by writing \"@bot unlink meetup\" from the other Discord account. \
+                                         After that you can link this Meetup account again. \
+                                         If you did not link this Meetup account before, please contact an @Organiser"
                                             .to_owned(),
                                     )
                                     .into(),
