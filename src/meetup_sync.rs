@@ -1,6 +1,5 @@
 use crate::meetup_api;
 use futures::future;
-use futures::stream;
 use futures::{Future, Stream};
 use lazy_static::lazy_static;
 use redis;
@@ -104,15 +103,6 @@ fn sync_event(
         Some(captures) => captures.name("name").unwrap().as_str(),
         None => &event.name,
     };
-    // TODO: figure out whether this event belongs to a series
-    // For now, we assume that an event that reaches this method does not yet
-    // belong to a series and create a new one
-    let redis_events_key = "meetup_events";
-    let redis_series_key = "event_series";
-    let redis_event_users_key = format!("meetup_event:{}:meetup_users", event.id);
-    let redis_event_hosts_key = format!("meetup_event:{}:meetup_hosts", event.id);
-    let redis_event_series_key = format!("meetup_event:{}:event_series", event.id);
-    let redis_event_key = format!("meetup_event:{}", event.id); // -> (name, date, time, link, ...)
     let event_time = match event.get_time() {
         Some(time) => time,
         None => {
@@ -121,49 +111,131 @@ fn sync_event(
             )) as crate::BoxedError)) as BoxedFuture<_>
         }
     };
-    // transaction begin (watch everything except for redis_events_key and redis_series_key?)
+    let rsvp_yes_user_ids: Vec<_> = rsvps
+        .iter()
+        .filter_map(|rsvp| {
+            if rsvp.response == meetup_api::RSVPResponse::Yes {
+                Some(rsvp.user.id)
+            } else {
+                None
+            }
+        })
+        .collect();
+    // TODO: figure out whether this event belongs to a series
+    // For now, we assume that an event that reaches this method does not yet
+    // belong to a series and create a new one
+    let redis_events_key = "meetup_events";
+    let redis_series_key = "event_series";
+    let redis_event_users_key = format!("meetup_event:{}:meetup_users", event.id);
+    let redis_event_hosts_key = format!("meetup_event:{}:meetup_hosts", event.id);
+    let redis_event_series_key = format!("meetup_event:{}:event_series", event.id);
+    let redis_event_key = format!("meetup_event:{}", event.id);
     // technically: check that series id doesn't exist yet and generate a new one until it does not
     // practically: we will never generate a colliding id
-    redis_client.get_async_connection().and_then(|con| {
-        redis::cmd("GET")
-            .arg(&redis_event_series_key)
-            .query_async(con)
-            .and_then(|(con, series_id): (_, Option<String>)| {
-                let series_id = match series_id {
-                    Some(id) => id, // This event was already synced before and as such already has an event series ID
-                    None => crate::meetup_oauth2::new_random_id(16), // This event has never been synced before and we crate a new event series ID
-                };
-                let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
-                let rsvp_yes_user_ids: Vec<_> = rsvps
-                    .iter()
-                    .filter_map(|rsvp| {
-                        if rsvp.response == meetup_api::RSVPResponse::Yes {
-                            Some(rsvp.user.id)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                let host_user_ids: Vec<_> = event.event_hosts.iter().map(|user| user.id).collect();
-                let event_hash = &[
-                    ("name", event.name),
-                    ("time", event_time.to_rfc3339()),
-                    ("link", event.link),
-                ];
-                // TODO: use the transaction's pipe here
-                let mut pipe = redis::pipe();
-                pipe.sadd(redis_events_key, event.id)
-                    .sadd(redis_series_key, &series_id)
-                    .sadd(&redis_event_users_key, rsvp_yes_user_ids.as_slice())
-                    .sadd(&redis_event_hosts_key, host_user_ids.as_slice())
-                    .set(&redis_event_series_key, &series_id)
-                    .hset_multiple(&redis_event_key, event_hash)
-                    .ignore();
-                let fut: redis::RedisFuture<(_, ())> = pipe.query_async(con);
-                fut
-            })
-    });
+    let fut = redis_client
+        .get_async_connection()
+        .from_err::<crate::BoxedError>()
+        .and_then(move |con| {
+            let transaction_fn = {
+                let redis_event_users_key = redis_event_users_key.clone();
+                let redis_event_hosts_key = redis_event_hosts_key.clone();
+                let redis_event_series_key = redis_event_series_key.clone();
+                let redis_event_key = redis_event_key.clone();
+                move |con, mut pipe: redis::Pipeline| {
+                    let event = event.clone();
+                    let rsvp_yes_user_ids = rsvp_yes_user_ids.clone();
+                    let redis_events_key = redis_events_key.clone();
+                    let redis_series_key = redis_series_key.clone();
+                    let redis_event_users_key = redis_event_users_key.clone();
+                    let redis_event_hosts_key = redis_event_hosts_key.clone();
+                    let redis_event_series_key = redis_event_series_key.clone();
+                    let redis_event_key = redis_event_key.clone();
+                    let transaction_future = redis::cmd("GET")
+                        .arg(&redis_event_series_key)
+                        .query_async(con)
+                        .and_then(move |(con, series_id): (_, Option<String>)| {
+                            let series_id = match series_id {
+                                Some(id) => id, // This event was already synced before and as such already has an event series ID
+                                None => crate::meetup_oauth2::new_random_id(16), // This event has never been synced before and we crate a new event series ID
+                            };
+                            let redis_series_events_key =
+                                format!("event_series:{}:meetup_events", &series_id);
+                            let host_user_ids: Vec<_> =
+                                event.event_hosts.iter().map(|user| user.id).collect();
+                            let event_hash = &[
+                                ("name", event.name),
+                                ("time", event_time.to_rfc3339()),
+                                ("link", event.link),
+                            ];
+                            pipe.sadd(redis_events_key, event.id)
+                                .sadd(redis_series_key, &series_id)
+                                .sadd(&redis_event_users_key, rsvp_yes_user_ids.as_slice())
+                                .sadd(&redis_event_hosts_key, host_user_ids.as_slice())
+                                .set(&redis_event_series_key, &series_id)
+                                .sadd(&redis_series_events_key, event.id)
+                                .hset_multiple(&redis_event_key, event_hash)
+                                .ignore();
+                            pipe.query_async(con)
+                        });
+                    Box::new(transaction_future) as redis::RedisFuture<_>
+                }
+            };
+            async_redis_transaction::<_, (), _>(
+                con,
+                &[
+                    redis_event_users_key,
+                    redis_event_hosts_key,
+                    redis_event_series_key,
+                    redis_event_key,
+                ],
+                transaction_fn,
+            )
+        })
+        .map(|_| ())
+        .from_err::<crate::BoxedError>();
+    Box::new(fut)
+}
 
-    // transaction end
-    Box::new(future::ok(()))
+// A direct translation of redis::transaction for the async case
+// (except for the fact that it doesn't retry)
+fn async_redis_transaction<
+    K: redis::ToRedisArgs,
+    T: redis::FromRedisValue + Send + 'static,
+    F: FnMut(
+        redis::aio::Connection,
+        redis::Pipeline,
+    ) -> redis::RedisFuture<(redis::aio::Connection, Option<T>)>,
+>(
+    con: redis::aio::Connection,
+    keys: &[K],
+    mut func: F,
+) -> impl Future<Item = (redis::aio::Connection, T), Error = crate::BoxedError> {
+    redis::cmd("WATCH")
+        .arg(keys)
+        .query_async(con)
+        .from_err::<crate::BoxedError>()
+        .and_then(move |(con, _): (_, ())| {
+            let mut p = redis::pipe();
+            p.atomic();
+            func(con, p).from_err::<crate::BoxedError>().and_then(
+                |(con, response): (_, Option<T>)| {
+                    match response {
+                        None => Box::new(future::err(Box::new(SimpleError::new(
+                            "Redis transaction failed",
+                        ))
+                            as crate::BoxedError))
+                            as BoxedFuture<_>,
+                        Some(response) => {
+                            // make sure no watch is left in the connection, even if
+                            // someone forgot to use the pipeline.
+                            let future = redis::cmd("UNWATCH")
+                                .query_async(con)
+                                .from_err::<crate::BoxedError>()
+                                .map(|(con, _): (_, ())| (con, response));
+                            Box::new(future)
+                        }
+                    }
+                },
+            )
+        })
 }
