@@ -25,7 +25,7 @@ lazy_static! {
         regex::Regex::new(r"^\s*(?P<name>.+?)\s*\[").unwrap();
 }
 
-type BoxedFuture<T> = Box<dyn Future<Item = T, Error = crate::BoxedError> + Send>;
+pub type BoxedFuture<T, E=crate::BoxedError> = Box<dyn Future<Item = T, Error = E> + Send>;
 
 pub fn create_recurring_syncing_task(
     meetup_client: Arc<RwLock<Option<meetup_api::AsyncClient>>>,

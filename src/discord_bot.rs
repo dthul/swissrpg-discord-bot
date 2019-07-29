@@ -1,3 +1,4 @@
+use futures::Future;
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
 use serenity::{
@@ -10,14 +11,18 @@ use serenity::{
 };
 use simple_error::SimpleError;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::prelude::*;
 
 const CHANNEL_NAME_PATTERN: &'static str = r"(?:[0-9a-zA-Z_]+\-?)+"; // TODO: this is too strict
 const MENTION_PATTERN: &'static str = r"<@[0-9]+>";
 
 pub fn create_discord_client(
     discord_token: &str,
-    redis_client: &redis::Client,
+    redis_client: redis::Client,
     meetup_client: Arc<RwLock<Option<crate::meetup_api::Client>>>,
+    async_meetup_client: Arc<RwLock<Option<crate::meetup_api::AsyncClient>>>,
+    futures_spawner: futures::sync::mpsc::Sender<crate::meetup_sync::BoxedFuture<(), ()>>,
 ) -> crate::Result<Client> {
     let redis_connection = redis_client.get_connection()?;
 
@@ -42,7 +47,10 @@ pub fn create_discord_client(
         data.insert::<BotIdKey>(bot_id);
         data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(redis_connection)));
         data.insert::<RegexesKey>(Arc::new(regexes));
-        data.insert::<MeetupClientKey>(meetup_client.clone());
+        data.insert::<MeetupClientKey>(meetup_client);
+        data.insert::<AsyncMeetupClientKey>(async_meetup_client);
+        data.insert::<RedisClientKey>(redis_client);
+        data.insert::<FuturesSpawnerKey>(futures_spawner);
     }
 
     Ok(client)
@@ -58,6 +66,7 @@ struct Regexes {
     link_meetup_direct_mention: Regex,
     unlink_meetup_dm: Regex,
     unlink_meetup_mention: Regex,
+    sync_mention: Regex,
 }
 
 impl Regexes {
@@ -128,6 +137,7 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         unlink_meetup = unlink_meetup
     );
+    let sync_mention = format!(r"^{bot_mention}\s+sync\s*$", bot_mention = bot_mention);
     Regexes {
         bot_mention: bot_mention,
         create_channel_dm: Regex::new(create_channel_dm.as_str()).unwrap(),
@@ -138,6 +148,7 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         link_meetup_direct_mention: Regex::new(link_meetup_direct_mention.as_str()).unwrap(),
         unlink_meetup_dm: Regex::new(unlink_meetup_dm.as_str()).unwrap(),
         unlink_meetup_mention: Regex::new(unlink_meetup_mention.as_str()).unwrap(),
+        sync_mention: Regex::new(sync_mention.as_str()).unwrap(),
     }
 }
 
@@ -159,6 +170,21 @@ impl TypeMapKey for RegexesKey {
 struct MeetupClientKey;
 impl TypeMapKey for MeetupClientKey {
     type Value = Arc<RwLock<Option<crate::meetup_api::Client>>>;
+}
+
+struct AsyncMeetupClientKey;
+impl TypeMapKey for AsyncMeetupClientKey {
+    type Value = Arc<RwLock<Option<crate::meetup_api::AsyncClient>>>;
+}
+
+struct RedisClientKey;
+impl TypeMapKey for RedisClientKey {
+    type Value = redis::Client;
+}
+
+struct FuturesSpawnerKey;
+impl TypeMapKey for FuturesSpawnerKey {
+    type Value = futures::sync::mpsc::Sender<crate::meetup_sync::BoxedFuture<(), ()>>;
 }
 
 struct Handler;
@@ -463,7 +489,7 @@ impl EventHandler for Handler {
             is_dm = false;
         }
         // TODO: might want to use a RegexSet here to speed up matching
-        if let Some(_) = regexes.link_meetup(is_dm).captures(&msg.content) {
+        if regexes.link_meetup(is_dm).is_match(&msg.content) {
             let user_id = msg.author.id.0;
             match Self::link_meetup(&ctx, &msg, &regexes, user_id) {
                 Err(err) => {
@@ -495,7 +521,7 @@ impl EventHandler for Handler {
                 }
                 _ => return,
             }
-        } else if let Some(_) = regexes.unlink_meetup(is_dm).captures(&msg.content) {
+        } else if regexes.unlink_meetup(is_dm).is_match(&msg.content) {
             let user_id = msg.author.id.0;
             match Self::unlink_meetup(&ctx, &msg, &regexes, user_id) {
                 Err(err) => {
@@ -554,6 +580,47 @@ impl EventHandler for Handler {
                     }
                     _ => {}
                 };
+            }
+        } else if regexes.sync_mention.is_match(&msg.content) {
+            let (async_meetup_client, redis_client, mut future_spawner) = {
+                let data = ctx.data.read();
+                let async_meetup_client = data
+                    .get::<AsyncMeetupClientKey>()
+                    .expect("Async Meetup client was not set")
+                    .clone();
+                let redis_client = data
+                    .get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone();
+                let future_spawner = data
+                    .get::<FuturesSpawnerKey>()
+                    .expect("Future spawner was not set")
+                    .clone();
+                (async_meetup_client, redis_client, future_spawner)
+            };
+            let sync_task = Box::new(
+                crate::meetup_sync::sync_task(async_meetup_client, redis_client)
+                    .map_err(|err| {
+                        eprintln!("Syncing task failed: {}", err);
+                        err
+                    })
+                    .timeout(Duration::from_secs(60))
+                    .map_err(|err| {
+                        eprintln!("Syncing task timed out: {}", err);
+                    }),
+            );
+            // Send the syncing future to the executor
+            match future_spawner.try_send(sync_task) {
+                Ok(()) => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "Started asynchronous synchronization task");
+                }
+                Err(err) => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, format!("Could not submit asynchronous synchronization task to the queue (full={}, disconnected={})", err.is_full(), err.is_disconnected()));
+                }
             }
         } else {
             let _ = msg

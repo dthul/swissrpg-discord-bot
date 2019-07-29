@@ -3,7 +3,7 @@ pub mod meetup_api;
 pub mod meetup_oauth2;
 pub mod meetup_sync;
 
-use futures::Future;
+use futures::{Future, Stream};
 use redis::Commands;
 use serenity::prelude::RwLock;
 use std::env;
@@ -74,9 +74,17 @@ fn main() {
         ),
     );
 
-    let mut bot =
-        discord_bot::create_discord_client(&discord_token, &redis_client, meetup_client.clone())
-            .expect("Could not create the Discord bot");
+    let (tx, rx) = futures::sync::mpsc::channel::<crate::meetup_sync::BoxedFuture<(), ()>>(1);
+    let spawn_other_futures_future = rx.for_each(|fut| tokio::spawn(fut));
+
+    let mut bot = discord_bot::create_discord_client(
+        &discord_token,
+        redis_client.clone(),
+        meetup_client.clone(),
+        async_meetup_client.clone(),
+        tx,
+    )
+    .expect("Could not create the Discord bot");
 
     // Start a server to handle Meetup OAuth2 logins
     let meetup_oauth2_server = meetup_oauth2_consumer.create_auth_server(
@@ -89,14 +97,18 @@ fn main() {
         async_meetup_client.clone(),
     );
 
-    let meetup_syncing_task = meetup_sync::create_recurring_syncing_task(
-        async_meetup_client.clone(),
-        redis_client.clone(),
-    )
-    .map_err(|err| eprintln!("Meetup syncing task failed: {}", err));
+    // let meetup_syncing_task = meetup_sync::create_recurring_syncing_task(
+    //     async_meetup_client.clone(),
+    //     redis_client.clone(),
+    // )
+    // .map_err(|err| eprintln!("Meetup syncing task failed: {}", err));
 
     std::thread::spawn(move || {
-        tokio::run(meetup_oauth2_server.join(meetup_syncing_task).map(|_| ()))
+        tokio::run(
+            meetup_oauth2_server
+                .join(spawn_other_futures_future)
+                .map(|_| ()),
+        )
     });
 
     // Finally, start the Discord bot
