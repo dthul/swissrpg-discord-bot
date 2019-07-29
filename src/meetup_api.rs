@@ -1,4 +1,4 @@
-use chrono::TimeZone;
+use chrono::serde::ts_milliseconds;
 use futures::future;
 use futures::stream;
 use futures::{Future, Stream};
@@ -6,7 +6,6 @@ use reqwest::header::{HeaderMap, AUTHORIZATION};
 use reqwest::{Method, Request};
 use serde::de::Error as _;
 use serde::Deserialize;
-use std::collections::HashMap;
 
 const BASE_URL: &'static str = "https://api.meetup.com";
 pub const URLNAME: &'static str = "SwissRPG-Zurich";
@@ -57,20 +56,15 @@ pub enum LeadershipRole {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Event {
-    pub id: u64,
+    pub id: String, // yeah, Event IDs seem to be the only ones that are alphanumeric...
     pub name: String,
-    pub time: i64, // UTC start time of the event, in milliseconds since the epoch
+    #[serde(with = "ts_milliseconds")]
+    pub time: chrono::DateTime<chrono::Utc>,
     pub event_hosts: Vec<User>,
     pub link: String,
 }
 
-impl Event {
-    pub fn get_time(&self) -> Option<chrono::DateTime<chrono::Utc>> {
-        chrono::Utc.timestamp_millis_opt(self.time).earliest()
-    }
-}
-
-type EventList = HashMap<String, Event>;
+type EventList = Vec<Event>;
 
 impl<'de> Deserialize<'de> for UserStatus {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -124,24 +118,13 @@ pub enum RSVPResponse {
     Waitlist,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RSVP {
-    pub user: User,
+    pub member: User,
     pub response: RSVPResponse,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-struct _RSVP {
-    response: RSVPResponse,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-struct MemberRSVP {
-    member: User,
-    rsvp: _RSVP,
-}
-
-type MemberRSVPList = HashMap<String, MemberRSVP>;
+type RSVPList = Vec<RSVP>;
 
 impl<'de> Deserialize<'de> for RSVPResponse {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -290,35 +273,25 @@ impl AsyncClient {
     // this does not matter for us anyway
     pub fn get_upcoming_events(&self) -> impl Stream<Item = Event, Error = crate::BoxedError> {
         let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=event_hosts.id,event_hosts.name,id,link,time,name", BASE_URL, URLNAME);
-        self.client
-            .get(&url)
+        let request = self.client.get(&url);
+        request
             .send()
-            .from_err::<crate::BoxedError>()
-            .and_then(|mut response| response.json::<EventList>().from_err::<crate::BoxedError>())
-            .map(|event_list| stream::iter_ok(event_list.into_iter().map(|(_, event)| event)))
+            .and_then(|mut response| response.json::<EventList>())
+            .map(|event_list| stream::iter_ok(event_list))
             .flatten_stream()
+            .from_err::<crate::BoxedError>()
     }
 
     // Get members that RSVP'd yes
-    pub fn get_rsvps(&self, id: u64) -> impl Future<Item = Vec<RSVP>, Error = crate::BoxedError> {
-        let url = format!("{}/{}/events/{}/attendance?&sign=true&photo-host=public&page=200&omit=member.photo,member.event_context,member.role,rsvp.guests,rsvp.id,rsvp.updated", BASE_URL, URLNAME, id);
-        self.client
-            .get(&url)
+    pub fn get_rsvps(
+        &self,
+        event_id: &str,
+    ) -> impl Future<Item = Vec<RSVP>, Error = crate::BoxedError> {
+        let url = format!("{}/{}/events/{}/rsvps?&sign=true&photo-host=public&page=200&only=response,member&omit=member.photo,member.event_context", BASE_URL, URLNAME, event_id);
+        let request = self.client.get(&url);
+        request
             .send()
+            .and_then(|mut response| response.json::<RSVPList>())
             .from_err::<crate::BoxedError>()
-            .and_then(|mut response| {
-                response
-                    .json::<MemberRSVPList>()
-                    .from_err::<crate::BoxedError>()
-            })
-            .map(|member_rsvp_list| {
-                member_rsvp_list
-                    .into_iter()
-                    .map(|(_, member_rsvp)| RSVP {
-                        user: member_rsvp.member,
-                        response: member_rsvp.rsvp.response,
-                    })
-                    .collect()
-            })
     }
 }

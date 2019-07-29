@@ -25,7 +25,7 @@ lazy_static! {
         regex::Regex::new(r"^\s*(?P<name>.+?)\s*\[").unwrap();
 }
 
-pub type BoxedFuture<T, E=crate::BoxedError> = Box<dyn Future<Item = T, Error = E> + Send>;
+pub type BoxedFuture<T, E = crate::BoxedError> = Box<dyn Future<Item = T, Error = E> + Send>;
 
 pub fn create_recurring_syncing_task(
     meetup_client: Arc<RwLock<Option<meetup_api::AsyncClient>>>,
@@ -81,7 +81,7 @@ pub fn sync_task(
         .and_then(move |event| {
             println!("Syncing task: Querying RSVPs for event \"{}\"", event.name);
             let rsvps = match *meetup_client.read() {
-                Some(ref meetup_client) => meetup_client.get_rsvps(event.id),
+                Some(ref meetup_client) => meetup_client.get_rsvps(&event.id),
                 None => {
                     return Box::new(
                         future::err(SimpleError::new("Meetup API unavailable"))
@@ -117,19 +117,11 @@ fn sync_event(
     //     Some(captures) => captures.name("name").unwrap().as_str(),
     //     None => &event.name,
     // };
-    let event_time = match event.get_time() {
-        Some(time) => time,
-        None => {
-            return Box::new(future::err(Box::new(SimpleError::new(
-                "Event sync failed: Event has an invalid time",
-            )) as crate::BoxedError)) as BoxedFuture<_>
-        }
-    };
     let rsvp_yes_user_ids: Vec<_> = rsvps
         .iter()
         .filter_map(|rsvp| {
             if rsvp.response == meetup_api::RSVPResponse::Yes {
-                Some(rsvp.user.id)
+                Some(rsvp.member.id)
             } else {
                 None
             }
@@ -179,15 +171,15 @@ fn sync_event(
                                 event.event_hosts.iter().map(|user| user.id).collect();
                             let event_hash = &[
                                 ("name", event.name),
-                                ("time", event_time.to_rfc3339()),
+                                ("time", event.time.to_rfc3339()),
                                 ("link", event.link),
                             ];
-                            pipe.sadd(redis_events_key, event.id)
+                            pipe.sadd(redis_events_key, &event.id)
                                 .sadd(redis_series_key, &series_id)
                                 .sadd(&redis_event_users_key, rsvp_yes_user_ids.as_slice())
                                 .sadd(&redis_event_hosts_key, host_user_ids.as_slice())
                                 .set(&redis_event_series_key, &series_id)
-                                .sadd(&redis_series_events_key, event.id)
+                                .sadd(&redis_series_events_key, &event.id)
                                 .hset_multiple(&redis_event_key, event_hash)
                                 .ignore();
                             pipe.query_async(con)
