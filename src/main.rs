@@ -1,7 +1,7 @@
 pub mod discord_bot;
 pub mod meetup_api;
 pub mod meetup_oauth2;
-pub mod sync_meetup;
+pub mod meetup_sync;
 
 use futures::Future;
 use redis::Commands;
@@ -89,11 +89,15 @@ fn main() {
         async_meetup_client.clone(),
     );
 
-    let sync_meetup_task =
-        sync_meetup::create_recurring_syncing_task(async_meetup_client.clone(), &redis_client)
-            .map_err(|err| eprintln!("Meetup syncing task failed: {}", err));
+    let meetup_syncing_task = meetup_sync::create_recurring_syncing_task(
+        async_meetup_client.clone(),
+        redis_client.clone(),
+    )
+    .map_err(|err| eprintln!("Meetup syncing task failed: {}", err));
 
-    std::thread::spawn(move || tokio::run(meetup_oauth2_server.join(sync_meetup_task).map(|_| ())));
+    std::thread::spawn(move || {
+        tokio::run(meetup_oauth2_server.join(meetup_syncing_task).map(|_| ()))
+    });
 
     // Finally, start the Discord bot
     if let Err(why) = bot.start() {

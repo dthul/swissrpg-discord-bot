@@ -28,7 +28,7 @@ lazy_static! {
         regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)/redirect$").unwrap();
 }
 
-fn new_random_id(num_bytes: u32) -> String {
+pub fn new_random_id(num_bytes: u32) -> String {
     let random_bytes: Vec<u8> = (0..num_bytes)
         .map(|_| rand::thread_rng().gen::<u8>())
         .collect();

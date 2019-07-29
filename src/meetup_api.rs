@@ -1,3 +1,4 @@
+use chrono::TimeZone;
 use futures::future;
 use futures::stream;
 use futures::{Future, Stream};
@@ -58,10 +59,15 @@ pub enum LeadershipRole {
 pub struct Event {
     pub id: u64,
     pub name: String,
-    pub local_date: String,
-    pub local_time: String,
+    pub time: i64, // UTC start time of the event, in milliseconds since the epoch
     pub event_hosts: Vec<User>,
     pub link: String,
+}
+
+impl Event {
+    pub fn get_time(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        chrono::Utc.timestamp_millis_opt(self.time).earliest()
+    }
 }
 
 type EventList = HashMap<String, Event>;
@@ -135,7 +141,7 @@ struct MemberRSVP {
     rsvp: _RSVP,
 }
 
-pub type MemberRSVPList = HashMap<String, MemberRSVP>;
+type MemberRSVPList = HashMap<String, MemberRSVP>;
 
 impl<'de> Deserialize<'de> for RSVPResponse {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -283,7 +289,7 @@ impl AsyncClient {
     // Doesn't implement pagination. But since Meetup returns 200 elements per page,
     // this does not matter for us anyway
     pub fn get_upcoming_events(&self) -> impl Stream<Item = Event, Error = crate::BoxedError> {
-        let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=event_hosts.id,event_hosts.name,id,link,local_date,local_time,name", BASE_URL, URLNAME);
+        let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=event_hosts.id,event_hosts.name,id,link,time,name", BASE_URL, URLNAME);
         self.client
             .get(&url)
             .send()

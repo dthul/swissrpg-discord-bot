@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 base64 = "0.10"
+chrono = "0.4"
 cookie = "0.12"
 futures = "0.1"
 hyper = "0.12"
