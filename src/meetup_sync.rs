@@ -40,6 +40,10 @@ pub fn create_recurring_syncing_task(
         .for_each(move |_| {
             tokio::spawn(
                 sync_task(meetup_client.clone(), redis_client.clone())
+                    .map_err(|err| {
+                        eprintln!("Syncing task failed: {}", err);
+                        err
+                    })
                     .timeout(Duration::from_secs(60))
                     .map_err(|err| {
                         eprintln!("Syncing task timed out: {}", err);
@@ -67,8 +71,15 @@ pub fn sync_task(
         }
     };
     let sync_future = upcoming_events
-        .filter(|event| FILTER_REGEX_SET.is_match(&event.name))
+        .filter(|event| if FILTER_REGEX_SET.is_match(&event.name) {
+            println!("Syncing task: Found event \"{}\"", event.name);
+            true
+        } else {
+            println!("Syncing task: Ignoring event \"{}\" (event name does not match any filter pattern)", event.name);
+            false
+        })
         .and_then(move |event| {
+            println!("Syncing task: Querying RSVPs for event \"{}\"", event.name);
             let rsvps = match *meetup_client.read() {
                 Some(ref meetup_client) => meetup_client.get_rsvps(event.id),
                 None => {
@@ -78,7 +89,10 @@ pub fn sync_task(
                     ) as BoxedFuture<_>
                 }
             };
-            Box::new(rsvps.map(|rsvps| (event, rsvps)))
+            Box::new(rsvps.map(|rsvps| {
+                println!("Syncing task: Found {} RSVPs for event \"{}\"", rsvps.len(), event.name);
+                (event, rsvps)
+            }))
         })
         .for_each(
             move |(event, rsvps): (meetup_api::Event, Vec<meetup_api::RSVP>)| {
@@ -99,10 +113,10 @@ fn sync_event(
     rsvps: Vec<meetup_api::RSVP>,
     redis_client: redis::Client,
 ) -> impl Future<Item = (), Error = crate::BoxedError> {
-    let event_name = match EVENT_NAME_REGEX.captures(&event.name) {
-        Some(captures) => captures.name("name").unwrap().as_str(),
-        None => &event.name,
-    };
+    // let event_name = match EVENT_NAME_REGEX.captures(&event.name) {
+    //     Some(captures) => captures.name("name").unwrap().as_str(),
+    //     None => &event.name,
+    // };
     let event_time = match event.get_time() {
         Some(time) => time,
         None => {
@@ -130,6 +144,7 @@ fn sync_event(
     let redis_event_hosts_key = format!("meetup_event:{}:meetup_hosts", event.id);
     let redis_event_series_key = format!("meetup_event:{}:event_series", event.id);
     let redis_event_key = format!("meetup_event:{}", event.id);
+    let event_name = event.name.clone();
     // technically: check that series id doesn't exist yet and generate a new one until it does not
     // practically: we will never generate a colliding id
     let fut = redis_client
@@ -191,7 +206,10 @@ fn sync_event(
                 transaction_fn,
             )
         })
-        .map(|_| ())
+        .map(move |_| {
+            println!("Event syncing task: Synced event \"{}\"", event_name);
+            ()
+        })
         .from_err::<crate::BoxedError>();
     Box::new(fut)
 }
