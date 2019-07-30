@@ -12,7 +12,7 @@ use tokio;
 use tokio::prelude::*;
 
 const SESSION0_PATTERN: &'static str = r".+(?i)Session\s+0\s*$";
-const INTRO_PATTERN: &'static str = r".+(?i)\[\s*Intro\s*games*series\s*\]\s*$";
+const INTRO_PATTERN: &'static str = r".+(?i)\[\s*Intro\s*game\s*series\s*\]\s*$";
 const ONESHOT_PATTERN: &'static str = r".+(?i)\[.*One\s*\-?\s*Shot.*\]\s*$";
 
 lazy_static! {
