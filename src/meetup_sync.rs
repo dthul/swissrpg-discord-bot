@@ -21,8 +21,6 @@ lazy_static! {
     static ref ONESHOT_REGEX: regex::Regex = regex::Regex::new(ONESHOT_PATTERN).unwrap();
     static ref FILTER_REGEX_SET: regex::RegexSet =
         regex::RegexSet::new(&[SESSION0_PATTERN, INTRO_PATTERN, ONESHOT_PATTERN]).unwrap();
-    static ref EVENT_NAME_REGEX: regex::Regex =
-        regex::Regex::new(r"^\s*(?P<name>.+?)\s*\[").unwrap();
 }
 
 pub type BoxedFuture<T, E = crate::BoxedError> = Box<dyn Future<Item = T, Error = E> + Send>;
