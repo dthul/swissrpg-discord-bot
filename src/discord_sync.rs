@@ -6,7 +6,6 @@ use serenity::model::{
     id::RoleId, id::UserId, permissions::Permissions,
 };
 use simple_error::SimpleError;
-use std::sync::Arc;
 use white_rabbit;
 
 // Test server:
@@ -17,14 +16,14 @@ pub const GUILD_ID: GuildId = GuildId(601070848446824509);
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =
         regex::Regex::new(r"^\s*(?P<name>.+?)\s*\[").unwrap();
-    static ref WHITESPACE_REGEX: regex::Regex = regex::Regex::new(r"\s+").unwrap();
 }
 
 // Syncs Discord with the state of the Redis database
 pub fn create_sync_discord_task(
     redis_client: redis::Client,
-    discord_api: Arc<serenity::CacheAndHttp>,
+    discord_api: impl serenity::http::CacheHttp + Send + Sync + 'static,
     bot_id: u64,
+    recurring: bool,
 ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static {
     move |_ctx| {
         let next_sync_time = match sync_discord(&redis_client, &discord_api, bot_id) {
@@ -38,13 +37,17 @@ pub fn create_sync_discord_task(
                 white_rabbit::Utc::now() + white_rabbit::Duration::minutes(15)
             }
         };
-        white_rabbit::DateResult::Repeat(next_sync_time)
+        if recurring {
+            white_rabbit::DateResult::Repeat(next_sync_time)
+        } else {
+            white_rabbit::DateResult::Done
+        }
     }
 }
 
-fn sync_discord(
+pub fn sync_discord(
     redis_client: &redis::Client,
-    discord_api: &serenity::CacheAndHttp,
+    discord_api: &impl serenity::http::CacheHttp,
     bot_id: u64,
 ) -> Result<(), crate::BoxedError> {
     let redis_series_key = "event_series";
@@ -83,7 +86,7 @@ For each event series:
 fn sync_event_series(
     series_id: &str,
     redis_connection: &mut redis::Connection,
-    discord_api: &serenity::CacheAndHttp,
+    discord_api: &impl serenity::http::CacheHttp,
     bot_id: u64,
 ) -> Result<(), crate::BoxedError> {
     // Step 0: Figure out the title of this event series
@@ -173,7 +176,7 @@ fn sync_role(
     is_host_role: bool,
     channel_id: ChannelId,
     redis_connection: &mut redis::Connection,
-    discord_api: &serenity::CacheAndHttp,
+    discord_api: &impl serenity::http::CacheHttp,
 ) -> Result<RoleId, crate::BoxedError> {
     let max_retries = 1;
     let mut current_num_try = 0;
@@ -192,7 +195,7 @@ fn sync_role(
             discord_api,
         )?;
         // Make sure that the role ID that was returned actually exists on Discord
-        let guild_roles = discord_api.http.get_guild_roles(GUILD_ID.0)?;
+        let guild_roles = discord_api.http().get_guild_roles(GUILD_ID.0)?;
         let guild_role = guild_roles
             .iter()
             .find(|guild_role| guild_role.id.0 == role.0);
@@ -242,7 +245,7 @@ fn sync_role_impl(
     is_host_role: bool,
     channel_id: ChannelId,
     redis_connection: &mut redis::Connection,
-    discord_api: &serenity::CacheAndHttp,
+    discord_api: &impl serenity::http::CacheHttp,
 ) -> Result<RoleId, crate::BoxedError> {
     let redis_channel_role_key = if is_host_role {
         format!("discord_channel:{}:discord_host_role", channel_id.0)
@@ -258,7 +261,7 @@ fn sync_role_impl(
         }
     }
     // The role doesn't exist yet -> try to create it
-    let temp_channel_role = GUILD_ID.create_role(&discord_api.http, |role_builder| {
+    let temp_channel_role = GUILD_ID.create_role(discord_api.http(), |role_builder| {
         role_builder
             .name(role_name)
             .permissions(Permissions::empty())
@@ -305,7 +308,7 @@ fn sync_role_impl(
     if delete_temp_role {
         println!("Trying to delete temporary channel role");
         match discord_api
-            .http
+            .http()
             .delete_role(GUILD_ID.0, temp_channel_role.id.0)
         {
             Ok(_) => println!("Successfully deleted temporary channel role"),
@@ -339,7 +342,7 @@ fn sync_channel(
     event_series_id: &str,
     bot_id: u64,
     redis_connection: &mut redis::Connection,
-    discord_api: &serenity::CacheAndHttp,
+    discord_api: &impl serenity::http::CacheHttp,
 ) -> Result<ChannelId, crate::BoxedError> {
     let max_retries = 1;
     let mut current_num_try = 0;
@@ -358,9 +361,7 @@ fn sync_channel(
             discord_api,
         )?;
         // Make sure that the channel ID that was returned actually exists on Discord
-        let channel_exists = match channel
-            .to_channel((&discord_api.cache.clone().into(), discord_api.http.as_ref()))
-        {
+        let channel_exists = match channel.to_channel(discord_api.http()) {
             Ok(_) => true,
             Err(err) => {
                 if let serenity::Error::Http(http_err) = &err {
@@ -419,7 +420,7 @@ fn sync_channel_impl(
     event_series_id: &str,
     bot_id: u64,
     redis_connection: &mut redis::Connection,
-    discord_api: &serenity::CacheAndHttp,
+    discord_api: &impl serenity::http::CacheHttp,
 ) -> Result<ChannelId, crate::BoxedError> {
     let redis_series_channel_key = format!("event_series:{}:discord_channel", event_series_id);
     // Check if the channel already exists
@@ -445,7 +446,7 @@ fn sync_channel_impl(
             kind: PermissionOverwriteType::Member(UserId(bot_id)),
         },
     ];
-    let temp_channel = GUILD_ID.create_channel(&discord_api.http, |channel_builder| {
+    let temp_channel = GUILD_ID.create_channel(discord_api.http(), |channel_builder| {
         channel_builder
             .name(channel_name)
             .permissions(permission_overwrites)
@@ -483,7 +484,7 @@ fn sync_channel_impl(
     };
     if delete_temp_channel {
         println!("Trying to delete temporary channel");
-        match discord_api.http.delete_channel(temp_channel.id.0) {
+        match discord_api.http().delete_channel(temp_channel.id.0) {
             Ok(_) => println!("Successfully deleted temporary channel"),
             Err(_) => {
                 eprintln!("Could not delete temporary channel {}", temp_channel.id.0);
@@ -513,7 +514,7 @@ fn sync_channel_permissions(
     role_id: RoleId,
     host_role_id: RoleId,
     bot_id: u64,
-    discord_api: &serenity::CacheAndHttp,
+    discord_api: &impl serenity::http::CacheHttp,
 ) -> Result<(), crate::BoxedError> {
     // The @everyone role has the same id as the guild
     let role_everyone_id = RoleId(GUILD_ID.0);
@@ -546,7 +547,7 @@ fn sync_channel_permissions(
         },
     ];
     for permission_overwrite in &permission_overwrites {
-        channel_id.create_permission(&discord_api.http, permission_overwrite)?;
+        channel_id.create_permission(discord_api.http(), permission_overwrite)?;
     }
     Ok(())
 }
@@ -556,7 +557,7 @@ fn sync_user_role_assignments(
     user_role: RoleId,
     host_role: RoleId,
     redis_connection: &mut redis::Connection,
-    discord_api: &serenity::CacheAndHttp,
+    discord_api: &impl serenity::http::CacheHttp,
 ) -> Result<(), crate::BoxedError> {
     // First, find all events belonging to this event series
     let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
@@ -612,7 +613,7 @@ fn sync_user_role_assignments(
     // Lastly, actually assign the roles to the Discord users
     for user_id in discord_user_ids {
         match discord_api
-            .http
+            .http()
             .add_member_role(GUILD_ID.0, user_id, user_role.0)
         {
             Ok(_) => println!("Assigned user {} to role {}", user_id, user_role.0),
@@ -624,7 +625,7 @@ fn sync_user_role_assignments(
     }
     for host_id in discord_host_ids {
         match discord_api
-            .http
+            .http()
             .add_member_role(GUILD_ID.0, host_id, host_role.0)
         {
             Ok(_) => println!("Assigned user {} to host role {}", host_id, host_role.0),

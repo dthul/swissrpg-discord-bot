@@ -6,7 +6,7 @@ pub mod meetup_sync;
 
 use futures::{Future, Stream};
 use redis::Commands;
-use serenity::prelude::RwLock;
+use serenity::prelude::{Mutex, RwLock};
 use std::env;
 use std::sync::Arc;
 use tokio;
@@ -49,7 +49,9 @@ fn main() {
         meetup_oauth2::OAuth2Consumer::new(meetup_client_id, meetup_client_secret);
 
     // Create a task scheduler and schedule the refresh token task
-    let mut task_scheduler = white_rabbit::Scheduler::new(/*thread_count*/ 1);
+    let task_scheduler = Arc::new(Mutex::new(white_rabbit::Scheduler::new(
+        /*thread_count*/ 1,
+    )));
     // Check Redis for a refresh time. If there is one, use that
     // if it is in the future. Otherwise schedule the task now
     let next_refresh_time: Option<String> = redis_connection
@@ -65,7 +67,7 @@ fn main() {
         Some(time) => time,
         None => white_rabbit::Utc::now(),
     };
-    task_scheduler.add_task_datetime(
+    task_scheduler.lock().add_task_datetime(
         next_refresh_time,
         meetup_oauth2_consumer.token_refresh_task(
             redis_client
@@ -83,6 +85,7 @@ fn main() {
         redis_client.clone(),
         meetup_client.clone(),
         async_meetup_client.clone(),
+        task_scheduler,
         tx,
     )
     .expect("Could not create the Discord bot");

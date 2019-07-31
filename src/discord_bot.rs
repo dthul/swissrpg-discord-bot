@@ -22,6 +22,7 @@ pub fn create_discord_client(
     redis_client: redis::Client,
     meetup_client: Arc<RwLock<Option<crate::meetup_api::Client>>>,
     async_meetup_client: Arc<RwLock<Option<crate::meetup_api::AsyncClient>>>,
+    task_scheduler: Arc<Mutex<white_rabbit::Scheduler>>,
     futures_spawner: futures::sync::mpsc::Sender<crate::meetup_sync::BoxedFuture<(), ()>>,
 ) -> crate::Result<Client> {
     let redis_connection = redis_client.get_connection()?;
@@ -50,6 +51,7 @@ pub fn create_discord_client(
         data.insert::<MeetupClientKey>(meetup_client);
         data.insert::<AsyncMeetupClientKey>(async_meetup_client);
         data.insert::<RedisClientKey>(redis_client);
+        data.insert::<TaskSchedulerKey>(task_scheduler);
         data.insert::<FuturesSpawnerKey>(futures_spawner);
     }
 
@@ -66,7 +68,8 @@ struct Regexes {
     link_meetup_direct_mention: Regex,
     unlink_meetup_dm: Regex,
     unlink_meetup_mention: Regex,
-    sync_mention: Regex,
+    sync_meetup_mention: Regex,
+    sync_discord_mention: Regex,
 }
 
 impl Regexes {
@@ -137,7 +140,14 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         unlink_meetup = unlink_meetup
     );
-    let sync_mention = format!(r"^{bot_mention}\s+sync\s*$", bot_mention = bot_mention);
+    let sync_meetup_mention = format!(
+        r"^{bot_mention}\s+sync\s+meetup\s*$",
+        bot_mention = bot_mention
+    );
+    let sync_discord_mention = format!(
+        r"^{bot_mention}\s+sync\s+discord\s*$",
+        bot_mention = bot_mention
+    );
     Regexes {
         bot_mention: bot_mention,
         create_channel_dm: Regex::new(create_channel_dm.as_str()).unwrap(),
@@ -148,7 +158,8 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         link_meetup_direct_mention: Regex::new(link_meetup_direct_mention.as_str()).unwrap(),
         unlink_meetup_dm: Regex::new(unlink_meetup_dm.as_str()).unwrap(),
         unlink_meetup_mention: Regex::new(unlink_meetup_mention.as_str()).unwrap(),
-        sync_mention: Regex::new(sync_mention.as_str()).unwrap(),
+        sync_meetup_mention: Regex::new(sync_meetup_mention.as_str()).unwrap(),
+        sync_discord_mention: Regex::new(sync_discord_mention.as_str()).unwrap(),
     }
 }
 
@@ -180,6 +191,11 @@ impl TypeMapKey for AsyncMeetupClientKey {
 struct RedisClientKey;
 impl TypeMapKey for RedisClientKey {
     type Value = redis::Client;
+}
+
+struct TaskSchedulerKey;
+impl TypeMapKey for TaskSchedulerKey {
+    type Value = Arc<Mutex<white_rabbit::Scheduler>>;
 }
 
 struct FuturesSpawnerKey;
@@ -581,7 +597,7 @@ impl EventHandler for Handler {
                     _ => {}
                 };
             }
-        } else if regexes.sync_mention.is_match(&msg.content) {
+        } else if regexes.sync_meetup_mention.is_match(&msg.content) {
             let (async_meetup_client, redis_client, mut future_spawner) = {
                 let data = ctx.data.read();
                 let async_meetup_client = data
@@ -612,16 +628,44 @@ impl EventHandler for Handler {
             // Send the syncing future to the executor
             match future_spawner.try_send(sync_task) {
                 Ok(()) => {
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, "Started asynchronous synchronization task");
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        "Started asynchronous Meetup synchronization task",
+                    );
                 }
                 Err(err) => {
                     let _ = msg
                         .channel_id
-                        .say(&ctx.http, format!("Could not submit asynchronous synchronization task to the queue (full={}, disconnected={})", err.is_full(), err.is_disconnected()));
+                        .say(&ctx.http, format!("Could not submit asynchronous Meetup synchronization task to the queue (full={}, disconnected={})", err.is_full(), err.is_disconnected()));
                 }
             }
+        } else if regexes.sync_discord_mention.is_match(&msg.content) {
+            let (redis_client, bot_id, task_scheduler) = {
+                let data = ctx.data.read();
+                let redis_client = data
+                    .get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone();
+                let bot_id = *data.get::<BotIdKey>().expect("Bot ID was not set");
+                let task_scheduler = data
+                    .get::<TaskSchedulerKey>()
+                    .expect("Task scheduler was not set")
+                    .clone();
+                (redis_client, bot_id, task_scheduler)
+            };
+            // Send the syncing task to the scheduler
+            task_scheduler.lock().add_task_datetime(
+                white_rabbit::Utc::now(),
+                crate::discord_sync::create_sync_discord_task(
+                    redis_client,
+                    ctx.http.clone(),
+                    bot_id.0,
+                    /*recurring*/ false,
+                ),
+            );
+            let _ = msg
+                .channel_id
+                .say(&ctx.http, "Started Discord synchronization task");
         } else {
             let _ = msg
                 .channel_id
