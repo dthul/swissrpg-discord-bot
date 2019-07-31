@@ -352,11 +352,29 @@ fn sync_channel(
             discord_api,
         )?;
         // Make sure that the channel ID that was returned actually exists on Discord
-        let guild_channels = discord_api.http.get_channels(GUILD_ID.0)?;
-        let guild_channel = guild_channels
-            .iter()
-            .find(|guild_channel| guild_channel.id.0 == channel.0);
-        if guild_channel.is_none() {
+        let channel_exists = match channel
+            .to_channel((&discord_api.cache.clone().into(), discord_api.http.as_ref()))
+        {
+            Ok(_) => true,
+            Err(err) => {
+                if let serenity::Error::Http(http_err) = &err {
+                    if let serenity::http::HttpError::UnsuccessfulRequest(response) =
+                        http_err.as_ref()
+                    {
+                        if response.status_code == reqwest::StatusCode::NOT_FOUND {
+                            false
+                        } else {
+                            return Err(Box::new(err));
+                        }
+                    } else {
+                        return Err(Box::new(err));
+                    }
+                } else {
+                    return Err(Box::new(err));
+                }
+            }
+        };
+        if !channel_exists {
             // This channel does not exist on Discord
             // Delete it from Redis and retry
             let redis_discord_channels_key = "discord_channels";
