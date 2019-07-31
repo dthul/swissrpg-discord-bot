@@ -158,7 +158,13 @@ fn sync_event_series(
         discord_api,
     )?;
     // Step 5: Sync RSVP'd users
-    // TODO
+    sync_user_role_assignments(
+        series_id,
+        channel_role_id,
+        channel_host_role_id,
+        redis_connection,
+        discord_api,
+    )?;
     Ok(())
 }
 
@@ -541,6 +547,92 @@ fn sync_channel_permissions(
     ];
     for permission_overwrite in &permission_overwrites {
         channel_id.create_permission(&discord_api.http, permission_overwrite)?;
+    }
+    Ok(())
+}
+
+fn sync_user_role_assignments(
+    event_series_id: &str,
+    user_role: RoleId,
+    host_role: RoleId,
+    redis_connection: &mut redis::Connection,
+    discord_api: &serenity::CacheAndHttp,
+) -> Result<(), crate::BoxedError> {
+    // First, find all events belonging to this event series
+    let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
+    let event_ids: Option<Vec<String>> = redis_connection.get(&redis_series_events_key)?;
+    let event_ids = match event_ids {
+        Some(ids) => ids,
+        None => {
+            println!("Event series \"{}\" seems to have no events associated with it, not syncing to Discord", event_series_id);
+            return Ok(());
+        }
+    };
+    // Then, find all Meetup users RSVP'd to those events
+    let redis_event_users_keys: Vec<_> = event_ids
+        .iter()
+        .map(|event_id| format!("meetup_event:{}:meetup_users", event_id))
+        .collect();
+    let redis_event_hosts_keys: Vec<_> = event_ids
+        .iter()
+        .map(|event_id| format!("meetup_event:{}:meetup_hosts", event_id))
+        .collect();
+    let (meetup_user_ids, meetup_host_ids): (Vec<Option<Vec<u64>>>, Vec<Option<Vec<u64>>>) =
+        redis::pipe()
+            .get(redis_event_users_keys)
+            .get(redis_event_hosts_keys)
+            .query(redis_connection)?;
+    // Filter the None values and flatten the vectors
+    let meetup_user_ids: Vec<_> = meetup_user_ids
+        .into_iter()
+        .filter_map(|ids| ids)
+        .flatten()
+        .collect();
+    let meetup_host_ids: Vec<_> = meetup_host_ids
+        .into_iter()
+        .filter_map(|ids| ids)
+        .flatten()
+        .collect();
+    // Now, try to associate the RSVP'd Meetup users with Discord users
+    let redis_meetup_user_discord_keys: Vec<_> = meetup_user_ids
+        .into_iter()
+        .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
+        .collect();
+    let redis_meetup_host_discord_keys: Vec<_> = meetup_host_ids
+        .into_iter()
+        .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
+        .collect();
+    let (discord_user_ids, discord_host_ids): (Vec<Option<u64>>, Vec<Option<u64>>) = redis::pipe()
+        .get(redis_meetup_user_discord_keys)
+        .get(redis_meetup_host_discord_keys)
+        .query(redis_connection)?;
+    // Filter the None values
+    let discord_user_ids: Vec<_> = discord_user_ids.into_iter().filter_map(|id| id).collect();
+    let discord_host_ids: Vec<_> = discord_host_ids.into_iter().filter_map(|id| id).collect();
+    // Lastly, actually assign the roles to the Discord users
+    for user_id in discord_user_ids {
+        match discord_api
+            .http
+            .add_member_role(GUILD_ID.0, user_id, user_role.0)
+        {
+            Ok(_) => println!("Assigned user {} to role {}", user_id, user_role.0),
+            Err(err) => eprintln!(
+                "Could not assign user {} to role {}: {}",
+                user_id, user_role.0, err
+            ),
+        }
+    }
+    for host_id in discord_host_ids {
+        match discord_api
+            .http
+            .add_member_role(GUILD_ID.0, host_id, host_role.0)
+        {
+            Ok(_) => println!("Assigned user {} to host role {}", host_id, host_role.0),
+            Err(err) => eprintln!(
+                "Could not assign user {} to host role {}: {}",
+                host_id, host_role.0, err
+            ),
+        }
     }
     Ok(())
 }
