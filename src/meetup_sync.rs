@@ -178,8 +178,7 @@ fn sync_event(
                                 .sadd(&redis_event_hosts_key, host_user_ids.as_slice())
                                 .set(&redis_event_series_key, &series_id)
                                 .sadd(&redis_series_events_key, &event.id)
-                                .hset_multiple(&redis_event_key, event_hash)
-                                .ignore();
+                                .hset_multiple(&redis_event_key, event_hash);
                             pipe.query_async(con)
                         });
                     Box::new(transaction_future) as redis::RedisFuture<_>

@@ -216,7 +216,6 @@ fn sync_role(
                     pipe.del(&redis_channel_role_key)
                         .del(&redis_role_channel_key)
                         .srem(redis_discord_roles_key, role.0)
-                        .ignore()
                         .query(con)
                 } else {
                     // It seems like the role changed in the meantime
@@ -275,7 +274,7 @@ fn sync_role_impl(
     } else {
         format!("discord_role:{}:discord_channel", temp_channel_role.id.0)
     };
-    let channel_role: redis::RedisResult<u64> =
+    let channel_role: redis::RedisResult<(u64,)> =
         redis::transaction(redis_connection, &[&redis_channel_role_key], |con, pipe| {
             let channel_role: Option<u64> = con.get(&redis_channel_role_key)?;
             if channel_role.is_some() {
@@ -284,7 +283,9 @@ fn sync_role_impl(
             } else {
                 // Persist the new role to Redis
                 pipe.sadd(redis_discord_roles_key, temp_channel_role.id.0)
+                    .ignore()
                     .set(&redis_channel_role_key, temp_channel_role.id.0)
+                    .ignore()
                     .set(&redis_role_channel_key, channel_id.0)
                     .ignore()
                     .get(&redis_channel_role_key)
@@ -294,7 +295,7 @@ fn sync_role_impl(
     // In case the Redis transaction failed or the role ID returned by Redis
     // doesn't match the newly created role, delete it
     let delete_temp_role = match channel_role {
-        Ok(role) => role != temp_channel_role.id.0,
+        Ok((role,)) => role != temp_channel_role.id.0,
         Err(_) => true,
     };
     if delete_temp_role {
@@ -325,7 +326,7 @@ fn sync_role_impl(
     // Return the channel role we got from Redis, no matter
     // if it was newly created or already existing
     channel_role
-        .map(|id| RoleId(id))
+        .map(|id| RoleId(id.0))
         .map_err(|err| Box::new(err) as crate::BoxedError)
 }
 
@@ -390,7 +391,6 @@ fn sync_channel(
                         pipe.del(&redis_series_channel_key)
                             .del(&redis_channel_series_key)
                             .srem(redis_discord_channels_key, channel.0)
-                            .ignore()
                             .query(con)
                     } else {
                         // It seems like the channel changed in the meantime
@@ -449,7 +449,7 @@ fn sync_channel_impl(
     );
     let redis_discord_channels_key = "discord_channels";
     let redis_channel_series_key = format!("discord_channel:{}:event_series", temp_channel.id.0);
-    let channel: redis::RedisResult<u64> = redis::transaction(
+    let channel: redis::RedisResult<(u64,)> = redis::transaction(
         redis_connection,
         &[&redis_series_channel_key],
         |con, pipe| {
@@ -460,7 +460,9 @@ fn sync_channel_impl(
             } else {
                 // Persist the new channel to Redis
                 pipe.sadd(redis_discord_channels_key, temp_channel.id.0)
+                    .ignore()
                     .set(&redis_series_channel_key, temp_channel.id.0)
+                    .ignore()
                     .set(&redis_channel_series_key, event_series_id)
                     .ignore()
                     .get(&redis_series_channel_key)
@@ -471,7 +473,7 @@ fn sync_channel_impl(
     // In case the Redis transaction failed or the channel ID returned by Redis
     // doesn't match the newly created channel, delete it
     let delete_temp_channel = match channel {
-        Ok(channel) => channel != temp_channel.id.0,
+        Ok((channel,)) => channel != temp_channel.id.0,
         Err(_) => true,
     };
     if delete_temp_channel {
@@ -493,7 +495,7 @@ fn sync_channel_impl(
     // Return the channel we got from Redis, no matter
     // if it was newly created or already existing
     channel
-        .map(|id| ChannelId(id))
+        .map(|id| ChannelId(id.0))
         .map_err(|err| Box::new(err) as crate::BoxedError)
 }
 

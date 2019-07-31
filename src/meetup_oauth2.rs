@@ -258,12 +258,10 @@ fn meetup_http_handler(
                                 Some(refresh_token) => pipe
                                     .set("meetup_access_token", token_res.access_token().secret())
                                     .set("meetup_refresh_token", refresh_token.secret())
-                                    .ignore()
                                     .query(con),
                                 None => pipe
                                     .set("meetup_access_token", token_res.access_token().secret())
                                     .del("meetup_refresh_token")
-                                    .ignore()
                                     .query(con),
                             },
                         );
@@ -486,8 +484,7 @@ fn meetup_http_handler(
                                         pipe.sadd("meetup_users", meetup_id)
                                             .sadd("discord_users", discord_id)
                                             .set(&redis_key_d2m, meetup_id)
-                                            .set(&redis_key_m2d, discord_id)
-                                            .ignore();
+                                            .set(&redis_key_m2d, discord_id);
                                         successful = true;
                                         pipe.query(con)
                                     }

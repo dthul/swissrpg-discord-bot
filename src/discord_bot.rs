@@ -394,8 +394,7 @@ impl Handler {
                                 pipe.sadd("meetup_users", meetup_id)
                                     .sadd("discord_users", user_id)
                                     .set(&redis_key_d2m, meetup_id)
-                                    .set(&redis_key_m2d, user_id)
-                                    .ignore();
+                                    .set(&redis_key_m2d, user_id);
                                 successful = true;
                                 pipe.query(con)
                             }
