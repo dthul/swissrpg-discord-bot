@@ -52,7 +52,7 @@ pub fn sync_discord(
 ) -> Result<(), crate::BoxedError> {
     let redis_series_key = "event_series";
     let mut con = redis_client.get_connection()?;
-    let event_series: Vec<String> = con.get(redis_series_key)?;
+    let event_series: Vec<String> = con.smembers(redis_series_key)?;
     let mut some_failed = false;
     for series in &event_series {
         if let Err(err) = sync_event_series(series, &mut con, discord_api, bot_id) {
@@ -91,17 +91,9 @@ fn sync_event_series(
 ) -> Result<(), crate::BoxedError> {
     // Step 0: Figure out the title of this event series
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
-    let some_event_id: Option<String> =
-        redis_connection
-            .get(&redis_series_events_key)
-            .map(|event_ids: Option<Vec<String>>| {
-                if let Some(mut event_ids) = event_ids {
-                    // Return the last event ID
-                    event_ids.pop()
-                } else {
-                    None
-                }
-            })?;
+    let some_event_id: Option<String> = redis_connection
+        .smembers(&redis_series_events_key)
+        .map(|mut event_ids: Vec<String>| event_ids.pop())?;
     let some_event_id = match some_event_id {
         Some(id) => id,
         None => {
@@ -561,14 +553,11 @@ fn sync_user_role_assignments(
 ) -> Result<(), crate::BoxedError> {
     // First, find all events belonging to this event series
     let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
-    let event_ids: Option<Vec<String>> = redis_connection.get(&redis_series_events_key)?;
-    let event_ids = match event_ids {
-        Some(ids) => ids,
-        None => {
-            println!("Event series \"{}\" seems to have no events associated with it, not syncing to Discord", event_series_id);
-            return Ok(());
-        }
-    };
+    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
+    if event_ids.is_empty() {
+        println!("Event series \"{}\" seems to have no events associated with it, not syncing to Discord", event_series_id);
+        return Ok(());
+    }
     // Then, find all Meetup users RSVP'd to those events
     let redis_event_users_keys: Vec<_> = event_ids
         .iter()
@@ -578,22 +567,10 @@ fn sync_user_role_assignments(
         .iter()
         .map(|event_id| format!("meetup_event:{}:meetup_hosts", event_id))
         .collect();
-    let (meetup_user_ids, meetup_host_ids): (Vec<Option<Vec<u64>>>, Vec<Option<Vec<u64>>>) =
-        redis::pipe()
-            .get(redis_event_users_keys)
-            .get(redis_event_hosts_keys)
-            .query(redis_connection)?;
-    // Filter the None values and flatten the vectors
-    let meetup_user_ids: Vec<_> = meetup_user_ids
-        .into_iter()
-        .filter_map(|ids| ids)
-        .flatten()
-        .collect();
-    let meetup_host_ids: Vec<_> = meetup_host_ids
-        .into_iter()
-        .filter_map(|ids| ids)
-        .flatten()
-        .collect();
+    let (meetup_user_ids, meetup_host_ids): (Vec<u64>, Vec<u64>) = redis::pipe()
+        .sinter(redis_event_users_keys)
+        .sinter(redis_event_hosts_keys)
+        .query(redis_connection)?;
     // Now, try to associate the RSVP'd Meetup users with Discord users
     let redis_meetup_user_discord_keys: Vec<_> = meetup_user_ids
         .into_iter()
