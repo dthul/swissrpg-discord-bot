@@ -1,5 +1,4 @@
 use chrono::serde::ts_milliseconds;
-use futures::future;
 use futures::stream;
 use futures::{Future, Stream};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
@@ -64,8 +63,6 @@ pub struct Event {
     pub link: String,
 }
 
-type EventList = Vec<Event>;
-
 impl<'de> Deserialize<'de> for UserStatus {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -123,8 +120,6 @@ pub struct RSVP {
     pub member: User,
     pub response: RSVPResponse,
 }
-
-type RSVPList = Vec<RSVP>;
 
 impl<'de> Deserialize<'de> for RSVPResponse {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -200,6 +195,43 @@ impl Client {
     }
 }
 
+#[derive(Debug)]
+pub enum Error {
+    Reqwest(reqwest::Error),
+    Serde {
+        error: serde_json::Error,
+        input: String,
+    },
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Reqwest(error) => write!(f, "Meetup Client Error (Reqwest Error):\n{:?}", error),
+            Error::Serde { error, input } => write!(
+                f,
+                "Meetup Client Error (Deserialization Error):\n{:?}\nInput was:\n{}",
+                error, input
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Reqwest(err) => Some(err),
+            Error::Serde { error: err, .. } => Some(err),
+        }
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Self {
+        Error::Reqwest(err)
+    }
+}
+
 impl AsyncClient {
     pub fn new(access_token: &str) -> AsyncClient {
         let mut headers = HeaderMap::new();
@@ -216,10 +248,11 @@ impl AsyncClient {
     }
 
     // Gets the user with the specified ID
+    // TODO: currently we cannot distinguish between a non-existing user or some other kind of error
     pub fn get_group_profile(
         &self,
         id: Option<u64>,
-    ) -> impl Future<Item = Option<User>, Error = crate::BoxedError> {
+    ) -> impl Future<Item = Option<User>, Error = Error> {
         let url = match id {
             Some(id) => format!(
                 "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
@@ -233,20 +266,17 @@ impl AsyncClient {
         self.client
             .get(&url)
             .send()
-            .from_err::<crate::BoxedError>()
-            .and_then(|mut response| {
-                response.json::<User>().then(|user| match user {
-                    Ok(user) => future::ok(Some(user)),
-                    _ => future::ok(None),
-                })
-            })
+            .from_err::<Error>()
+            .and_then(Self::try_deserialize)
+            .map(|user: User| Some(user))
     }
 
     // Gets the user with the specified ID
+    // TODO: currently we cannot distinguish between a non-existing user or some other kind of error
     pub fn get_member_profile(
         &self,
         id: Option<u64>,
-    ) -> impl Future<Item = Option<User>, Error = crate::BoxedError> {
+    ) -> impl Future<Item = Option<User>, Error = Error> {
         let url = match id {
             Some(id) => format!(
                 "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
@@ -260,38 +290,46 @@ impl AsyncClient {
         self.client
             .get(&url)
             .send()
-            .from_err::<crate::BoxedError>()
-            .and_then(|mut response| {
-                response.json::<User>().then(|user| match user {
-                    Ok(user) => future::ok(Some(user)),
-                    _ => future::ok(None),
-                })
-            })
+            .from_err::<Error>()
+            .and_then(Self::try_deserialize)
+            .map(|user: User| Some(user))
     }
 
     // Doesn't implement pagination. But since Meetup returns 200 elements per page,
     // this does not matter for us anyway
-    pub fn get_upcoming_events(&self) -> impl Stream<Item = Event, Error = crate::BoxedError> {
+    pub fn get_upcoming_events(&self) -> impl Stream<Item = Event, Error = Error> {
         let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=event_hosts.id,event_hosts.name,id,link,time,name", BASE_URL, URLNAME);
         let request = self.client.get(&url);
         request
             .send()
-            .and_then(|mut response| response.json::<EventList>())
-            .map(|event_list| stream::iter_ok(event_list))
+            .from_err::<Error>()
+            .and_then(Self::try_deserialize)
+            .map(|event_list: Vec<Event>| stream::iter_ok(event_list))
             .flatten_stream()
-            .from_err::<crate::BoxedError>()
     }
 
     // Get members that RSVP'd yes
-    pub fn get_rsvps(
-        &self,
-        event_id: &str,
-    ) -> impl Future<Item = Vec<RSVP>, Error = crate::BoxedError> {
+    pub fn get_rsvps(&self, event_id: &str) -> impl Future<Item = Vec<RSVP>, Error = Error> {
         let url = format!("{}/{}/events/{}/rsvps?&sign=true&photo-host=public&page=200&only=response,member&omit=member.photo,member.event_context", BASE_URL, URLNAME, event_id);
         let request = self.client.get(&url);
         request
             .send()
-            .and_then(|mut response| response.json::<RSVPList>())
-            .from_err::<crate::BoxedError>()
+            .from_err::<Error>()
+            .and_then(Self::try_deserialize)
+    }
+
+    fn try_deserialize<T: serde::de::DeserializeOwned>(
+        mut response: reqwest::r#async::Response,
+    ) -> impl Future<Item = T, Error = Error> {
+        response.text().then(|text| match text {
+            Ok(text) => {
+                let value: T = serde_json::from_str(&text).map_err(|err| Error::Serde {
+                    error: err,
+                    input: text,
+                })?;
+                Ok(value)
+            }
+            Err(err) => Err(Error::Reqwest(err)),
+        })
     }
 }

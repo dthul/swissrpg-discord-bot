@@ -133,6 +133,12 @@ impl From<BoxedError> for HandlerError {
     }
 }
 
+impl From<crate::meetup_api::Error> for HandlerError {
+    fn from(err: crate::meetup_api::Error) -> Self {
+        HandlerError::InternalServerError(Box::new(err))
+    }
+}
+
 impl From<Response<String>> for HandlerError {
     fn from(response: Response<String>) -> Self {
         HandlerError::FailureResponse(response)

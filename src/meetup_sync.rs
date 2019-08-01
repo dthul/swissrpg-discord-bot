@@ -47,7 +47,9 @@ pub fn create_recurring_syncing_task(
                         eprintln!("Syncing task timed out: {}", err);
                     }),
             );
-            future::ok(())
+            // Add a 1s delay between each item as a naive rate limit for the Meetup API
+            tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_secs(1))
+                .from_err::<crate::BoxedError>()
         })
 }
 
@@ -60,7 +62,9 @@ pub fn sync_task(
     redis_client: redis::Client,
 ) -> impl Future<Item = (), Error = crate::BoxedError> + Send + 'static {
     let upcoming_events = match *meetup_client.read() {
-        Some(ref meetup_client) => meetup_client.get_upcoming_events(),
+        Some(ref meetup_client) => meetup_client
+            .get_upcoming_events()
+            .from_err::<crate::BoxedError>(),
         None => {
             return Box::new(
                 future::err(SimpleError::new("Meetup API unavailable"))
@@ -79,7 +83,7 @@ pub fn sync_task(
         .and_then(move |event| {
             println!("Syncing task: Querying RSVPs for event \"{}\"", event.name);
             let rsvps = match *meetup_client.read() {
-                Some(ref meetup_client) => meetup_client.get_rsvps(&event.id),
+                Some(ref meetup_client) => meetup_client.get_rsvps(&event.id).from_err::<crate::BoxedError>(),
                 None => {
                     return Box::new(
                         future::err(SimpleError::new("Meetup API unavailable"))
