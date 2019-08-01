@@ -484,6 +484,13 @@ impl EventHandler for Handler {
         if msg.author.id == bot_id {
             return;
         }
+        // Ignore all messages that might have come from another guild
+        // (shouldn't happen) but who knows
+        if let Some(guild_id) = msg.guild_id {
+            if guild_id != crate::discord_sync::GUILD_ID {
+                return;
+            }
+        }
         let channel = match msg.channel_id.to_channel(&ctx) {
             Ok(channel) => channel,
             _ => return,
