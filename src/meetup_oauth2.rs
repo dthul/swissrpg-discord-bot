@@ -410,9 +410,9 @@ fn meetup_http_handler(
                 async_user_meetup_client
                     .get_member_profile(None)
                     .from_err::<HandlerError>()
-                    .and_then(move |user_info| {
-                        let (meetup_id, meetup_name) = match user_info {
-                            Some(info) => (info.id, info.name),
+                    .and_then(move |meetup_user| {
+                        let meetup_user = match meetup_user {
+                            Some(info) => info,
                             _ => {
                                 return future::err(
                                     Response::new("Could not find Meetup ID".to_owned()).into(),
@@ -420,13 +420,13 @@ fn meetup_http_handler(
                             }
                         };
                         let redis_key_d2m = format!("discord_user:{}:meetup_user", discord_id);
-                        let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
+                        let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_user.id);
                         // Check that the Discord ID has not been linked yet
                         let existing_meetup_id: RedisResult<Option<u64>> =
                             redis_connection_mutex.lock().get(&redis_key_d2m);
                         match existing_meetup_id {
                             Ok(Some(existing_meetup_id)) => {
-                                if existing_meetup_id == meetup_id {
+                                if existing_meetup_id == meetup_user.id {
                                     return future::err(
                                         Response::new(
                                             "All good, your Meetup account was already linked"
@@ -487,9 +487,9 @@ fn meetup_http_handler(
                                         // Execute empty transaction just to get out of the closure
                                         pipe.query(con)
                                     } else {
-                                        pipe.sadd("meetup_users", meetup_id)
+                                        pipe.sadd("meetup_users", meetup_user.id)
                                             .sadd("discord_users", discord_id)
-                                            .set(&redis_key_d2m, meetup_id)
+                                            .set(&redis_key_d2m, meetup_user.id)
                                             .set(&redis_key_m2d, discord_id);
                                         successful = true;
                                         pipe.query(con)
@@ -508,10 +508,16 @@ fn meetup_http_handler(
                                 .into(),
                             );
                         }
-                        future::ok(Response::new(
-                            format!("Successfully linked to {}'s Meetup account", meetup_name)
-                                .into(),
-                        ))
+                        if let Some(photo) = meetup_user.photo {
+                            future::ok(Response::new(format!("Successfully linked to {}'s Meetup account<br/><img src=\"{}\" />", meetup_user.name, photo.thumb_link)
+                                    .into()))
+                        }
+                        else {
+                            future::ok(Response::new(
+                                format!("Successfully linked to {}'s Meetup account", meetup_user.name)
+                                    .into(),
+                            ))
+                        }
                     })
             });
         Box::new(future)
