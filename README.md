@@ -18,7 +18,7 @@ On success, the compiled binary will be copied to the root of this repository.
 
 # Install systemd service
 
-Copy `bot.service` to `/etc/systemd/system/`. Then:
+Copy/symlink `bot.service` to `/etc/systemd/system/`. Then:
 
 `$ systemctl start bot`
 
@@ -35,6 +35,29 @@ NOTE: call `systemctl daemon-reload` after modifying service files
 # Nginx
 
 Copy/symlink `bot.conf` to `/etc/nginx/conf.d/` and remember to disable the default configuration that some distributions have in `/etc/nginx/sites-enabled/default`. Then restart nginx: `$ systemctl restart nginx`
+
+# Redis
+
+Configuration file can be found in `/etc/redis/redis.conf`. By default backups will be found at `/var/lib/redis/dump.rdb` and `/var/lib/redis/appendonly.aof`.
+Important settings:
+
+```
+# General settings
+bind 127.0.0.1 ::1
+protected-mode yes
+
+# RDB settings
+save 900 1
+save 300 10
+save 60 10000
+stop-writes-on-bgsave-error yes
+rdbchecksum yes
+
+# AOF setings
+appendonly yes
+appendfsync everysec
+aof-use-rdb-preamble yes
+```
 
 # To link statically
 
