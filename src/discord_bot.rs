@@ -205,8 +205,8 @@ impl TypeMapKey for FuturesSpawnerKey {
 
 #[derive(Clone)]
 pub struct CacheAndHttp {
-    cache: serenity::cache::CacheRwLock,
-    http: Arc<serenity::http::raw::Http>,
+    pub cache: serenity::cache::CacheRwLock,
+    pub http: Arc<serenity::http::raw::Http>,
 }
 
 impl serenity::http::CacheHttp for CacheAndHttp {

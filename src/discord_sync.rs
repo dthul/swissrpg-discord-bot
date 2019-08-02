@@ -12,9 +12,11 @@ use white_rabbit;
 // Test server:
 pub const GUILD_ID: GuildId = GuildId(601070848446824509);
 pub const ORGANIZER_ID: RoleId = RoleId(606829075226689536);
+pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
 // SwissRPG:
 // pub const GUILD_ID: GuildId = GuildId(401856510709202945);
 // pub const ORGANIZER_ID: RoleId = RoleId(539447673988841492);
+// pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
 
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =
@@ -159,10 +161,19 @@ fn sync_event_series(
     sync_user_role_assignments(
         series_id,
         channel_role_id,
-        channel_host_role_id,
+        /*is_host_role*/ false,
         redis_connection,
         discord_api,
     )?;
+    sync_user_role_assignments(
+        series_id,
+        channel_host_role_id,
+        /*is_host_role*/ true,
+        redis_connection,
+        discord_api,
+    )?;
+    // Step 6: Make sure that event hosts have the guild's game master role
+    sync_game_master_role(series_id, redis_connection, discord_api)?;
     Ok(())
 }
 
@@ -190,11 +201,21 @@ fn sync_role(
             discord_api,
         )?;
         // Make sure that the role ID that was returned actually exists on Discord
-        let guild_roles = discord_api.http().get_guild_roles(GUILD_ID.0)?;
-        let guild_role = guild_roles
-            .iter()
-            .find(|guild_role| guild_role.id.0 == role.0);
-        if guild_role.is_none() {
+        // First, check the cache
+        let role_exists = match GUILD_ID.to_guild_cached(&discord_api.cache) {
+            Some(guild) => guild.read().roles.contains_key(&role),
+            None => false,
+        };
+        // If it was not in the cache, check Discord
+        let role_exists = if role_exists {
+            true
+        } else {
+            let guild_roles = discord_api.http().get_guild_roles(GUILD_ID.0)?;
+            guild_roles
+                .iter()
+                .any(|guild_role| guild_role.id.0 == role.0)
+        };
+        if !role_exists {
             // This role does not exist on Discord
             // Delete it from Redis and retry
             let redis_discord_roles_key = if is_host_role {
@@ -357,7 +378,7 @@ fn sync_channel(
             discord_api,
         )?;
         // Make sure that the channel ID that was returned actually exists on Discord
-        let channel_exists = match channel.to_channel(discord_api.http()) {
+        let channel_exists = match channel.to_channel(discord_api) {
             Ok(_) => true,
             Err(err) => {
                 if let serenity::Error::Http(http_err) = &err {
@@ -551,8 +572,8 @@ fn sync_channel_permissions(
 
 fn sync_user_role_assignments(
     event_series_id: &str,
-    user_role: RoleId,
-    host_role: RoleId,
+    role: RoleId,
+    is_host_role: bool,
     redis_connection: &mut redis::Connection,
     discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
@@ -566,55 +587,106 @@ fn sync_user_role_assignments(
     // Then, find all Meetup users RSVP'd to those events
     let redis_event_users_keys: Vec<_> = event_ids
         .iter()
-        .map(|event_id| format!("meetup_event:{}:meetup_users", event_id))
+        .map(|event_id| {
+            if is_host_role {
+                format!("meetup_event:{}:meetup_hosts", event_id)
+            } else {
+                format!("meetup_event:{}:meetup_users", event_id)
+            }
+        })
         .collect();
-    let redis_event_hosts_keys: Vec<_> = event_ids
-        .iter()
-        .map(|event_id| format!("meetup_event:{}:meetup_hosts", event_id))
-        .collect();
-    let (meetup_user_ids, meetup_host_ids): (Vec<u64>, Vec<u64>) = redis::pipe()
+    let (meetup_user_ids,): (Vec<u64>,) = redis::pipe()
         .sinter(redis_event_users_keys)
-        .sinter(redis_event_hosts_keys)
         .query(redis_connection)?;
     // Now, try to associate the RSVP'd Meetup users with Discord users
     let redis_meetup_user_discord_keys: Vec<_> = meetup_user_ids
         .into_iter()
         .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
         .collect();
-    let redis_meetup_host_discord_keys: Vec<_> = meetup_host_ids
-        .into_iter()
-        .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
-        .collect();
-    let (discord_user_ids, discord_host_ids): (Vec<Option<u64>>, Vec<Option<u64>>) = redis::pipe()
+    let (discord_user_ids,): (Vec<Option<u64>>,) = redis::pipe()
         .get(redis_meetup_user_discord_keys)
-        .get(redis_meetup_host_discord_keys)
         .query(redis_connection)?;
     // Filter the None values
     let discord_user_ids: Vec<_> = discord_user_ids.into_iter().filter_map(|id| id).collect();
-    let discord_host_ids: Vec<_> = discord_host_ids.into_iter().filter_map(|id| id).collect();
-    // Lastly, actually assign the roles to the Discord users
+    // Lastly, actually assign the role to the Discord users
     for user_id in discord_user_ids {
-        match discord_api
-            .http()
-            .add_member_role(GUILD_ID.0, user_id, user_role.0)
-        {
-            Ok(_) => println!("Assigned user {} to role {}", user_id, user_role.0),
-            Err(err) => eprintln!(
-                "Could not assign user {} to role {}: {}",
-                user_id, user_role.0, err
-            ),
+        match UserId(user_id).to_user(discord_api) {
+            Ok(user) => match user.has_role(discord_api, GUILD_ID, role) {
+                Ok(has_role) => {
+                    if !has_role {
+                        match discord_api
+                            .http()
+                            .add_member_role(GUILD_ID.0, user_id, role.0)
+                        {
+                            Ok(_) => println!("Assigned user {} to role {}", user_id, role.0),
+                            Err(err) => eprintln!(
+                                "Could not assign user {} to role {}: {}",
+                                user_id, role.0, err
+                            ),
+                        }
+                    }
+                }
+                Err(err) => eprintln!(
+                    "Could not figure out whether the user {} already has role {}: {}",
+                    user.id, role.0, err
+                ),
+            },
+            Err(err) => eprintln!("Could not find the user {}: {}", user_id, err),
         }
     }
-    for host_id in discord_host_ids {
-        match discord_api
-            .http()
-            .add_member_role(GUILD_ID.0, host_id, host_role.0)
-        {
-            Ok(_) => println!("Assigned user {} to host role {}", host_id, host_role.0),
-            Err(err) => eprintln!(
-                "Could not assign user {} to host role {}: {}",
-                host_id, host_role.0, err
-            ),
+    Ok(())
+}
+
+fn sync_game_master_role(
+    event_series_id: &str,
+    redis_connection: &mut redis::Connection,
+    discord_api: &crate::discord_bot::CacheAndHttp,
+) -> Result<(), crate::BoxedError> {
+    if let Some(game_master_role) = GAME_MASTER_ID {
+        // First, find all events belonging to this event series
+        let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
+        let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
+        if event_ids.is_empty() {
+            return Ok(());
+        }
+        // Then, find all Meetup host of those events
+        let redis_event_hosts_keys: Vec<_> = event_ids
+            .iter()
+            .map(|event_id| format!("meetup_event:{}:meetup_hosts", event_id))
+            .collect();
+        let (meetup_host_ids,): (Vec<u64>,) = redis::pipe()
+            .sinter(redis_event_hosts_keys)
+            .query(redis_connection)?;
+        // Now, try to associate the hosts with Discord users
+        let redis_meetup_host_discord_keys: Vec<_> = meetup_host_ids
+            .into_iter()
+            .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
+            .collect();
+        let (discord_host_ids,): (Vec<Option<u64>>,) = redis::pipe()
+            .get(redis_meetup_host_discord_keys)
+            .query(redis_connection)?;
+        // Filter the None values
+        let discord_host_ids: Vec<_> = discord_host_ids.into_iter().filter_map(|id| id).collect();
+        // Lastly, actually assign the Game Master role to the hosts
+        for host_id in discord_host_ids {
+            match UserId(host_id).to_user(discord_api) {
+                Ok(user) => match user.has_role(discord_api, GUILD_ID, game_master_role) {
+                    Ok(has_role) => if !has_role {
+                        match discord_api
+                            .http()
+                            .add_member_role(GUILD_ID.0, host_id, game_master_role.0)
+                        {
+                            Ok(_) => println!("Assigned user {} to the game master role", host_id),
+                            Err(err) => eprintln!(
+                                "Could not assign user {} to the game master role: {}",
+                                host_id, err
+                            ),
+                        }
+                    },
+                    Err(err) => eprintln!("Could not figure out whether the user {} already has the game master role: {}", user.id, err)
+                },
+                Err(err) => eprintln!("Could not find the host user {}: {}", host_id, err)
+            }
         }
     }
     Ok(())
