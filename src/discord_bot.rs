@@ -203,6 +203,30 @@ impl TypeMapKey for FuturesSpawnerKey {
     type Value = futures::sync::mpsc::Sender<crate::meetup_sync::BoxedFuture<(), ()>>;
 }
 
+#[derive(Clone)]
+pub struct CacheAndHttp {
+    cache: serenity::cache::CacheRwLock,
+    http: Arc<serenity::http::raw::Http>,
+}
+
+impl serenity::http::CacheHttp for CacheAndHttp {
+    fn cache(&self) -> Option<&serenity::cache::CacheRwLock> {
+        Some(&self.cache)
+    }
+    fn http(&self) -> &serenity::http::raw::Http {
+        &self.http
+    }
+}
+
+impl serenity::http::CacheHttp for &CacheAndHttp {
+    fn cache(&self) -> Option<&serenity::cache::CacheRwLock> {
+        Some(&self.cache)
+    }
+    fn http(&self) -> &serenity::http::raw::Http {
+        &self.http
+    }
+}
+
 struct Handler;
 
 impl Handler {
@@ -715,7 +739,10 @@ impl EventHandler for Handler {
                 white_rabbit::Utc::now(),
                 crate::discord_sync::create_sync_discord_task(
                     redis_client,
-                    ctx.http.clone(),
+                    CacheAndHttp {
+                        cache: ctx.cache.clone(),
+                        http: ctx.http.clone(),
+                    },
                     bot_id.0,
                     /*recurring*/ false,
                 ),

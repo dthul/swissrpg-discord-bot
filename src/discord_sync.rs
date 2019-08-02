@@ -1,6 +1,7 @@
 use lazy_static::lazy_static;
 use redis;
 use redis::{Commands, PipelineCommands};
+use serenity::http::CacheHttp;
 use serenity::model::{
     channel::PermissionOverwrite, channel::PermissionOverwriteType, id::ChannelId, id::GuildId,
     id::RoleId, id::UserId, permissions::Permissions,
@@ -23,7 +24,7 @@ lazy_static! {
 // Syncs Discord with the state of the Redis database
 pub fn create_sync_discord_task(
     redis_client: redis::Client,
-    discord_api: impl serenity::http::CacheHttp + Send + Sync + 'static,
+    discord_api: crate::discord_bot::CacheAndHttp,
     bot_id: u64,
     recurring: bool,
 ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static {
@@ -49,7 +50,7 @@ pub fn create_sync_discord_task(
 
 pub fn sync_discord(
     redis_client: &redis::Client,
-    discord_api: &impl serenity::http::CacheHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
     bot_id: u64,
 ) -> Result<(), crate::BoxedError> {
     let redis_series_key = "event_series";
@@ -88,7 +89,7 @@ For each event series:
 fn sync_event_series(
     series_id: &str,
     redis_connection: &mut redis::Connection,
-    discord_api: &impl serenity::http::CacheHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
     bot_id: u64,
 ) -> Result<(), crate::BoxedError> {
     // Step 0: Figure out the title of this event series
@@ -170,7 +171,7 @@ fn sync_role(
     is_host_role: bool,
     channel_id: ChannelId,
     redis_connection: &mut redis::Connection,
-    discord_api: &impl serenity::http::CacheHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<RoleId, crate::BoxedError> {
     let max_retries = 1;
     let mut current_num_try = 0;
@@ -238,7 +239,7 @@ fn sync_role_impl(
     is_host_role: bool,
     channel_id: ChannelId,
     redis_connection: &mut redis::Connection,
-    discord_api: &impl serenity::http::CacheHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<RoleId, crate::BoxedError> {
     let redis_channel_role_key = if is_host_role {
         format!("discord_channel:{}:discord_host_role", channel_id.0)
@@ -337,7 +338,7 @@ fn sync_channel(
     event_series_id: &str,
     bot_id: u64,
     redis_connection: &mut redis::Connection,
-    discord_api: &impl serenity::http::CacheHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<ChannelId, crate::BoxedError> {
     let max_retries = 1;
     let mut current_num_try = 0;
@@ -414,7 +415,7 @@ fn sync_channel_impl(
     event_series_id: &str,
     bot_id: u64,
     redis_connection: &mut redis::Connection,
-    discord_api: &impl serenity::http::CacheHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<ChannelId, crate::BoxedError> {
     let redis_series_channel_key = format!("event_series:{}:discord_channel", event_series_id);
     // Check if the channel already exists
@@ -510,7 +511,7 @@ fn sync_channel_permissions(
     role_id: RoleId,
     host_role_id: RoleId,
     bot_id: u64,
-    discord_api: &impl serenity::http::CacheHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
     // The @everyone role has the same id as the guild
     let role_everyone_id = RoleId(GUILD_ID.0);
@@ -553,7 +554,7 @@ fn sync_user_role_assignments(
     user_role: RoleId,
     host_role: RoleId,
     redis_connection: &mut redis::Connection,
-    discord_api: &impl serenity::http::CacheHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
     // First, find all events belonging to this event series
     let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
