@@ -61,7 +61,7 @@ pub fn sync_task(
 ) -> impl Future<Item = (), Error = crate::BoxedError> + Send + 'static {
     let upcoming_events = match *meetup_client.read() {
         Some(ref meetup_client) => meetup_client
-            .get_upcoming_events()
+            .get_upcoming_events_all_groups()
             .from_err::<crate::BoxedError>(),
         None => {
             return Box::new(
@@ -81,7 +81,7 @@ pub fn sync_task(
         .and_then(move |event| {
             println!("Syncing task: Querying RSVPs for event \"{}\"", event.name);
             let rsvps = match *meetup_client.read() {
-                Some(ref meetup_client) => meetup_client.get_rsvps(&event.id).from_err::<crate::BoxedError>(),
+                Some(ref meetup_client) => meetup_client.get_rsvps(&event.group.urlname, &event.id).from_err::<crate::BoxedError>(),
                 None => {
                     return Box::new(
                         future::err(SimpleError::new("Meetup API unavailable"))
@@ -175,6 +175,7 @@ fn sync_event(
                                 ("name", event.name),
                                 ("time", event.time.to_rfc3339()),
                                 ("link", event.link),
+                                ("urlname", event.group.urlname),
                             ];
                             pipe.sadd(redis_events_key, &event.id)
                                 .sadd(redis_series_key, &series_id)

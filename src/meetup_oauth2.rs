@@ -2,6 +2,8 @@ use crate::meetup_api;
 use crate::BoxedError;
 use cookie::Cookie;
 use futures::future;
+use futures::stream;
+use futures::stream::Stream;
 use futures::Future;
 use hyper::service::service_fn;
 use hyper::{Body, Method, Request, Response, Server};
@@ -145,6 +147,14 @@ impl From<Response<String>> for HandlerError {
     }
 }
 
+fn get_group_profiles(
+    meetup_api: meetup_api::AsyncClient,
+) -> impl Future<Item = Vec<Option<meetup_api::User>>, Error = crate::meetup_api::Error> {
+    stream::iter_ok::<_, crate::meetup_api::Error>(&meetup_api::URLNAMES)
+        .and_then(move |urlname| meetup_api.get_group_profile(None, urlname))
+        .collect()
+}
+
 // TODO: switch to future-aware mutexes
 // TODO: switch to async Redis
 type ResponseFuture = Box<dyn Future<Item = Response<Body>, Error = HandlerError> + Send>;
@@ -233,24 +243,30 @@ fn meetup_http_handler(
                     .into()
             })
             .and_then(|token_res| {
-                // Check that this token belongs to an organizer
+                // Check that this token belongs to an organizer of all our Meetup groups
                 let new_async_meetup_client =
                     meetup_api::AsyncClient::new(token_res.access_token().secret());
-                new_async_meetup_client
-                    .get_group_profile(None)
+                get_group_profiles(new_async_meetup_client.clone())
                     .from_err::<HandlerError>()
-                    .and_then(move |user| {
-                        let is_organizer = match user {
-                            Some(meetup_api::User {
-                                group_profile:
-                                    Some(meetup_api::GroupProfile {
-                                        status: meetup_api::UserStatus::Active,
-                                        role: Some(role),
-                                    }),
-                                ..
-                            }) => role == meetup_api::LeadershipRole::Organizer,
-                            _ => false,
-                        };
+                    .and_then(move |user_profiles| {
+                        let is_organizer = user_profiles.iter().all(|profile| {
+                            let is_organizer = match profile {
+                                Some(meetup_api::User {
+                                    group_profile:
+                                        Some(meetup_api::GroupProfile {
+                                            status: meetup_api::UserStatus::Active,
+                                            role: Some(role),
+                                        }),
+                                    ..
+                                }) => {
+                                    *role == meetup_api::LeadershipRole::Organizer
+                                        || *role == meetup_api::LeadershipRole::Coorganizer
+                                        || *role == meetup_api::LeadershipRole::AssistantOrganizer
+                                }
+                                _ => false,
+                            };
+                            is_organizer
+                        });
                         if !is_organizer {
                             return future::err(
                                 Response::new("Only the organizer can log in".to_owned()).into(),

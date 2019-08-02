@@ -7,12 +7,14 @@ use serde::de::Error as _;
 use serde::Deserialize;
 
 const BASE_URL: &'static str = "https://api.meetup.com";
-pub const URLNAME: &'static str = "SwissRPG-Zurich";
+pub const URLNAMES: [&'static str; 2] = ["SwissRPG-Zurich", "SwissRPG-Central"];
 
+#[derive(Debug, Clone)]
 pub struct Client {
     client: reqwest::Client,
 }
 
+#[derive(Debug, Clone)]
 pub struct AsyncClient {
     client: reqwest::r#async::Client,
 }
@@ -34,6 +36,11 @@ pub struct User {
     pub name: String,
     pub photo: Option<Photo>,
     pub group_profile: Option<GroupProfile>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Group {
+    pub urlname: String,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -61,6 +68,7 @@ pub struct Event {
     pub time: chrono::DateTime<chrono::Utc>,
     pub event_hosts: Vec<User>,
     pub link: String,
+    pub group: Group,
 }
 
 impl<'de> Deserialize<'de> for UserStatus {
@@ -154,15 +162,15 @@ impl Client {
         }
     }
 
-    pub fn get_group_profile(&self, id: Option<u64>) -> crate::Result<Option<User>> {
+    pub fn get_group_profile(&self, id: Option<u64>, urlname: &str) -> crate::Result<Option<User>> {
         let url = match id {
             Some(id) => format!(
                 "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
-                BASE_URL, URLNAME, id
+                BASE_URL, urlname, id
             ),
             _ => format!(
                 "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
-                BASE_URL, URLNAME
+                BASE_URL, urlname
             ),
         };
         let url = url.parse()?;
@@ -252,15 +260,16 @@ impl AsyncClient {
     pub fn get_group_profile(
         &self,
         id: Option<u64>,
+        urlname: &str,
     ) -> impl Future<Item = Option<User>, Error = Error> {
         let url = match id {
             Some(id) => format!(
                 "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
-                BASE_URL, URLNAME, id
+                BASE_URL, urlname, id
             ),
             _ => format!(
                 "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
-                BASE_URL, URLNAME
+                BASE_URL, urlname
             ),
         };
         self.client
@@ -297,8 +306,9 @@ impl AsyncClient {
 
     // Doesn't implement pagination. But since Meetup returns 200 elements per page,
     // this does not matter for us anyway
-    pub fn get_upcoming_events(&self) -> impl Stream<Item = Event, Error = Error> {
-        let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=event_hosts.id,event_hosts.name,id,link,time,name", BASE_URL, URLNAME);
+    pub fn get_upcoming_events(&self, urlname: &str) -> impl Stream<Item = Event, Error = Error> {
+        let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=event_hosts.id,event_hosts.name,id,link,time,name,group.urlname", BASE_URL, 
+        urlname);
         let request = self.client.get(&url);
         request
             .send()
@@ -308,9 +318,21 @@ impl AsyncClient {
             .flatten_stream()
     }
 
+    pub fn get_upcoming_events_all_groups(&self) -> impl Stream<Item = Event, Error = Error> {
+        let streams: Vec<_> = URLNAMES
+            .iter()
+            .map(|urlname| self.get_upcoming_events(urlname))
+            .collect();
+        stream::iter_ok::<_, Error>(streams).flatten()
+    }
+
     // Get members that RSVP'd yes
-    pub fn get_rsvps(&self, event_id: &str) -> impl Future<Item = Vec<RSVP>, Error = Error> {
-        let url = format!("{}/{}/events/{}/rsvps?&sign=true&photo-host=public&page=200&only=response,member&omit=member.photo,member.event_context", BASE_URL, URLNAME, event_id);
+    pub fn get_rsvps(
+        &self,
+        urlname: &str,
+        event_id: &str,
+    ) -> impl Future<Item = Vec<RSVP>, Error = Error> {
+        let url = format!("{}/{}/events/{}/rsvps?&sign=true&photo-host=public&page=200&only=response,member&omit=member.photo,member.event_context", BASE_URL, urlname, event_id);
         let request = self.client.get(&url);
         request
             .send()
