@@ -47,9 +47,7 @@ pub fn create_recurring_syncing_task(
                         eprintln!("Syncing task timed out: {}", err);
                     }),
             );
-            // Add a 1s delay between each item as a naive rate limit for the Meetup API
-            tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_secs(1))
-                .from_err::<crate::BoxedError>()
+            future::ok(())
         })
 }
 
@@ -102,7 +100,9 @@ pub fn sync_task(
                     sync_event(event, rsvps, redis_client.clone())
                         .map_err(|err| eprintln!("Event sync failed: {}", err)),
                 );
-                future::ok(())
+                // Add a 1s delay between each item as a naive rate limit for the Meetup API
+                tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_secs(1))
+                    .from_err::<crate::BoxedError>()
             },
         );
     return Box::new(sync_future);
