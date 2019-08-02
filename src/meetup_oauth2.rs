@@ -27,7 +27,8 @@ lazy_static! {
     static ref LINK_URL_REGEX: regex::Regex =
         regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)$").unwrap();
     static ref LINK_REDIRECT_URL_REGEX: regex::Regex =
-        regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)/redirect$").unwrap();
+        regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)/(?P<type>rsvp|norsvp)/redirect$")
+            .unwrap();
 }
 
 pub fn new_random_id(num_bytes: u32) -> String {
@@ -321,14 +322,27 @@ fn meetup_http_handler(
         }
         // TODO: check that this Discord ID is not linked yet before generating an authorization URL
         // Generate the authorization URL to which we'll redirect the user.
-        let (authorize_url, csrf_state) = oauth2_link_client
+        // Two versions: One with just the "basic" scope to identify the user.
+        // The second with the "rsvp" scope that will allow us to RSVP the user to events.
+        let csrf_state = CsrfToken::new_random();
+        let (authorize_url_basic, csrf_state) = oauth2_link_client
             .clone()
             .set_redirect_url(RedirectUrl::new(
-                Url::parse(format!("{}/link/{}/redirect", BASE_URL, linking_id).as_str()).unwrap(),
+                Url::parse(format!("{}/link/{}/norsvp/redirect", BASE_URL, linking_id).as_str())
+                    .unwrap(),
             ))
-            .authorize_url(CsrfToken::new_random)
-            .add_scope(Scope::new("ageless".to_string()))
+            .authorize_url(|| csrf_state)
             .add_scope(Scope::new("basic".to_string()))
+            .url();
+        let (authorize_url_rsvp, csrf_state) = oauth2_link_client
+            .clone()
+            .set_redirect_url(RedirectUrl::new(
+                Url::parse(format!("{}/link/{}/rsvp/redirect", BASE_URL, linking_id).as_str())
+                    .unwrap(),
+            ))
+            .authorize_url(|| csrf_state)
+            .add_scope(Scope::new("basic".to_string()))
+            .add_scope(Scope::new("rsvp".to_string()))
             .url();
         // Store the generated CSRF token so we can compare it to the one
         // returned by Meetup later
@@ -336,7 +350,10 @@ fn meetup_http_handler(
             Ok(csrf_cookie) => csrf_cookie,
             Err(err) => return Box::new(future::err(err.into())),
         };
-        let html_body = format!("<a href=\"{}\">Link with Meetup</a>", authorize_url);
+        let html_body = format!(
+            "<a href=\"{}\">Link with Meetup (+ RSVPs)</a><br/><a href=\"{}\">Link with Meetup</a>",
+            authorize_url_rsvp, authorize_url_basic
+        );
         Box::new(future::result(
             Response::builder()
                 .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
@@ -350,6 +367,10 @@ fn meetup_http_handler(
         let linking_id = match captures.name("id") {
             Some(id) => id.as_str(),
             _ => return Box::new(future::ok(Response::new("Invalid request".into()))),
+        };
+        let with_rsvp_scope = match captures.name("type") {
+            Some(r#type) => r#type.as_str() == "rsvp",
+            _ => false,
         };
         let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
         // This is a one-time use link. Expire it now.
@@ -411,7 +432,7 @@ fn meetup_http_handler(
         let future = oauth2_link_client
             .clone()
             .set_redirect_url(RedirectUrl::new(
-                Url::parse(format!("{}/link/{}/redirect", BASE_URL, linking_id).as_str()).unwrap(),
+                Url::parse(format!("{}{}", BASE_URL, path).as_str()).unwrap(),
             ))
             .exchange_code(code)
             .request_async(async_http_client)
@@ -491,6 +512,17 @@ fn meetup_http_handler(
                         let mut successful = false;
                         let res: RedisResult<()> = {
                             let mut redis_connection = redis_connection_mutex.lock();
+                            // If the "rsvp" scope is part of the token result, store the tokens as well
+                            if with_rsvp_scope {
+                                if let Some(refresh_token) = token_res.refresh_token() {
+                                    let redis_user_tokens_key = format!("meetup_user:{}:oauth2_tokens", meetup_user.id);
+                                    let fields = &[
+                                        ("access_token", token_res.access_token().secret()),
+                                        ("refresh_token", refresh_token.secret()),
+                                    ];
+                                    let _: redis::RedisResult<()> = redis::pipe().hset_multiple(&redis_user_tokens_key, fields).query(&mut *redis_connection);
+                                }
+                            }
                             redis::transaction(
                                 &mut *redis_connection,
                                 &[&redis_key_d2m, &redis_key_m2d],
