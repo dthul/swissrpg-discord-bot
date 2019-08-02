@@ -136,7 +136,7 @@ fn sync_event_series(
         discord_api,
     )?;
     // Step 3: Sync the channel's associated host role
-    let host_role_name = format!("{} [Host]", series_name);
+    let host_role_name = format!("[Host] {}", series_name);
     let channel_host_role_id = sync_role(
         &host_role_name,
         /*is_host_role*/ true,
