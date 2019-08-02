@@ -630,12 +630,19 @@ fn sync_user_role_assignments(
 //     - delete the role from Discord
 //     - delete everything that is indexed by the role ID in Redis (like discord_user_role:{id}:discord_channel)
 //     - delete the role id from the "discord_roles" set
+// - go through "event_series"
+//   - if there is no discord_channel for this series _and_ there are no upcoming events in this event series
+//     - delete everything that is indexed by the event series id
+//     - delete the event series id from "event_series"
 // - go through "meetup_events"
-//   - if event was in the past
+//   - if the event series of this event does not exist anymore
 //     - delete everything that is indexed by the event id
 //     - delete event id from the event series
 //     - delete the event id from "meetup_events"
-// - go through "event_series"
-//   - if there is no discord_channel for this series _and_ there are no events in this event series
-//     - delete everything that is indexed by the event series id
-//     - delete the event series id from "event_series"
+// - go through "meetup_users" and "discord_users"
+//   - if the Meetup <-> Discord link only exists in one direction, make it bi-directional again
+//   - if the link does not exist at all anymore:
+//     - delete everything that is indexed by the discord_user
+//     - delete the discord_user from the "discord_users" set
+//     - delete everything that is indexed by the meetup_user (including access token)
+//     - delete the meetup_user from the "meetup_users" set
