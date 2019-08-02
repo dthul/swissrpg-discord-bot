@@ -26,3 +26,6 @@ time = "0.1"
 tokio = { version = "0.1", default-features = false, features = ["rt-full"] }
 url = "1.7"
 white_rabbit = "0.1"
+
+[profile.release]
+lto = true
