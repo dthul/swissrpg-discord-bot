@@ -10,8 +10,10 @@ use white_rabbit;
 
 // Test server:
 pub const GUILD_ID: GuildId = GuildId(601070848446824509);
+pub const ORGANIZER_ID: RoleId = RoleId(606829075226689536);
 // SwissRPG:
 // pub const GUILD_ID: GuildId = GuildId(401856510709202945);
+// pub const ORGANIZER_ID: RoleId = RoleId(539447673988841492);
 
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =

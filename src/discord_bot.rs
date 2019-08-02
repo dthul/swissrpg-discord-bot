@@ -522,7 +522,20 @@ impl EventHandler for Handler {
                 _ => return,
             }
         } else if let Some(captures) = regexes.link_meetup_direct(is_dm).captures(&msg.content) {
-            // TODO: this is only for organizers
+            // This is only for organizers
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::GUILD_ID,
+                    crate::discord_sync::ORGANIZER_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                return;
+            }
+            // TODO
             let user_id = msg.author.id.0;
             let meetup_id = captures.name("meetupid").unwrap().as_str();
             // Try to convert the specified ID to an integer
@@ -554,7 +567,19 @@ impl EventHandler for Handler {
                 _ => return,
             }
         } else if let Some(captures) = regexes.create_channel(is_dm).captures(&msg.content) {
-            // TODO: this is only for organizers
+            // This is only for organizers
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::GUILD_ID,
+                    crate::discord_sync::ORGANIZER_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                return;
+            }
             // TODO: needs host
             // TODO: redis schema
             let channel_name = captures.name("channelname").unwrap().as_str();
@@ -604,6 +629,19 @@ impl EventHandler for Handler {
                 };
             }
         } else if regexes.sync_meetup_mention.is_match(&msg.content) {
+            // This is only for organizers
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::GUILD_ID,
+                    crate::discord_sync::ORGANIZER_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                return;
+            }
             let (async_meetup_client, redis_client, mut future_spawner) = {
                 let data = ctx.data.read();
                 let async_meetup_client = data
@@ -646,6 +684,19 @@ impl EventHandler for Handler {
                 }
             }
         } else if regexes.sync_discord_mention.is_match(&msg.content) {
+            // This is only for organizers
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::GUILD_ID,
+                    crate::discord_sync::ORGANIZER_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                return;
+            }
             let (redis_client, bot_id, task_scheduler) = {
                 let data = ctx.data.read();
                 let redis_client = data
