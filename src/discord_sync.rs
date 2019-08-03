@@ -20,7 +20,7 @@ pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
 
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =
-        regex::Regex::new(r"^\s*(?P<name>.+?)\s*\[").unwrap();
+        regex::Regex::new(r"^\s*(?P<name>[^\[\(]+[^\s\[\(])").unwrap();
 }
 
 // Syncs Discord with the state of the Redis database

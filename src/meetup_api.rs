@@ -69,6 +69,7 @@ pub struct Event {
     pub event_hosts: Vec<User>,
     pub link: String,
     pub group: Group,
+    pub description: String,
 }
 
 impl<'de> Deserialize<'de> for UserStatus {
@@ -307,7 +308,7 @@ impl AsyncClient {
     // Doesn't implement pagination. But since Meetup returns 200 elements per page,
     // this does not matter for us anyway
     pub fn get_upcoming_events(&self, urlname: &str) -> impl Stream<Item = Event, Error = Error> {
-        let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=event_hosts.id,event_hosts.name,id,link,time,name,group.urlname", BASE_URL, 
+        let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=description,event_hosts.id,event_hosts.name,id,link,time,name,group.urlname", BASE_URL, 
         urlname);
         let request = self.client.get(&url);
         request

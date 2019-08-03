@@ -11,16 +11,11 @@ use std::time::Duration;
 use tokio;
 use tokio::prelude::*;
 
-const SESSION0_PATTERN: &'static str = r".+(?i)Session\s+0\s*$";
-const INTRO_PATTERN: &'static str = r".+(?i)\[\s*Intro\s*game\s*series\s*\]\s*$";
-const ONESHOT_PATTERN: &'static str = r".+(?i)\[.*One\s*\-?\s*Shot.*\]\s*$";
+const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*adventure\s*[\]\)]";
 
 lazy_static! {
-    static ref SESSION0_REGEX: regex::Regex = regex::Regex::new(SESSION0_PATTERN).unwrap();
-    static ref INTRO_REGEX: regex::Regex = regex::Regex::new(INTRO_PATTERN).unwrap();
-    static ref ONESHOT_REGEX: regex::Regex = regex::Regex::new(ONESHOT_PATTERN).unwrap();
-    static ref FILTER_REGEX_SET: regex::RegexSet =
-        regex::RegexSet::new(&[SESSION0_PATTERN, INTRO_PATTERN, ONESHOT_PATTERN]).unwrap();
+    static ref NEW_ADVENTURE_REGEX: regex::Regex =
+        regex::Regex::new(NEW_ADVENTURE_PATTERN).unwrap();
 }
 
 pub type BoxedFuture<T, E = crate::BoxedError> = Box<dyn Future<Item = T, Error = E> + Send>;
@@ -71,7 +66,7 @@ pub fn sync_task(
         }
     };
     let sync_future = upcoming_events
-        .filter(|event| if FILTER_REGEX_SET.is_match(&event.name) {
+        .filter(|event| if NEW_ADVENTURE_REGEX.is_match(&event.description) {
             println!("Syncing task: Found event \"{}\"", event.name);
             true
         } else {
