@@ -96,10 +96,8 @@ fn sync_event_series(
 ) -> Result<(), crate::BoxedError> {
     // Step 0: Figure out the title of this event series
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
-    let some_event_id: Option<String> = redis_connection
-        .smembers(&redis_series_events_key)
-        .map(|mut event_ids: Vec<String>| event_ids.pop())?;
-    let some_event_id = match some_event_id {
+    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
+    let some_event_id = match event_ids.first() {
         Some(id) => id,
         None => {
             println!("Event series \"{}\" seems to have no events associated with it, not syncing to Discord", series_id);
@@ -176,6 +174,8 @@ fn sync_event_series(
     )?;
     // Step 6: Make sure that event hosts have the guild's game master role
     sync_game_master_role(series_id, redis_connection, discord_api)?;
+    // Step 7: Keep the channel's topic up-to-date
+    sync_channel_topic(channel_id, &event_ids, redis_connection, discord_api)?;
     Ok(())
 }
 
@@ -707,6 +707,70 @@ fn sync_game_master_role(
                     Err(err) => eprintln!("Could not figure out whether the user {} already has the game master role: {}", user.id, err)
                 },
                 Err(err) => eprintln!("Could not find the host user {}: {}", host_id, err)
+            }
+        }
+    }
+    Ok(())
+}
+
+fn sync_channel_topic<T: AsRef<str>>(
+    channel_id: ChannelId,
+    event_ids: &[T],
+    redis_connection: &mut redis::Connection,
+    discord_api: &crate::discord_bot::CacheAndHttp,
+) -> Result<(), crate::BoxedError> {
+    // Get all events belonging to this event series
+    let redis_event_keys: Vec<_> = event_ids
+        .iter()
+        .map(|id| format!("meetup_event:{}", id.as_ref()))
+        .collect();
+    let events: Vec<_> = redis_event_keys
+        .into_iter()
+        .filter_map(|redis_event_key| {
+            let event: redis::RedisResult<(String, String)> =
+                redis_connection.hget(redis_event_key, &["time", "link"]);
+            match event {
+                Ok(event) => Some(event),
+                Err(err) => {
+                    eprintln!("Redis error when querying event time and link: {}", err);
+                    None
+                }
+            }
+        })
+        .collect();
+    // Map each upcoming event to a (date, url) pair
+    let now = chrono::Utc::now();
+    let mut upcoming: Vec<_> = events
+        .into_iter()
+        .filter_map(|(time, url)| {
+            if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
+                let time = time.with_timezone(&chrono::Utc);
+                if time > now {
+                    return Some((time, url));
+                }
+            }
+            None
+        })
+        .collect();
+    // Sort by date
+    upcoming.sort_unstable_by_key(|pair| pair.0);
+    // The first element in this vector will be the next upcoming event
+    if let Some(event) = upcoming.first() {
+        let event_url = &event.1;
+        let topic = format!("Next session: {}", event_url);
+        let channel = channel_id.to_channel(discord_api)?;
+        if let serenity::model::channel::Channel::Guild(channel) = channel {
+            let topic_needs_update = {
+                let channel_lock = channel.read();
+                let current_topic = &channel_lock.topic;
+                if let Some(current_topic) = current_topic {
+                    current_topic != &topic
+                } else {
+                    true
+                }
+            };
+            if topic_needs_update {
+                channel_id.edit(&discord_api.http, |channel_edit| channel_edit.topic(topic))?;
             }
         }
     }
