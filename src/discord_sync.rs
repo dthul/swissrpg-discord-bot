@@ -596,7 +596,7 @@ fn sync_user_role_assignments(
         })
         .collect();
     let (meetup_user_ids,): (Vec<u64>,) = redis::pipe()
-        .sinter(redis_event_users_keys)
+        .sunion(redis_event_users_keys)
         .query(redis_connection)?;
     // Now, try to associate the RSVP'd Meetup users with Discord users
     let redis_meetup_user_discord_keys: Vec<_> = meetup_user_ids
@@ -655,7 +655,7 @@ fn sync_game_master_role(
             .map(|event_id| format!("meetup_event:{}:meetup_hosts", event_id))
             .collect();
         let (meetup_host_ids,): (Vec<u64>,) = redis::pipe()
-            .sinter(redis_event_hosts_keys)
+            .sunion(redis_event_hosts_keys)
             .query(redis_connection)?;
         // Now, try to associate the hosts with Discord users
         let redis_meetup_host_discord_keys: Vec<_> = meetup_host_ids
