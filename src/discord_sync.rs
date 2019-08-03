@@ -719,3 +719,4 @@ fn sync_game_master_role(
 //     - delete the discord_user from the "discord_users" set
 //     - delete everything that is indexed by the meetup_user (including access token)
 //     - delete the meetup_user from the "meetup_users" set
+// - check "orphaned_roles" and "orphaned_channels"

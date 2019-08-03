@@ -10,12 +10,13 @@ use serenity::{
     prelude::*,
 };
 use simple_error::SimpleError;
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::prelude::*;
 
 const CHANNEL_NAME_PATTERN: &'static str = r"(?:[0-9a-zA-Z_]+\-?)+"; // TODO: this is too strict
-const MENTION_PATTERN: &'static str = r"<(?P<mention_id>@[0-9]+)>";
+const MENTION_PATTERN: &'static str = r"<@(?P<mention_id>[0-9]+)>";
 
 pub fn create_discord_client(
     discord_token: &str,
@@ -68,6 +69,8 @@ struct Regexes {
     link_meetup_organizer_mention: Regex,
     unlink_meetup_dm: Regex,
     unlink_meetup_mention: Regex,
+    unlink_meetup_organizer_dm: Regex,
+    unlink_meetup_organizer_mention: Regex,
     sync_meetup_mention: Regex,
     sync_discord_mention: Regex,
 }
@@ -102,6 +105,14 @@ impl Regexes {
             &self.unlink_meetup_dm
         } else {
             &self.unlink_meetup_mention
+        }
+    }
+
+    fn unlink_meetup_organizer(&self, is_dm: bool) -> &Regex {
+        if is_dm {
+            &self.unlink_meetup_organizer_dm
+        } else {
+            &self.unlink_meetup_organizer_mention
         }
     }
 }
@@ -143,6 +154,19 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         unlink_meetup = unlink_meetup
     );
+    let unlink_meetup_organizer = format!(
+        r"unlink[ -]?meetup\s+{mention_pattern}",
+        mention_pattern = MENTION_PATTERN
+    );
+    let unlink_meetup_organizer_dm = format!(
+        r"^{unlink_meetup_organizer}\s*$",
+        unlink_meetup_organizer = unlink_meetup_organizer
+    );
+    let unlink_meetup_organizer_mention = format!(
+        r"^{bot_mention}\s+{unlink_meetup_organizer}\s*$",
+        bot_mention = bot_mention,
+        unlink_meetup_organizer = unlink_meetup_organizer
+    );
     let sync_meetup_mention = format!(
         r"^{bot_mention}\s+sync\s+meetup\s*$",
         bot_mention = bot_mention
@@ -161,6 +185,9 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         link_meetup_organizer_mention: Regex::new(link_meetup_organizer_mention.as_str()).unwrap(),
         unlink_meetup_dm: Regex::new(unlink_meetup_dm.as_str()).unwrap(),
         unlink_meetup_mention: Regex::new(unlink_meetup_mention.as_str()).unwrap(),
+        unlink_meetup_organizer_dm: Regex::new(unlink_meetup_organizer_dm.as_str()).unwrap(),
+        unlink_meetup_organizer_mention: Regex::new(unlink_meetup_organizer_mention.as_str())
+            .unwrap(),
         sync_meetup_mention: Regex::new(sync_meetup_mention.as_str()).unwrap(),
         sync_discord_mention: Regex::new(sync_discord_mention.as_str()).unwrap(),
     }
@@ -467,7 +494,7 @@ impl Handler {
     fn unlink_meetup(
         ctx: &Context,
         msg: &Message,
-        _regexes: &Regexes,
+        is_organizer_command: bool,
         user_id: u64,
     ) -> crate::Result<()> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
@@ -485,15 +512,23 @@ impl Handler {
             Some(meetup_id) => {
                 let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
                 redis_connection.del(&[&redis_key_d2m, &redis_key_m2d])?;
-                let _ = msg
-                    .channel_id
-                    .say(&ctx.http, "Unlinked your Meetup account");
+                let message = if is_organizer_command {
+                    Cow::Owned(format!("Unlinked <@{}>'s Meetup account", user_id))
+                } else {
+                    Cow::Borrowed("Unlinked your Meetup account")
+                };
+                let _ = msg.channel_id.say(&ctx.http, message);
             }
             None => {
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    "There was seemingly no meetup account linked to you",
-                );
+                let message = if is_organizer_command {
+                    Cow::Owned(format!(
+                        "There was seemingly no meetup account linked to <@{}>",
+                        user_id
+                    ))
+                } else {
+                    Cow::Borrowed("There was seemingly no meetup account linked to you")
+                };
+                let _ = msg.channel_id.say(&ctx.http, message);
             }
         }
         Ok(())
@@ -596,7 +631,30 @@ impl EventHandler for Handler {
             }
         } else if regexes.unlink_meetup(is_dm).is_match(&msg.content) {
             let user_id = msg.author.id.0;
-            match Self::unlink_meetup(&ctx, &msg, &regexes, user_id) {
+            match Self::unlink_meetup(&ctx, &msg, /*is_organizer_command*/ false, user_id) {
+                Err(err) => {
+                    eprintln!("Error: {}", err);
+                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    return;
+                }
+                _ => return,
+            }
+        } else if let Some(captures) = regexes
+            .unlink_meetup_organizer(is_dm)
+            .captures(&msg.content)
+        {
+            let discord_id = captures.name("mention_id").unwrap().as_str();
+            // Try to convert the specified ID to an integer
+            let discord_id = match discord_id.parse::<u64>() {
+                Ok(id) => id,
+                _ => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "Seems like the specified Discord ID is invalid");
+                    return;
+                }
+            };
+            match Self::unlink_meetup(&ctx, &msg, /*is_organizer_command*/ true, discord_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
                     let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
