@@ -67,6 +67,9 @@ struct Regexes {
     sync_meetup_mention: Regex,
     sync_discord_mention: Regex,
     add_user_mention: Regex,
+    add_host_mention: Regex,
+    remove_user_mention: Regex,
+    remove_host_mention: Regex,
 }
 
 impl Regexes {
@@ -156,6 +159,21 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
+    let add_host_mention = format!(
+        r"^{bot_mention}\s+add\s+host\s+{mention_pattern}\s*$",
+        bot_mention = bot_mention,
+        mention_pattern = MENTION_PATTERN,
+    );
+    let remove_user_mention = format!(
+        r"^{bot_mention}\s+remove\s+{mention_pattern}\s*$",
+        bot_mention = bot_mention,
+        mention_pattern = MENTION_PATTERN,
+    );
+    let remove_host_mention = format!(
+        r"^{bot_mention}\s+remove\s+host\s+{mention_pattern}\s*$",
+        bot_mention = bot_mention,
+        mention_pattern = MENTION_PATTERN,
+    );
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -170,6 +188,9 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         sync_meetup_mention: Regex::new(sync_meetup_mention.as_str()).unwrap(),
         sync_discord_mention: Regex::new(sync_discord_mention.as_str()).unwrap(),
         add_user_mention: Regex::new(add_user_mention.as_str()).unwrap(),
+        add_host_mention: Regex::new(add_host_mention.as_str()).unwrap(),
+        remove_user_mention: Regex::new(remove_user_mention.as_str()).unwrap(),
+        remove_host_mention: Regex::new(remove_host_mention.as_str()).unwrap(),
     }
 }
 
@@ -513,6 +534,140 @@ impl Handler {
         }
         Ok(())
     }
+
+    fn channel_add_or_remove_user(
+        ctx: &Context,
+        msg: &Message,
+        discord_id: u64,
+        add: bool,
+        as_host: bool,
+        mut redis_client: redis::Client,
+    ) {
+        // Check that this message came from a bot controlled channel
+        let (channel_role, channel_host_role) = {
+            let redis_channel_role_key = format!("discord_channel:{}:discord_role", msg.channel_id);
+            let redis_channel_host_role_key =
+                format!("discord_channel:{}:discord_host_role", msg.channel_id);
+            let channel_roles: redis::RedisResult<(Option<u64>, Option<u64>)> = redis::pipe()
+                .get(redis_channel_role_key)
+                .get(redis_channel_host_role_key)
+                .query(&mut redis_client);
+            match channel_roles {
+                Ok((Some(role), Some(host_role))) => (role, host_role),
+                Ok((None, None)) => {
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        "This channel does not seem to be under my control",
+                    );
+                    return;
+                }
+                Ok(_) => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "It seems like this channel is broken");
+                    return;
+                }
+                Err(err) => {
+                    eprintln!("{}", err);
+                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    return;
+                }
+            }
+        };
+        // This is only for organizers and channel hosts
+        let is_organizer = msg
+            .author
+            .has_role(
+                ctx,
+                crate::discord_sync::GUILD_ID,
+                crate::discord_sync::ORGANIZER_ID,
+            )
+            .unwrap_or(false);
+        let is_host = msg
+            .author
+            .has_role(ctx, crate::discord_sync::GUILD_ID, channel_host_role)
+            .unwrap_or(false);
+        if !is_organizer && !is_host {
+            let _ = msg
+                .channel_id
+                .say(&ctx.http, "Only channel hosts and organizers can do that");
+            return;
+        }
+        if add {
+            // Try to add the user to the channel
+            match ctx.http.add_member_role(
+                crate::discord_sync::GUILD_ID.0,
+                discord_id,
+                channel_role,
+            ) {
+                Ok(()) => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, format!("Welcome <@{}>!", discord_id));
+                }
+                Err(err) => {
+                    eprintln!("Could not assign channel role: {}", err);
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "Something went wrong assigning the channel role");
+                }
+            }
+            if as_host {
+                match ctx.http.add_member_role(
+                    crate::discord_sync::GUILD_ID.0,
+                    discord_id,
+                    channel_host_role,
+                ) {
+                    Ok(()) => {
+                        let _ = msg.channel_id.say(
+                            &ctx.http,
+                            format!("<@{}> is now a host of this channel", discord_id),
+                        );
+                    }
+                    Err(err) => {
+                        eprintln!("Could not assign channel role: {}", err);
+                        let _ = msg.channel_id.say(
+                            &ctx.http,
+                            "Something went wrong assigning the channel host role",
+                        );
+                    }
+                }
+            }
+        } else {
+            // TODO: remember that this user was manually removed from the channel
+            // and don't try to auto-add the again
+            // Try to remove the user from the channel
+            match ctx.http.remove_member_role(
+                crate::discord_sync::GUILD_ID.0,
+                discord_id,
+                channel_host_role,
+            ) {
+                Err(err) => {
+                    eprintln!("Could not remove host channel role: {}", err);
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        "Something went wrong removing the channel host role",
+                    );
+                }
+                _ => (),
+            }
+            if !as_host {
+                match ctx.http.remove_member_role(
+                    crate::discord_sync::GUILD_ID.0,
+                    discord_id,
+                    channel_role,
+                ) {
+                    Err(err) => {
+                        eprintln!("Could not remove channel role: {}", err);
+                        let _ = msg
+                            .channel_id
+                            .say(&ctx.http, "Something went wrong removing the channel role");
+                    }
+                    _ => (),
+                }
+            }
+        }
+    }
 }
 
 impl EventHandler for Handler {
@@ -741,63 +896,6 @@ impl EventHandler for Handler {
                 .channel_id
                 .say(&ctx.http, "Started Discord synchronization task");
         } else if let Some(captures) = regexes.add_user_mention.captures(&msg.content) {
-            let mut redis_client = {
-                let data = ctx.data.read();
-                data.get::<RedisClientKey>()
-                    .expect("Redis client was not set")
-                    .clone()
-            };
-            // Check that this message came from a bot controlled channel
-            let (channel_role, channel_host_role) = {
-                let redis_channel_role_key =
-                    format!("discord_channel:{}:discord_role", msg.channel_id);
-                let redis_channel_host_role_key =
-                    format!("discord_channel:{}:discord_host_role", msg.channel_id);
-                let channel_roles: redis::RedisResult<(Option<u64>, Option<u64>)> = redis::pipe()
-                    .get(redis_channel_role_key)
-                    .get(redis_channel_host_role_key)
-                    .query(&mut redis_client);
-                match channel_roles {
-                    Ok((Some(role), Some(host_role))) => (role, host_role),
-                    Ok((None, None)) => {
-                        let _ = msg.channel_id.say(
-                            &ctx.http,
-                            "This channel does not seem to be under my control",
-                        );
-                        return;
-                    }
-                    Ok(_) => {
-                        let _ = msg
-                            .channel_id
-                            .say(&ctx.http, "It seems like this channel is broken");
-                        return;
-                    }
-                    Err(err) => {
-                        eprintln!("{}", err);
-                        let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
-                        return;
-                    }
-                }
-            };
-            // This is only for organizers and channel hosts
-            let is_organizer = msg
-                .author
-                .has_role(
-                    &ctx,
-                    crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::ORGANIZER_ID,
-                )
-                .unwrap_or(false);
-            let is_host = msg
-                .author
-                .has_role(&ctx, crate::discord_sync::GUILD_ID, channel_host_role)
-                .unwrap_or(false);
-            if !is_organizer && !is_host {
-                let _ = msg
-                    .channel_id
-                    .say(&ctx.http, "Only channel hosts and organizers can do that");
-                return;
-            }
             // Get the Discord ID of the user that is supposed to
             // be added to the channel
             let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -811,22 +909,104 @@ impl EventHandler for Handler {
                     return;
                 }
             };
-            // Try to add the user to the channel
-            match ctx.http.add_member_role(
-                crate::discord_sync::GUILD_ID.0,
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            Self::channel_add_or_remove_user(
+                &ctx,
+                &msg,
                 discord_id,
-                channel_role,
-            ) {
-                Ok(()) => {
+                /*add*/ true,
+                /*as_host*/ false,
+                redis_client,
+            );
+        } else if let Some(captures) = regexes.add_host_mention.captures(&msg.content) {
+            // Get the Discord ID of the user that is supposed to
+            // be added to the channel
+            let discord_id = captures.name("mention_id").unwrap().as_str();
+            // Try to convert the specified ID to an integer
+            let discord_id = match discord_id.parse::<u64>() {
+                Ok(id) => id,
+                _ => {
                     let _ = msg
                         .channel_id
-                        .say(&ctx.http, format!("Welcome <@{}>!", discord_id));
+                        .say(&ctx.http, "Seems like the specified Discord ID is invalid");
+                    return;
                 }
-                Err(err) => {
-                    eprintln!("Could not assign channel role: {}", err);
-                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            };
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            Self::channel_add_or_remove_user(
+                &ctx,
+                &msg,
+                discord_id,
+                /*add*/ true,
+                /*as_host*/ true,
+                redis_client,
+            );
+        } else if let Some(captures) = regexes.remove_user_mention.captures(&msg.content) {
+            // Get the Discord ID of the user that is supposed to
+            // be removed from this channel
+            let discord_id = captures.name("mention_id").unwrap().as_str();
+            // Try to convert the specified ID to an integer
+            let discord_id = match discord_id.parse::<u64>() {
+                Ok(id) => id,
+                _ => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "Seems like the specified Discord ID is invalid");
+                    return;
                 }
-            }
+            };
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            Self::channel_add_or_remove_user(
+                &ctx,
+                &msg,
+                discord_id,
+                /*add*/ false,
+                /*as_host*/ false,
+                redis_client,
+            );
+        } else if let Some(captures) = regexes.remove_host_mention.captures(&msg.content) {
+            // Get the Discord ID of the host that is supposed to
+            // be removed from this channel
+            let discord_id = captures.name("mention_id").unwrap().as_str();
+            // Try to convert the specified ID to an integer
+            let discord_id = match discord_id.parse::<u64>() {
+                Ok(id) => id,
+                _ => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "Seems like the specified Discord ID is invalid");
+                    return;
+                }
+            };
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            Self::channel_add_or_remove_user(
+                &ctx,
+                &msg,
+                discord_id,
+                /*add*/ false,
+                /*as_host*/ true,
+                redis_client,
+            );
         } else {
             let _ = msg
                 .channel_id
