@@ -2,11 +2,7 @@ use futures::Future;
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
 use serenity::{
-    model::{
-        channel::Channel, channel::Message, channel::PermissionOverwrite,
-        channel::PermissionOverwriteType, gateway::Ready, id::RoleId, id::UserId,
-        permissions::Permissions,
-    },
+    model::{channel::Channel, channel::Message, gateway::Ready, id::UserId},
     prelude::*,
 };
 use simple_error::SimpleError;
@@ -15,7 +11,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::prelude::*;
 
-const CHANNEL_NAME_PATTERN: &'static str = r"(?:[0-9a-zA-Z_]+\-?)+"; // TODO: this is too strict
 const MENTION_PATTERN: &'static str = r"<@(?P<mention_id>[0-9]+)>";
 
 pub fn create_discord_client(
@@ -61,8 +56,6 @@ pub fn create_discord_client(
 
 struct Regexes {
     bot_mention: String,
-    create_channel_dm: Regex,
-    create_channel_mention: Regex,
     link_meetup_dm: Regex,
     link_meetup_mention: Regex,
     link_meetup_organizer_dm: Regex,
@@ -76,14 +69,6 @@ struct Regexes {
 }
 
 impl Regexes {
-    fn create_channel(&self, is_dm: bool) -> &Regex {
-        if is_dm {
-            &self.create_channel_dm
-        } else {
-            &self.create_channel_mention
-        }
-    }
-
     fn link_meetup(&self, is_dm: bool) -> &Regex {
         if is_dm {
             &self.link_meetup_dm
@@ -119,16 +104,6 @@ impl Regexes {
 
 fn compile_regexes(bot_id: u64) -> Regexes {
     let bot_mention = format!(r"<@{}>", bot_id);
-    let create_channel = format!(
-        r"create[ -]?channel\s+(?P<channelname>{cnp})",
-        cnp = CHANNEL_NAME_PATTERN
-    );
-    let create_channel_dm = format!(r"^{create_channel}\s*$", create_channel = create_channel);
-    let create_channel_mention = format!(
-        r"^{bot_mention}\s+{create_channel}\s*$",
-        bot_mention = bot_mention,
-        create_channel = create_channel
-    );
     let link_meetup_dm = r"^link[ -]?meetup\s*$";
     let link_meetup_mention = format!(
         r"^{bot_mention}\s+link[ -]?meetup\s*$",
@@ -177,8 +152,6 @@ fn compile_regexes(bot_id: u64) -> Regexes {
     );
     Regexes {
         bot_mention: bot_mention,
-        create_channel_dm: Regex::new(create_channel_dm.as_str()).unwrap(),
-        create_channel_mention: Regex::new(create_channel_mention.as_str()).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
         link_meetup_mention: Regex::new(link_meetup_mention.as_str()).unwrap(),
         link_meetup_organizer_dm: Regex::new(link_meetup_organizer_dm.as_str()).unwrap(),
@@ -661,68 +634,6 @@ impl EventHandler for Handler {
                     return;
                 }
                 _ => return,
-            }
-        } else if let Some(captures) = regexes.create_channel(is_dm).captures(&msg.content) {
-            // This is only for organizers
-            if !msg
-                .author
-                .has_role(
-                    &ctx,
-                    crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::ORGANIZER_ID,
-                )
-                .unwrap_or(false)
-            {
-                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
-                return;
-            }
-            // TODO: needs host
-            // TODO: redis schema
-            let channel_name = captures.name("channelname").unwrap().as_str();
-            if let Some(guild_id) = msg.guild_id {
-                match guild_id.create_role(&ctx, |role_builder| {
-                    role_builder
-                        .name(channel_name)
-                        .permissions(Permissions::empty())
-                }) {
-                    Ok(role_channel) => {
-                        // Make sure that the user that issued this command is assigned the new role
-                        let _ = ctx.http.add_member_role(
-                            guild_id.0,
-                            msg.author.id.0,
-                            role_channel.id.0,
-                        );
-                        // The @everyone role has the same id as the guild
-                        let role_everyone_id = RoleId(guild_id.0);
-                        // Make this channel private.
-                        // This is achieved by denying @everyone the READ_MESSAGES permission
-                        // but allowing the now role the READ_MESSAGES permission.
-                        // see: https://support.discordapp.com/hc/en-us/articles/206143877-How-do-I-set-up-a-Role-Exclusive-channel-
-                        let permission_overwrites = vec![
-                            PermissionOverwrite {
-                                allow: Permissions::empty(),
-                                deny: Permissions::READ_MESSAGES,
-                                kind: PermissionOverwriteType::Role(role_everyone_id),
-                            },
-                            PermissionOverwrite {
-                                allow: Permissions::READ_MESSAGES | Permissions::MENTION_EVERYONE,
-                                deny: Permissions::empty(),
-                                kind: PermissionOverwriteType::Role(role_channel.id),
-                            },
-                            PermissionOverwrite {
-                                allow: Permissions::READ_MESSAGES,
-                                deny: Permissions::empty(),
-                                kind: PermissionOverwriteType::Member(bot_id),
-                            },
-                        ];
-                        let _ = guild_id.create_channel(&ctx, |channel_builder| {
-                            channel_builder
-                                .name(channel_name)
-                                .permissions(permission_overwrites)
-                        });
-                    }
-                    _ => {}
-                };
             }
         } else if regexes.sync_meetup_mention.is_match(&msg.content) {
             // This is only for organizers
