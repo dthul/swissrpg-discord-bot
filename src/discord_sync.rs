@@ -160,6 +160,7 @@ fn sync_event_series(
     // Step 5: Sync RSVP'd users
     sync_user_role_assignments(
         series_id,
+        channel_id,
         channel_role_id,
         /*is_host_role*/ false,
         redis_connection,
@@ -167,6 +168,7 @@ fn sync_event_series(
     )?;
     sync_user_role_assignments(
         series_id,
+        channel_id,
         channel_host_role_id,
         /*is_host_role*/ true,
         redis_connection,
@@ -572,6 +574,7 @@ fn sync_channel_permissions(
 
 fn sync_user_role_assignments(
     event_series_id: &str,
+    channel: ChannelId,
     role: RoleId,
     is_host_role: bool,
     redis_connection: &mut redis::Connection,
@@ -608,8 +611,26 @@ fn sync_user_role_assignments(
         .query(redis_connection)?;
     // Filter the None values
     let discord_user_ids: Vec<_> = discord_user_ids.into_iter().filter_map(|id| id).collect();
+    // Check whether any users have manually removed roles and don't add them back
+    let redis_channel_removed_hosts_key = format!("discord_channel:{}:removed_hosts", channel.0);
+    let redis_channel_removed_users_key = format!("discord_channel:{}:removed_users", channel.0);
+    let ignore_discord_user_ids: Vec<u64> = if is_host_role {
+        // Don't automatically assign the host role to users that have either
+        // been manually removed as a host or as a user from a channel
+        redis_connection.sunion(&[
+            &redis_channel_removed_hosts_key,
+            &redis_channel_removed_users_key,
+        ])?
+    } else {
+        // Don't automatically assign the user role to user that have been
+        // manually removed from a channel
+        redis_connection.smembers(&redis_channel_removed_users_key)?
+    };
     // Lastly, actually assign the role to the Discord users
     for user_id in discord_user_ids {
+        if ignore_discord_user_ids.contains(&user_id) {
+            continue;
+        }
         match UserId(user_id).to_user(discord_api) {
             Ok(user) => match user.has_role(discord_api, GUILD_ID, role) {
                 Ok(has_role) => {

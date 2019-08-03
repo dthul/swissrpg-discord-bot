@@ -634,8 +634,6 @@ impl Handler {
                 }
             }
         } else {
-            // TODO: remember that this user was manually removed from the channel
-            // and don't try to auto-add the again
             // Try to remove the user from the channel
             match ctx.http.remove_member_role(
                 crate::discord_sync::GUILD_ID.0,
@@ -664,6 +662,26 @@ impl Handler {
                             .say(&ctx.http, "Something went wrong removing the channel role");
                     }
                     _ => (),
+                }
+            }
+            // Remember which users were removed manually
+            if as_host {
+                let redis_channel_removed_hosts_key =
+                    format!("discord_channel:{}:removed_hosts", msg.channel_id.0);
+                match redis_client.sadd(redis_channel_removed_hosts_key, discord_id) {
+                    Ok(()) => (),
+                    Err(err) => {
+                        eprintln!("Redis error when trying to record removed host: {}", err);
+                    }
+                }
+            } else {
+                let redis_channel_removed_users_key =
+                    format!("discord_channel:{}:removed_users", msg.channel_id.0);
+                match redis_client.sadd(redis_channel_removed_users_key, discord_id) {
+                    Ok(()) => (),
+                    Err(err) => {
+                        eprintln!("Redis error when trying to record removed user: {}", err);
+                    }
                 }
             }
         }

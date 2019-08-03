@@ -73,6 +73,12 @@ See `discord_role:{}:discord_channel` for the inverse relationship.
 1:1 relationship between a Discord channel and its Discord host role.\
 See `discord_host_role:{}:discord_channel` for the inverse relationship.
 
+`discord_channel:{}:removed_hosts`: set of u64\
+Set of hosts (Discord ID) that have been manually removed from this channel. These users might still be part of the channel, but should not be automatically promoted to hosts of this channel anymore.
+
+`discord_channel:{}:removed_users`: set of u64\
+Set of users (Discord ID) that have been manually removed from this channel. These users should not be automatically added back to this channel anymore.
+
 `orphaned_discord_channels`: set of u64\
 Set of Discord channels that were created by the bot but could not be successfully deleted in the past
 
