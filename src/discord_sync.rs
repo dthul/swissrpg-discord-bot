@@ -13,14 +13,23 @@ use white_rabbit;
 pub const GUILD_ID: GuildId = GuildId(601070848446824509);
 pub const ORGANIZER_ID: RoleId = RoleId(606829075226689536);
 pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
+pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561808429056042));
+pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561949651402772));
 // SwissRPG:
 // pub const GUILD_ID: GuildId = GuildId(401856510709202945);
 // pub const ORGANIZER_ID: RoleId = RoleId(539447673988841492);
 // pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
+// pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(562607292176924694));
+// pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = None;
 
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =
         regex::Regex::new(r"^\s*(?P<name>[^\[\(]+[^\s\[\(])").unwrap();
+    static ref ONE_SHOT_REGEX: regex::Regex =
+        regex::Regex::new(r"(?i)[\[\(].*One\s*\-?\s*Shot.*[\]\)]").unwrap();
+    static ref INTRO_REGEX: regex::Regex = regex::Regex::new(r"(?i)[\[\(].*Intro.*[\]\)]").unwrap();
+    static ref CAMPAIGN_REGEX: regex::Regex =
+        regex::Regex::new(r"(?i)[\[\(].*Campaign.*[\]\)]").unwrap();
 }
 
 // Syncs Discord with the state of the Redis database
@@ -175,7 +184,7 @@ fn sync_event_series(
     // Step 6: Make sure that event hosts have the guild's game master role
     sync_game_master_role(series_id, redis_connection, discord_api)?;
     // Step 7: Keep the channel's topic up-to-date
-    sync_channel_topic(channel_id, &event_ids, redis_connection, discord_api)?;
+    sync_channel_topic_and_category(channel_id, &event_ids, redis_connection, discord_api)?;
     Ok(())
 }
 
@@ -713,7 +722,7 @@ fn sync_game_master_role(
     Ok(())
 }
 
-fn sync_channel_topic<T: AsRef<str>>(
+fn sync_channel_topic_and_category<T: AsRef<str>>(
     channel_id: ChannelId,
     event_ids: &[T],
     redis_connection: &mut redis::Connection,
@@ -727,8 +736,8 @@ fn sync_channel_topic<T: AsRef<str>>(
     let events: Vec<_> = redis_event_keys
         .into_iter()
         .filter_map(|redis_event_key| {
-            let event: redis::RedisResult<(String, String)> =
-                redis_connection.hget(redis_event_key, &["time", "link"]);
+            let event: redis::RedisResult<(String, String, String)> =
+                redis_connection.hget(redis_event_key, &["name", "time", "link"]);
             match event {
                 Ok(event) => Some(event),
                 Err(err) => {
@@ -742,35 +751,56 @@ fn sync_channel_topic<T: AsRef<str>>(
     let now = chrono::Utc::now();
     let mut upcoming: Vec<_> = events
         .into_iter()
-        .filter_map(|(time, url)| {
+        .filter_map(|(name, time, url)| {
             if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
                 let time = time.with_timezone(&chrono::Utc);
                 if time > now {
-                    return Some((time, url));
+                    return Some((name, time, url));
                 }
             }
             None
         })
         .collect();
     // Sort by date
-    upcoming.sort_unstable_by_key(|pair| pair.0);
+    upcoming.sort_unstable_by_key(|pair| pair.1);
     // The first element in this vector will be the next upcoming event
     if let Some(event) = upcoming.first() {
-        let event_url = &event.1;
+        // Sync the topic and the category
+        let event_url = &event.2;
+        let event_name = &event.0;
         let topic = format!("Next session: {}", event_url);
+        let category = if CAMPAIGN_REGEX.is_match(event_name) {
+            CAMPAIGN_CATEGORY_ID
+        } else if ONE_SHOT_REGEX.is_match(event_name) || INTRO_REGEX.is_match(event_name) {
+            ONE_SHOT_CATEGORY_ID
+        } else {
+            None
+        };
         let channel = channel_id.to_channel(discord_api)?;
         if let serenity::model::channel::Channel::Guild(channel) = channel {
-            let topic_needs_update = {
+            let channel_needs_update = {
                 let channel_lock = channel.read();
                 let current_topic = &channel_lock.topic;
-                if let Some(current_topic) = current_topic {
+                let topic_needs_update = if let Some(current_topic) = current_topic {
                     current_topic != &topic
                 } else {
                     true
-                }
+                };
+                let category_needs_update = if category.is_some() {
+                    category != channel_lock.category_id
+                } else {
+                    false
+                };
+                topic_needs_update || category_needs_update
             };
-            if topic_needs_update {
-                channel_id.edit(&discord_api.http, |channel_edit| channel_edit.topic(topic))?;
+            if channel_needs_update {
+                channel_id.edit(&discord_api.http, |channel_edit| {
+                    channel_edit.topic(topic);
+                    if category.is_some() {
+                        channel_edit.category(category);
+                    }
+                    channel_edit
+                })?;
             }
         }
     }
