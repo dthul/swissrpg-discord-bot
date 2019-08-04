@@ -1,3 +1,4 @@
+#![recursion_limit="128"]
 pub mod discord_bot;
 pub mod discord_sync;
 pub mod meetup_api;

@@ -3,6 +3,7 @@ use futures::future;
 use futures::{Future, Stream};
 use lazy_static::lazy_static;
 use redis;
+use redis::Commands;
 use redis::PipelineCommands;
 use serenity::prelude::RwLock;
 use simple_error::SimpleError;
@@ -52,7 +53,7 @@ pub fn create_recurring_syncing_task(
 // every time we want to use the client)
 pub fn sync_task(
     meetup_client: Arc<RwLock<Option<meetup_api::AsyncClient>>>,
-    redis_client: redis::Client,
+    mut redis_client: redis::Client,
 ) -> impl Future<Item = (), Error = crate::BoxedError> + Send + 'static {
     let upcoming_events = match *meetup_client.read() {
         Some(ref meetup_client) => meetup_client
@@ -65,7 +66,9 @@ pub fn sync_task(
             ) as BoxedFuture<_>
         }
     };
-    let sync_future = upcoming_events
+    let event_sync_future = {
+        let redis_client = redis_client.clone();
+        upcoming_events
         .filter(|event| if NEW_ADVENTURE_REGEX.is_match(&event.description) {
             println!("Syncing task: Found event \"{}\"", event.name);
             true
@@ -73,63 +76,55 @@ pub fn sync_task(
             println!("Syncing task: Ignoring event \"{}\" (event name does not match any filter pattern)", event.name);
             false
         })
-        .and_then(move |event| {
-            println!("Syncing task: Querying RSVPs for event \"{}\"", event.name);
-            let rsvps = match *meetup_client.read() {
-                Some(ref meetup_client) => meetup_client.get_rsvps(&event.group.urlname, &event.id).from_err::<crate::BoxedError>(),
-                None => {
-                    return Box::new(
-                        future::err(SimpleError::new("Meetup API unavailable"))
-                            .from_err::<crate::BoxedError>(),
-                    ) as BoxedFuture<_>
-                }
-            };
-            Box::new(rsvps.map(|rsvps| {
-                println!("Syncing task: Found {} RSVPs for event \"{}\"", rsvps.len(), event.name);
-                (event, rsvps)
-            }))
-        })
         .for_each(
-            move |(event, rsvps): (meetup_api::Event, Vec<meetup_api::RSVP>)| {
-                tokio::spawn(
-                    sync_event(event, rsvps, redis_client.clone())
-                        .map_err(|err| eprintln!("Event sync failed: {}", err)),
-                );
-                // Add a 1s delay between each item as a naive rate limit for the Meetup API
-                tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_secs(1))
+            move |event| {
+                sync_event(event, redis_client.clone()).then(|res| {
+                    // "Catch" any errors and don't abort the stream
+                    if let Err(err) = res {
+                        eprintln!("Event sync failed: {}", err);
+                    }
+                    // Before processing the next item in the stream, add a 1s delay
+                    // as a naive rate limit for the Meetup API
+                    tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_secs(1))
                     .from_err::<crate::BoxedError>()
-            },
-        );
-    return Box::new(sync_future);
+                })
+            }
+        )
+    };
+    let series_sync_future_fun = move || {
+        // This code is in a closure such that the Redis query in the next line
+        // is only run once the events have been synced
+        let event_series_result = redis_client.smembers("event_series");
+        future::result(event_series_result)
+            .from_err::<crate::BoxedError>()
+            .and_then(move |event_series: Vec<String>| {
+                stream::iter_ok(event_series).for_each(move |series_id| {
+                    let redis_client = redis_client.clone();
+                    let meetup_client = meetup_client.clone();
+                    sync_event_series(series_id, meetup_client, redis_client).and_then(|_| {
+                        // Add a 1s delay between each item as a naive rate limit for the Meetup API
+                        tokio::timer::Delay::new(
+                            std::time::Instant::now() + std::time::Duration::from_secs(1),
+                        )
+                        .from_err::<crate::BoxedError>()
+                    })
+                })
+            })
+    };
+    return Box::new(event_sync_future.and_then(|_| series_sync_future_fun()));
 }
 
 // This function is supposed to be idempotent, so calling it with the same
 // event is fine.
 fn sync_event(
     event: meetup_api::Event,
-    rsvps: Vec<meetup_api::RSVP>,
     redis_client: redis::Client,
 ) -> impl Future<Item = (), Error = crate::BoxedError> {
-    // let event_name = match EVENT_NAME_REGEX.captures(&event.name) {
-    //     Some(captures) => captures.name("name").unwrap().as_str(),
-    //     None => &event.name,
-    // };
-    let rsvp_yes_user_ids: Vec<_> = rsvps
-        .iter()
-        .filter_map(|rsvp| {
-            if rsvp.response == meetup_api::RSVPResponse::Yes {
-                Some(rsvp.member.id)
-            } else {
-                None
-            }
-        })
-        .collect();
     // TODO: figure out whether this event belongs to a series
     // For now, we assume that an event that reaches this method does not yet
     // belong to a series and create a new one
     let redis_events_key = "meetup_events";
     let redis_series_key = "event_series";
-    let redis_event_users_key = format!("meetup_event:{}:meetup_users", event.id);
     let redis_event_hosts_key = format!("meetup_event:{}:meetup_hosts", event.id);
     let redis_event_series_key = format!("meetup_event:{}:event_series", event.id);
     let redis_event_key = format!("meetup_event:{}", event.id);
@@ -141,16 +136,12 @@ fn sync_event(
         .from_err::<crate::BoxedError>()
         .and_then(move |con| {
             let transaction_fn = {
-                let redis_event_users_key = redis_event_users_key.clone();
-                let redis_event_hosts_key = redis_event_hosts_key.clone();
                 let redis_event_series_key = redis_event_series_key.clone();
                 let redis_event_key = redis_event_key.clone();
                 move |con, mut pipe: redis::Pipeline| {
                     let event = event.clone();
-                    let rsvp_yes_user_ids = rsvp_yes_user_ids.clone();
                     let redis_events_key = redis_events_key.clone();
                     let redis_series_key = redis_series_key.clone();
-                    let redis_event_users_key = redis_event_users_key.clone();
                     let redis_event_hosts_key = redis_event_hosts_key.clone();
                     let redis_event_series_key = redis_event_series_key.clone();
                     let redis_event_key = redis_event_key.clone();
@@ -174,8 +165,7 @@ fn sync_event(
                             ];
                             pipe.sadd(redis_events_key, &event.id)
                                 .sadd(redis_series_key, &series_id)
-                                .sadd(&redis_event_users_key, rsvp_yes_user_ids.as_slice())
-                                .sadd(&redis_event_hosts_key, host_user_ids.as_slice())
+                                .sadd(&redis_event_hosts_key, host_user_ids)
                                 .set(&redis_event_series_key, &series_id)
                                 .sadd(&redis_series_events_key, &event.id)
                                 .hset_multiple(&redis_event_key, event_hash);
@@ -186,12 +176,7 @@ fn sync_event(
             };
             async_redis_transaction::<_, (), _>(
                 con,
-                &[
-                    redis_event_users_key,
-                    redis_event_hosts_key,
-                    redis_event_series_key,
-                    redis_event_key,
-                ],
+                &[redis_event_series_key, redis_event_key],
                 transaction_fn,
             )
         })
@@ -199,6 +184,105 @@ fn sync_event(
             println!("Event syncing task: Synced event \"{}\"", event_name);
             ()
         })
+        .from_err::<crate::BoxedError>();
+    Box::new(fut)
+}
+
+fn sync_event_series(
+    series_id: String,
+    meetup_client: Arc<RwLock<Option<meetup_api::AsyncClient>>>,
+    mut redis_client: redis::Client,
+) -> impl Future<Item = (), Error = crate::BoxedError> {
+    let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
+    // Get all events belonging to this event series
+    let event_ids: Vec<String> = match redis_client.smembers(&redis_series_events_key) {
+        Ok(ids) => ids,
+        Err(err) => {
+            return Box::new(future::err(Box::new(err) as crate::BoxedError)) as BoxedFuture<_>
+        }
+    };
+    let events: Vec<_> = event_ids
+        .into_iter()
+        .filter_map(|event_id| {
+            let redis_event_key = format!("meetup_event:{}", event_id);
+            let tuple: redis::RedisResult<(String, String, String)> =
+                redis_client.hget(&redis_event_key, &["time", "name", "urlname"]);
+            match tuple {
+                Ok((time, name, urlname)) => Some((event_id, time, name, urlname)),
+                Err(err) => {
+                    eprintln!("Redis error when querying event time: {}", err);
+                    None
+                }
+            }
+        })
+        .collect();
+    // Filter past events
+    let now = chrono::Utc::now();
+    let mut upcoming: Vec<_> = events
+        .into_iter()
+        .filter_map(|(id, time, name, urlname)| {
+            if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
+                let time = time.with_timezone(&chrono::Utc);
+                if time > now {
+                    return Some((id, time, name, urlname));
+                }
+            }
+            None
+        })
+        .collect();
+    // Sort by date
+    upcoming.sort_unstable_by_key(|pair| pair.1);
+    // The first element in this vector will be the next upcoming event
+    if let Some(event) = upcoming.first() {
+        // Query the RSVPs for that event
+        let event_id = &event.0;
+        let event_name = &event.2;
+        let group_urlname = &event.3;
+        println!("Syncing task: Querying RSVPs for event \"{}\"", event_name);
+        let rsvps = match *meetup_client.read() {
+            Some(ref meetup_client) => meetup_client
+                .get_rsvps(group_urlname, event_id)
+                .from_err::<crate::BoxedError>(),
+            None => {
+                return Box::new(
+                    future::err(SimpleError::new("Meetup API unavailable"))
+                        .from_err::<crate::BoxedError>(),
+                ) as BoxedFuture<_>
+            }
+        };
+        Box::new(rsvps.and_then(move |rsvps| {
+            println!("Syncing task: Found {} RSVPs", rsvps.len());
+            sync_rsvps(&series_id, rsvps, redis_client)
+        }))
+    } else {
+        Box::new(future::ok(()))
+    }
+}
+
+fn sync_rsvps(
+    event_id: &str,
+    rsvps: Vec<meetup_api::RSVP>,
+    redis_client: redis::Client,
+) -> impl Future<Item = (), Error = crate::BoxedError> {
+    let rsvp_yes_user_ids: Vec<_> = rsvps
+        .iter()
+        .filter_map(|rsvp| {
+            if rsvp.response == meetup_api::RSVPResponse::Yes {
+                Some(rsvp.member.id)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let redis_event_users_key = format!("meetup_event:{}:meetup_users", event_id);
+    let fut = redis_client
+        .get_async_connection()
+        .and_then(move |con| {
+            let mut pipe = redis::pipe();
+            pipe.sadd(redis_event_users_key, rsvp_yes_user_ids);
+            pipe.query_async(con)
+        })
+        .map(|(_, ())| ())
         .from_err::<crate::BoxedError>();
     Box::new(fut)
 }
