@@ -290,42 +290,42 @@ impl Handler {
                 Some(ref meetup_client) => {
                     match meetup_client.get_member_profile(Some(linked_meetup_id))? {
                         Some(user) => {
-                            let _ = msg.channel_id.say(
-                                &ctx.http,
-                                format!(
+                            let _ = msg.author.direct_message(ctx, |message| {
+                                message.content(format!(
                                     "You are already linked to {}'s Meetup account. \
                                      If you really want to change this, unlink your currently \
                                      linked meetup account first by writing:\n\
                                      {} unlink meetup",
                                     user.name, regexes.bot_mention
-                                ),
-                            );
+                                ))
+                            });
+                            let _ = msg.react(ctx, "\u{2705}");
                         }
                         _ => {
-                            let _ = msg.channel_id.say(
-                                &ctx.http,
-                                format!(
+                            let _ = msg.author.direct_message(ctx, |message| {
+                                message.content(format!(
                                     "You are linked to a seemingly non-existent Meetup account. \
                                      If you want to change this, unlink the currently \
                                      linked meetup account by writing:\n\
                                      {} unlink meetup",
                                     regexes.bot_mention
-                                ),
-                            );
+                                ))
+                            });
+                            let _ = msg.react(ctx, "\u{2705}");
                         }
                     }
                 }
                 _ => {
-                    let _ = msg.channel_id.say(
-                        &ctx.http,
-                        format!(
+                    let _ = msg.author.direct_message(ctx, |message| {
+                        message.content(format!(
                             "You are already linked to a Meetup account. \
                              If you really want to change this, unlink your currently \
                              linked meetup account first by writing:\n\
                              {} unlink meetup",
                             regexes.bot_mention
-                        ),
-                    );
+                        ))
+                    });
+                    let _ = msg.react(ctx, "\u{2705}");
                 }
             }
             return Ok(());
