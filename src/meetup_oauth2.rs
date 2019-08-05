@@ -185,7 +185,7 @@ fn meetup_http_handler(
             Ok(csrf_cookie) => csrf_cookie,
             Err(err) => return Box::new(future::err(err.into())),
         };
-        let html_body = HTML_LINK_TEMPLATE.replace("{authorize_url}", authorize_url.as_str());
+        let html_body = format!("<a href=\"{}\">Login with Meetup</a>", authorize_url);
         Box::new(future::result(
             Response::builder()
                 .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
@@ -327,7 +327,7 @@ fn meetup_http_handler(
         // Two versions: One with just the "basic" scope to identify the user.
         // The second with the "rsvp" scope that will allow us to RSVP the user to events.
         let csrf_state = CsrfToken::new_random();
-        let (authorize_url_basic, csrf_state) = oauth2_link_client
+        let (_authorize_url_basic, csrf_state) = oauth2_link_client
             .clone()
             .set_redirect_url(RedirectUrl::new(
                 Url::parse(format!("{}/link/{}/norsvp/redirect", BASE_URL, linking_id).as_str())
@@ -352,10 +352,7 @@ fn meetup_http_handler(
             Ok(csrf_cookie) => csrf_cookie,
             Err(err) => return Box::new(future::err(err.into())),
         };
-        let html_body = format!(
-            "<a href=\"{}\">Link with Meetup (+ RSVPs)</a><br/><a href=\"{}\">Link with Meetup</a>",
-            authorize_url_rsvp, authorize_url_basic
-        );
+        let html_body = HTML_LINK_TEMPLATE.replace("{authorize_url}", authorize_url_rsvp.as_str());
         Box::new(future::result(
             Response::builder()
                 .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
