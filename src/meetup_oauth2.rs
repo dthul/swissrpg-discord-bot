@@ -21,6 +21,8 @@ use simple_error::SimpleError;
 use std::sync::Arc;
 use url::Url;
 
+const HTML_LINK_TEMPLATE: &'static str = include_str!("html/link.html");
+
 const DOMAIN: &'static str = "bot.swissrpg.ch";
 const BASE_URL: &'static str = "https://bot.swissrpg.ch";
 lazy_static! {
@@ -183,7 +185,7 @@ fn meetup_http_handler(
             Ok(csrf_cookie) => csrf_cookie,
             Err(err) => return Box::new(future::err(err.into())),
         };
-        let html_body = format!("<a href=\"{}\">Login with Meetup</a>", authorize_url);
+        let html_body = HTML_LINK_TEMPLATE.replace("{authorize_url}", authorize_url.as_str());
         Box::new(future::result(
             Response::builder()
                 .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
