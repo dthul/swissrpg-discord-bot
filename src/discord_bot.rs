@@ -70,6 +70,8 @@ struct Regexes {
     add_host_mention: Regex,
     remove_user_mention: Regex,
     remove_host_mention: Regex,
+    stop_organizer_dm: Regex,
+    stop_organizer_mention: Regex,
 }
 
 impl Regexes {
@@ -102,6 +104,14 @@ impl Regexes {
             &self.unlink_meetup_organizer_dm
         } else {
             &self.unlink_meetup_organizer_mention
+        }
+    }
+
+    fn stop_organizer(&self, is_dm: bool) -> &Regex {
+        if is_dm {
+            &self.stop_organizer_dm
+        } else {
+            &self.stop_organizer_mention
         }
     }
 }
@@ -174,6 +184,9 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
+    let stop_organizer_dm = r"^(?i)stop\s*$";
+    let stop_organizer_mention =
+        format!(r"^{bot_mention}\s+(?i)stop\s*$", bot_mention = bot_mention);
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -191,6 +204,8 @@ fn compile_regexes(bot_id: u64) -> Regexes {
         add_host_mention: Regex::new(add_host_mention.as_str()).unwrap(),
         remove_user_mention: Regex::new(remove_user_mention.as_str()).unwrap(),
         remove_host_mention: Regex::new(remove_host_mention.as_str()).unwrap(),
+        stop_organizer_dm: Regex::new(stop_organizer_dm).unwrap(),
+        stop_organizer_mention: Regex::new(stop_organizer_mention.as_str()).unwrap(),
     }
 }
 
@@ -735,7 +750,25 @@ impl EventHandler for Handler {
             is_dm = false;
         }
         // TODO: might want to use a RegexSet here to speed up matching
-        if regexes.link_meetup(is_dm).is_match(&msg.content) {
+        if regexes.stop_organizer(is_dm).is_match(&msg.content) {
+            // This is only for organizers
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::GUILD_ID,
+                    crate::discord_sync::ORGANIZER_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                return;
+            }
+            std::process::Command::new("sudo")
+                .args(&["systemctl", "stop", "bot"])
+                .output()
+                .expect("Could not stop the bot");
+        } else if regexes.link_meetup(is_dm).is_match(&msg.content) {
             let user_id = msg.author.id.0;
             match Self::link_meetup(&ctx, &msg, &regexes, user_id) {
                 Err(err) => {
@@ -759,7 +792,6 @@ impl EventHandler for Handler {
                 let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
                 return;
             }
-            // TODO
             let discord_id = captures.name("mention_id").unwrap().as_str();
             let meetup_id = captures.name("meetupid").unwrap().as_str();
             // Try to convert the specified ID to an integer
