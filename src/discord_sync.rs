@@ -611,15 +611,15 @@ fn sync_user_role_assignments(
         .sunion(redis_event_users_keys)
         .query(redis_connection)?;
     // Now, try to associate the RSVP'd Meetup users with Discord users
-    let redis_meetup_user_discord_keys: Vec<_> = meetup_user_ids
+    let discord_user_ids: Result<Vec<Option<u64>>, _> = meetup_user_ids
         .into_iter()
-        .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
+        .map(|meetup_id| {
+            let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
+            redis_connection.get(&redis_meetup_discord_key)
+        })
         .collect();
-    let (discord_user_ids,): (Vec<Option<u64>>,) = redis::pipe()
-        .get(redis_meetup_user_discord_keys)
-        .query(redis_connection)?;
     // Filter the None values
-    let discord_user_ids: Vec<_> = discord_user_ids.into_iter().filter_map(|id| id).collect();
+    let discord_user_ids: Vec<_> = discord_user_ids?.into_iter().filter_map(|id| id).collect();
     // Check whether any users have manually removed roles and don't add them back
     let redis_channel_removed_hosts_key = format!("discord_channel:{}:removed_hosts", channel.0);
     let redis_channel_removed_users_key = format!("discord_channel:{}:removed_users", channel.0);
