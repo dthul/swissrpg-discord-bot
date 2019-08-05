@@ -20,7 +20,7 @@ pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(6075619496514
 // pub const ORGANIZER_ID: RoleId = RoleId(539447673988841492);
 // pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
 // pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(562607292176924694));
-// pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = None;
+// pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(414074722259828736));
 
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =
