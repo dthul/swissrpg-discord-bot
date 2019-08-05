@@ -11,7 +11,8 @@ html {
 body {
     background-color: #2F3136;
     color: #EEEEEE;
-    font-family: Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;
+    font-family: 'Open Sans', 'Helvetica Neue', Helvetica, sans-serif;
+    font-weight: 400;
     padding: 0;
     margin: 0;
     min-height: 100%;
@@ -21,8 +22,10 @@ body {
     flex-direction: column;
 }
 
-h2 {
-    font-weight: 600;
+h1, h2, h3, h4 {
+    font-family: 'Montserrat', 'Open Sans', 'Helvetica Neue', Helvetica, sans-serif;
+    font-weight: 400;
+    text-transform: uppercase;
 }
 
 #logo img {
@@ -31,7 +34,7 @@ h2 {
 
 #main, #privacy {
     margin-top: 1em;
-    padding-top: 0.5em;
+    padding-top: 0.8em;
     padding-bottom: 0.5em;
     padding-left: 1em;
     padding-right: 1em;
@@ -56,8 +59,8 @@ h2:first-child {
 a.button {
     display: inline-block;
     background-color: seagreen;
-    padding-top: 0.3em;
-    padding-bottom: 0.3em;
+    padding-top: 0.5em;
+    padding-bottom: 0.6em;
     padding-left: 0.5em;
     padding-right: 0.5em;
     color: white;
