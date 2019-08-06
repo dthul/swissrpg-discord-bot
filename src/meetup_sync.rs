@@ -14,12 +14,15 @@ use tokio::prelude::*;
 
 const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*adventure\s*[\]\)]";
 const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*campaign\s*[\]\)]";
+const EVENT_SERIES_PATTERN: &'static str =
+    r"(?i)[\[\(]\s*event\s*series\s*(?P<event_id>[a-zA-Z0-9]+)\s*[\]\)]";
 const CHANNEL_PATTERN: &'static str = r"(?i)[\[\(]\s*channel\s*(?P<channel_id>[0-9]+)\s*[\]\)]";
 
 lazy_static! {
     static ref NEW_ADVENTURE_REGEX: regex::Regex =
         regex::Regex::new(NEW_ADVENTURE_PATTERN).unwrap();
     static ref NEW_CAMPAIGN_REGEX: regex::Regex = regex::Regex::new(NEW_CAMPAIGN_PATTERN).unwrap();
+    static ref EVENT_SERIES_REGEX: regex::Regex = regex::Regex::new(EVENT_SERIES_PATTERN).unwrap();
     static ref CHANNEL_REGEX: regex::Regex = regex::Regex::new(CHANNEL_PATTERN).unwrap();
 }
 
@@ -109,10 +112,11 @@ pub fn sync_task(
 // event is fine.
 fn sync_event(
     event: meetup_api::Event,
-    redis_client: redis::Client,
+    mut redis_client: redis::Client,
 ) -> impl Future<Item = (), Error = crate::BoxedError> {
     let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(&event.description);
     let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(&event.description);
+    let event_series_captures = EVENT_SERIES_REGEX.captures(&event.description);
     let channel_captures = CHANNEL_REGEX.captures(&event.description);
     let indicated_channel_id = match channel_captures {
         Some(captures) => match captures.name("channel_id") {
@@ -133,17 +137,67 @@ fn sync_event(
         _ => None,
     };
     if indicated_channel_id.is_some() && !(is_new_adventure || is_new_campaign) {
-        return Box::new(future::err(Box::new(SimpleError::new(
-                    format!("Skipping event \"{}\" since it indicates a channel to be connected with but is not the start of a new series", event.name)
-                )) as crate::BoxedError)) as BoxedFuture<_>;
+        return Box::new(future::err(Box::new(SimpleError::new(format!(
+            "Skipping event \"{}\" since it indicates a channel to be connected with but is not the start of a new series",
+            event.name
+        ))) as crate::BoxedError)) as BoxedFuture<_>;
     }
-    if !(is_new_adventure || is_new_campaign) {
+    // Either: new adventure or campaign, Or: event series
+    if !(is_new_adventure || is_new_campaign || event_series_captures.is_some()) {
         // TODO: implement event series
         println!("Syncing task: Ignoring event \"{}\"", event.name);
         return Box::new(future::ok(()));
     } else {
         println!("Syncing task: found event \"{}\"", event.name);
     }
+    if event_series_captures.is_some()
+        && (is_new_adventure || is_new_campaign || indicated_channel_id.is_some())
+    {
+        eprintln!(
+            "Syncing task: Event \"{}\" specifies a series as well as a new adventure/campaign tag, ignoring",
+            event.name
+        );
+        return Box::new(future::ok(()));
+    }
+    // If this is part of an event series, figure out which
+    let indicated_event_series_id = if let Some(event_series_captures) = event_series_captures {
+        // This is the event ID of an event that belongs to this series
+        let series_event_id = match event_series_captures.name("event_id") {
+            Some(id) => id.as_str(),
+            None => {
+                eprintln!("Syncing task: error capturing event_id");
+                return Box::new(future::ok(()));
+            }
+        };
+        // Query Redis for that event's series ID
+        let redis_series_event_series_key =
+            format!("meetup_event:{}:event_series", series_event_id);
+        let event_series_id: redis::RedisResult<Option<String>> =
+            redis_client.get(&redis_series_event_series_key);
+        let event_series_id = match event_series_id {
+            Ok(id) => match id {
+                Some(id) => Some(id),
+                None => {
+                    eprintln!(
+                        "Event \"{}\" indicates that it wants to be in the same series \
+                         as event {} but the latter does not belong to an event series yet",
+                        event.name, series_event_id
+                    );
+                    return Box::new(future::ok(()));
+                }
+            },
+            Err(err) => {
+                eprintln!(
+                    "Syncing task: error querying Redis for event series: {}",
+                    err
+                );
+                return Box::new(future::ok(()));
+            }
+        };
+        event_series_id
+    } else {
+        None
+    };
     // TODO: figure out whether this event belongs to a series
     // For now, we assume that an event that reaches this method does not yet
     // belong to a series and create a new one
@@ -175,71 +229,99 @@ fn sync_event(
                     let redis_event_series_key = redis_event_series_key.clone();
                     let redis_event_key = redis_event_key.clone();
                     let redis_channel_series_key = redis_channel_series_key.clone();
+                    let indicated_event_series_id = indicated_event_series_id.clone();
                     let mut query = redis::pipe();
-                    query
-                        .get(&redis_event_series_key)
-                        .get(&redis_channel_series_key);
+                    query.get(&redis_event_series_key).get(&redis_channel_series_key);
                     let transaction_future = query.query_async(con).and_then(
-                        move |(con, (series_id, indicated_channel_series)): (
-                            _,
-                            (Option<String>, Option<String>),
-                        )| {
-                            if series_id.is_none() {
+                        move |(con, (existing_series_id, indicated_channel_series)): (_, (Option<String>, Option<String>))| {
+                            if existing_series_id.is_none() {
                                 // If this event has no series ID yet but also
                                 // doesn't indicate that it is the start of a
-                                // new series, do nothing
-                                if !(is_new_adventure || is_new_campaign) {
+                                // new series or belongs to an existing series, do nothing
+                                if !(is_new_adventure || is_new_campaign || indicated_event_series_id.is_some()) {
                                     println!("Syncing task: Ignoring event \"{}\"", event.name);
                                     return pipe.query_async(con);
                                 }
                                 // If this event has no series ID yet, but the channel
                                 // it wants to be associated with does, then something is fishy
                                 if indicated_channel_series.is_some() {
-                                    println!("Event \"{}\" wants to be associated with a certain channel but that channel already belongs to an event series", event.name);
+                                    println!(
+                                        "Event \"{}\" wants to be associated with a certain channel \
+                                         but that channel already belongs to an event series",
+                                        event.name
+                                    );
                                     return pipe.query_async(con);
                                 }
                             }
                             // Use the existing series ID or create a new one
-                            let series_id = match series_id {
-                                Some(series_id) => {
+                            let series_id = match existing_series_id {
+                                Some(existing_series_id) => {
                                     // This event was already synced before and as such already has an event series ID.
 
                                     // If this event's series ID does not match the channel's series ID, something is fishy
                                     if let Some(channel_series) = indicated_channel_series {
-                                        if channel_series != series_id {
-                                            println!("Event \"{}\" wants to be associated with a certain channel but that channel already belongs to a different event series", event.name);
+                                        if channel_series != existing_series_id {
+                                            eprintln!(
+                                                "Event \"{}\" wants to be associated with a certain channel but \
+                                                 that channel already belongs to a different event series",
+                                                event.name
+                                            );
                                             return pipe.query_async(con);
                                         }
                                     }
-                                    series_id
-                                },
+                                    // If this event's series ID does not match the indicated event series ID, issue a warning
+                                    if let Some(indicated_event_series_id) = indicated_event_series_id {
+                                        if existing_series_id != indicated_event_series_id {
+                                            eprintln!(
+                                                "Warning: Event \"{}\" indicates event series {} \
+                                                 but is already associated with event series {}.",
+                                                event.name, indicated_event_series_id, existing_series_id
+                                            );
+                                            return pipe.query_async(con);
+                                        }
+                                    }
+                                    existing_series_id
+                                }
                                 None => {
-                                    // This event has not been synced before and we create a new event series ID.
-                                    let series_id = crate::meetup_oauth2::new_random_id(16);
-                                    if let Some(channel_id) = indicated_channel_id {
-                                        // If this event wants to be associated with a channel but that channel already
-                                        // has an event series ID, something is fishy
-                                        if indicated_channel_series.is_some() {
-                                            println!("Event \"{}\" wants to be associated with a certain channel but that channel already belongs to a different event series", event.name);
-                                            return pipe.query_async(con);
+                                    // This event has not been synced before and we either create a new event series ID
+                                    // for new campaigns/adventures or we connect it to an existing event series
+                                    if (is_new_adventure || is_new_campaign) && indicated_event_series_id.is_none() {
+                                        let new_series_id = crate::meetup_oauth2::new_random_id(16);
+                                        if let Some(channel_id) = indicated_channel_id {
+                                            // If this event wants to be associated with a channel but that channel already
+                                            // has an event series ID, something is fishy
+                                            if indicated_channel_series.is_some() {
+                                                eprintln!(
+                                                    "Event \"{}\" wants to be associated with a certain channel \
+                                                     but that channel already belongs to a different event series",
+                                                    event.name
+                                                );
+                                                return pipe.query_async(con);
+                                            } else {
+                                                // The event wants to be associated with a channel and that channel is not
+                                                // associated to anything else yet, looking good!
+                                                println!("Associating event \"{}\" with Discord channel {}", event.name, channel_id);
+                                                let redis_series_channel_key = format!("event_series:{}:discord_channel", &new_series_id);
+                                                pipe.sadd("discord_channels", channel_id);
+                                                pipe.set(&redis_channel_series_key, &new_series_id);
+                                                pipe.set(&redis_series_channel_key, channel_id);
+                                            }
                                         }
-                                        else {
-                                            // The event wants to be associated with a channel and that channel is not
-                                            // associated to anything else yet, looking good!
-                                            println!("Associating event \"{}\" with Discord channel {}", event.name, channel_id);
-                                            let redis_series_channel_key = format!("event_series:{}:discord_channel", &series_id);
-                                            pipe.sadd("discord_channels", channel_id);
-                                            pipe.set(&redis_channel_series_key, &series_id);
-                                            pipe.set(&redis_series_channel_key, channel_id);
-                                        }
+                                        new_series_id
+                                    } else if let Some(indicated_event_series_id) = indicated_event_series_id {
+                                        indicated_event_series_id
+                                    } else {
+                                        // Something went wrong
+                                        eprintln!(
+                                            "Syncing task: internal error (event has no series id yet, \
+                                             but is neither a new adventure/campaign nor does it belong to a session"
+                                        );
+                                        return pipe.query_async(con);
                                     }
-                                    series_id
                                 }
                             };
-                            let redis_series_events_key =
-                                format!("event_series:{}:meetup_events", &series_id);
-                            let host_user_ids: Vec<_> =
-                                event.event_hosts.iter().map(|user| user.id).collect();
+                            let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
+                            let host_user_ids: Vec<_> = event.event_hosts.iter().map(|user| user.id).collect();
                             let event_hash = &[
                                 ("name", event.name),
                                 ("time", event.time.to_rfc3339()),
@@ -258,15 +340,7 @@ fn sync_event(
                     Box::new(transaction_future) as redis::RedisFuture<_>
                 }
             };
-            async_redis_transaction::<_, (), _>(
-                con,
-                &[
-                    redis_event_series_key,
-                    redis_event_key,
-                    redis_channel_series_key,
-                ],
-                transaction_fn,
-            )
+            async_redis_transaction::<_, (), _>(con, &[redis_event_series_key, redis_event_key, redis_channel_series_key], transaction_fn)
         })
         .map(move |_| {
             println!("Event syncing task: Synced event \"{}\"", event_name);
