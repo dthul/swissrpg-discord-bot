@@ -24,6 +24,7 @@ pub struct Regexes {
     pub remove_host_mention: Regex,
     pub stop_organizer_dm: Regex,
     pub stop_organizer_mention: Regex,
+    pub send_expiration_reminder_organizer_mention: Regex,
 }
 
 impl Regexes {
@@ -139,6 +140,10 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
     let stop_organizer_dm = r"^(?i)stop\s*$";
     let stop_organizer_mention =
         format!(r"^{bot_mention}\s+(?i)stop\s*$", bot_mention = bot_mention);
+    let send_expiration_reminder_organizer_mention = format!(
+        r"^{bot_mention}\s+(?i)remind\s+expiration\s*$",
+        bot_mention = bot_mention
+    );
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -158,6 +163,10 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         remove_host_mention: Regex::new(remove_host_mention.as_str()).unwrap(),
         stop_organizer_dm: Regex::new(stop_organizer_dm).unwrap(),
         stop_organizer_mention: Regex::new(stop_organizer_mention.as_str()).unwrap(),
+        send_expiration_reminder_organizer_mention: Regex::new(
+            send_expiration_reminder_organizer_mention.as_str(),
+        )
+        .unwrap(),
     }
 }
 

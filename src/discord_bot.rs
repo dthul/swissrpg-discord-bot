@@ -358,6 +358,52 @@ impl EventHandler for Handler {
             let _ = msg
                 .channel_id
                 .say(&ctx.http, "Started Discord synchronization task");
+        } else if regexes
+            .send_expiration_reminder_organizer_mention
+            .is_match(&msg.content)
+        {
+            // This is only for organizers
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::GUILD_ID,
+                    crate::discord_sync::ORGANIZER_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                return;
+            }
+            let (redis_client, bot_id, task_scheduler) = {
+                let data = ctx.data.read();
+                let redis_client = data
+                    .get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone();
+                let bot_id = *data.get::<BotIdKey>().expect("Bot ID was not set");
+                let task_scheduler = data
+                    .get::<TaskSchedulerKey>()
+                    .expect("Task scheduler was not set")
+                    .clone();
+                (redis_client, bot_id, task_scheduler)
+            };
+            // Send the syncing task to the scheduler
+            task_scheduler.lock().add_task_datetime(
+                white_rabbit::Utc::now(),
+                crate::discord_end_of_game::create_end_of_game_task(
+                    redis_client,
+                    CacheAndHttp {
+                        cache: ctx.cache.clone(),
+                        http: ctx.http.clone(),
+                    },
+                    bot_id.0,
+                    /*recurring*/ false,
+                ),
+            );
+            let _ = msg
+                .channel_id
+                .say(&ctx.http, "Started expiration reminder task");
         } else if let Some(captures) = regexes.add_user_mention.captures(&msg.content) {
             // Get the Discord ID of the user that is supposed to
             // be added to the channel

@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 pub mod discord_bot;
 pub mod discord_bot_commands;
+pub mod discord_end_of_game;
 pub mod discord_sync;
 pub mod meetup_api;
 pub mod meetup_oauth2;
