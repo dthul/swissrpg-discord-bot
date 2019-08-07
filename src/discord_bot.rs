@@ -1,6 +1,8 @@
 use futures::Future;
 use serenity::{
-    model::{channel::Channel, channel::Message, gateway::Ready, id::UserId},
+    model::{
+        channel::Channel, channel::Message, gateway::Ready, guild::Member, id::GuildId, id::UserId,
+    },
     prelude::*,
 };
 use std::sync::Arc;
@@ -468,6 +470,11 @@ impl EventHandler for Handler {
                 /*as_host*/ true,
                 redis_client,
             );
+        } else if msg.content == "test" {
+            if let Some(user) = UserId(456545153923022849).to_user_cached(&ctx) {
+                Self::send_welcome_message(&ctx, &user.read());
+                println!("Sent welcome message!");
+            }
         } else {
             let _ = msg
                 .channel_id
@@ -483,5 +490,12 @@ impl EventHandler for Handler {
     // In this case, just print what the current user's username is.
     fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
+    }
+
+    fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
+        if guild_id != crate::discord_sync::GUILD_ID {
+            return;
+        }
+        Self::send_welcome_message(&ctx, &new_member.user.read());
     }
 }

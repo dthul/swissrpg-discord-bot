@@ -5,6 +5,7 @@ pub mod discord_sync;
 pub mod meetup_api;
 pub mod meetup_oauth2;
 pub mod meetup_sync;
+pub mod strings;
 
 use futures::{Future, Stream};
 use redis::Commands;

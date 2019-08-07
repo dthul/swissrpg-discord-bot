@@ -1,6 +1,6 @@
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
-use serenity::{model::channel::Message, prelude::*};
+use serenity::{model::channel::Message, model::user::User, prelude::*};
 use simple_error::SimpleError;
 use std::borrow::Cow;
 
@@ -586,5 +586,18 @@ impl crate::discord_bot::Handler {
                 }
             }
         }
+    }
+
+    pub fn send_welcome_message(ctx: &Context, user: &User) {
+        let _ = user.direct_message(ctx, |message_builder| {
+            message_builder
+                .content(crate::strings::WELCOME_MESSAGE_PART1)
+                .embed(|embed_builder| {
+                    embed_builder
+                        .colour(serenity::utils::Colour::new(0xFF1744))
+                        .title(crate::strings::WELCOME_MESSAGE_PART2_EMBED_TITLE)
+                        .description(crate::strings::WELCOME_MESSAGE_PART2_EMBED_CONTENT)
+                })
+        });
     }
 }
