@@ -32,6 +32,14 @@ lazy_static! {
         regex::Regex::new(r"(?i)[\[\(].*Campaign.*[\]\)]").unwrap();
 }
 
+struct Event {
+    #[allow(dead_code)]
+    id: String,
+    name: String,
+    time: chrono::DateTime<chrono::Utc>,
+    link: String,
+}
+
 // Syncs Discord with the state of the Redis database
 pub fn create_sync_discord_task(
     redis_client: redis::Client,
@@ -103,23 +111,57 @@ fn sync_event_series(
     discord_api: &crate::discord_bot::CacheAndHttp,
     bot_id: u64,
 ) -> Result<(), crate::BoxedError> {
-    // Step 0: Figure out the title of this event series
+    // Only sync event series that have events in the future
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
-    let some_event_id = match event_ids.first() {
-        Some(id) => id,
+    let events: Vec<_> = event_ids
+        .into_iter()
+        .filter_map(|event_id| {
+            let redis_event_key = format!("meetup_event:{}", event_id);
+            let tuple: redis::RedisResult<(String, String, String)> =
+                redis_connection.hget(&redis_event_key, &["time", "name", "link"]);
+            match tuple {
+                Ok((time, name, link)) => match chrono::DateTime::parse_from_rfc3339(&time) {
+                    Ok(time) => Some(Event {
+                        id: event_id,
+                        name: name,
+                        time: time.with_timezone(&chrono::Utc),
+                        link: link,
+                    }),
+                    Err(err) => {
+                        eprintln!("Error parsing event time for event {}: {}", time, err);
+                        None
+                    }
+                },
+                Err(err) => {
+                    eprintln!("Redis error when querying event time: {}", err);
+                    None
+                }
+            }
+        })
+        .collect();
+    // Filter past events
+    let now = chrono::Utc::now();
+    let mut upcoming: Vec<_> = events
+        .into_iter()
+        .filter(|event| event.time > now)
+        .collect();
+    // Sort by date
+    upcoming.sort_unstable_by_key(|event| event.time);
+    let next_event = match upcoming.first() {
+        Some(event) => event,
         None => {
             println!(
-                "Event series \"{}\" seems to have no events associated with it, not syncing to Discord",
+                "Event series \"{}\" seems to have no upcoming events associated with it, not syncing to Discord",
                 series_id
             );
             return Ok(());
         }
     };
-    let redis_event_key = format!("meetup_event:{}", some_event_id);
-    let event_name: String = redis_connection.hget(&redis_event_key, "name")?;
+    let event_name = &next_event.name;
+    // Step 0: Figure out the title of this event series
     // Parse the series name from the event title
-    let series_name = match EVENT_NAME_REGEX.captures(&event_name) {
+    let series_name = match EVENT_NAME_REGEX.captures(event_name) {
         Some(captures) => captures.name("name").unwrap().as_str(),
         None => {
             return Err(Box::new(SimpleError::new(format!(
@@ -187,7 +229,7 @@ fn sync_event_series(
     // Step 6: Make sure that event hosts have the guild's game master role
     sync_game_master_role(series_id, redis_connection, discord_api)?;
     // Step 7: Keep the channel's topic up-to-date
-    sync_channel_topic_and_category(channel_id, &event_ids, redis_connection, discord_api)?;
+    sync_channel_topic_and_category(channel_id, &next_event, discord_api)?;
     Ok(())
 }
 
@@ -727,86 +769,46 @@ fn sync_game_master_role(
     Ok(())
 }
 
-fn sync_channel_topic_and_category<T: AsRef<str>>(
+fn sync_channel_topic_and_category(
     channel_id: ChannelId,
-    event_ids: &[T],
-    redis_connection: &mut redis::Connection,
+    next_event: &Event,
     discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
-    // Get all events belonging to this event series
-    let redis_event_keys: Vec<_> = event_ids
-        .iter()
-        .map(|id| format!("meetup_event:{}", id.as_ref()))
-        .collect();
-    let events: Vec<_> = redis_event_keys
-        .into_iter()
-        .filter_map(|redis_event_key| {
-            let event: redis::RedisResult<(String, String, String)> =
-                redis_connection.hget(redis_event_key, &["name", "time", "link"]);
-            match event {
-                Ok(event) => Some(event),
-                Err(err) => {
-                    eprintln!("Redis error when querying event time and link: {}", err);
-                    None
-                }
-            }
-        })
-        .collect();
-    // Map each upcoming event to a (date, url) pair
-    let now = chrono::Utc::now();
-    let mut upcoming: Vec<_> = events
-        .into_iter()
-        .filter_map(|(name, time, url)| {
-            if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
-                let time = time.with_timezone(&chrono::Utc);
-                if time > now {
-                    return Some((name, time, url));
-                }
-            }
-            None
-        })
-        .collect();
-    // Sort by date
-    upcoming.sort_unstable_by_key(|pair| pair.1);
-    // The first element in this vector will be the next upcoming event
-    if let Some(event) = upcoming.first() {
-        // Sync the topic and the category
-        let event_url = &event.2;
-        let event_name = &event.0;
-        let topic = format!("Next session: {}", event_url);
-        let category = if CAMPAIGN_REGEX.is_match(event_name) {
-            CAMPAIGN_CATEGORY_ID
-        } else if ONE_SHOT_REGEX.is_match(event_name) || INTRO_REGEX.is_match(event_name) {
-            ONE_SHOT_CATEGORY_ID
-        } else {
-            None
-        };
-        let channel = channel_id.to_channel(discord_api)?;
-        if let serenity::model::channel::Channel::Guild(channel) = channel {
-            let channel_needs_update = {
-                let channel_lock = channel.read();
-                let current_topic = &channel_lock.topic;
-                let topic_needs_update = if let Some(current_topic) = current_topic {
-                    current_topic != &topic
-                } else {
-                    true
-                };
-                let category_needs_update = if category.is_some() {
-                    category != channel_lock.category_id
-                } else {
-                    false
-                };
-                topic_needs_update || category_needs_update
+    // Sync the topic and the category
+    let event_name = &next_event.name;
+    let topic = format!("Next session: {}", &next_event.link);
+    let category = if CAMPAIGN_REGEX.is_match(event_name) {
+        CAMPAIGN_CATEGORY_ID
+    } else if ONE_SHOT_REGEX.is_match(event_name) || INTRO_REGEX.is_match(event_name) {
+        ONE_SHOT_CATEGORY_ID
+    } else {
+        None
+    };
+    let channel = channel_id.to_channel(discord_api)?;
+    if let serenity::model::channel::Channel::Guild(channel) = channel {
+        let channel_needs_update = {
+            let channel_lock = channel.read();
+            let current_topic = &channel_lock.topic;
+            let topic_needs_update = if let Some(current_topic) = current_topic {
+                current_topic != &topic
+            } else {
+                true
             };
-            if channel_needs_update {
-                channel_id.edit(&discord_api.http, |channel_edit| {
-                    channel_edit.topic(topic);
-                    if category.is_some() {
-                        channel_edit.category(category);
-                    }
-                    channel_edit
-                })?;
-            }
+            let category_needs_update = if category.is_some() {
+                category != channel_lock.category_id
+            } else {
+                false
+            };
+            topic_needs_update || category_needs_update
+        };
+        if channel_needs_update {
+            channel_id.edit(&discord_api.http, |channel_edit| {
+                channel_edit.topic(topic);
+                if category.is_some() {
+                    channel_edit.category(category);
+                }
+                channel_edit
+            })?;
         }
     }
     Ok(())
