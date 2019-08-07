@@ -321,27 +321,34 @@ fn sync_event_series(
     // Sort by date
     upcoming.sort_unstable_by_key(|pair| pair.1);
     // The first element in this vector will be the next upcoming event
-    if let Some(event) = upcoming.first() {
-        // Query the RSVPs for that event
-        let event_id = event.0.clone();
-        let event_name = &event.2;
-        let group_urlname = &event.3;
-        println!("Syncing task: Querying RSVPs for event \"{}\"", event_name);
-        let rsvps = match *meetup_client.read() {
-            Some(ref meetup_client) => meetup_client
-                .get_rsvps(group_urlname, &event_id)
-                .from_err::<crate::BoxedError>(),
-            None => {
-                return Box::new(
-                    future::err(SimpleError::new("Meetup API unavailable"))
-                        .from_err::<crate::BoxedError>(),
-                ) as BoxedFuture<_>
-            }
+    if let Some(next_event) = upcoming.first() {
+        let next_event_id = next_event.0.clone();
+        let next_event_name = &next_event.2;
+        let group_urlname = &next_event.3;
+        println!(
+            "Syncing task: Querying RSVPs for event \"{}\"",
+            next_event_name
+        );
+        let rsvp_future = {
+            // Query the RSVPs for that event
+            let rsvps = match *meetup_client.read() {
+                Some(ref meetup_client) => meetup_client
+                    .get_rsvps(group_urlname, &next_event_id)
+                    .from_err::<crate::BoxedError>(),
+                None => {
+                    return Box::new(
+                        future::err(SimpleError::new("Meetup API unavailable"))
+                            .from_err::<crate::BoxedError>(),
+                    ) as BoxedFuture<_>
+                }
+            };
+            // Sync the RSVPs
+            rsvps.and_then(move |rsvps| {
+                println!("Syncing task: Found {} RSVPs", rsvps.len());
+                sync_rsvps(&next_event_id, rsvps, redis_client)
+            })
         };
-        Box::new(rsvps.and_then(move |rsvps| {
-            println!("Syncing task: Found {} RSVPs", rsvps.len());
-            sync_rsvps(&event_id, rsvps, redis_client)
-        }))
+        Box::new(rsvp_future)
     } else {
         Box::new(future::ok(()))
     }
