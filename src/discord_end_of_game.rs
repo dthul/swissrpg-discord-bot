@@ -50,10 +50,23 @@ fn end_of_game_task(
     let redis_channels_key = "discord_channels";
     let discord_channels: Vec<u64> = con.smembers(redis_channels_key)?;
     for channel in discord_channels {
-        // Then, send a reminder if necessary
-        if let Err(err) = send_channel_expiration_reminder(channel, &mut con, discord_api, bot_id) {
-            some_failed = true;
-            eprintln!("Channel expiration reminder failed: {}", err);
+        // Then, check if the channel is due for deletion
+        match delete_marked_channel(channel, &mut con, discord_api) {
+            Ok(deletion_status) => {
+                if deletion_status == DeletionStatus::NotDeleted {
+                    // Lastly, send a reminder if necessary
+                    if let Err(err) =
+                        send_channel_expiration_reminder(channel, &mut con, discord_api, bot_id)
+                    {
+                        some_failed = true;
+                        eprintln!("Channel expiration reminder failed: {}", err);
+                    }
+                }
+            }
+            Err(err) => {
+                some_failed = true;
+                eprintln!("Error during channel deletion: {}", err);
+            }
         }
     }
     if some_failed {
@@ -134,25 +147,27 @@ fn update_series_channel_expiration(
                 None => None,
             };
         let new_expiration_time = last_event_time + chrono::Duration::days(1);
-        let new_expiration_time = match current_expiration_time {
+        let (new_expiration_time, needs_update) = match current_expiration_time {
             Some(current_expiration_time) => {
                 if current_expiration_time > new_expiration_time {
-                    current_expiration_time
+                    (current_expiration_time, false)
                 } else {
-                    new_expiration_time
+                    (new_expiration_time, true)
                 }
             }
-            None => new_expiration_time,
+            None => (new_expiration_time, true),
         };
         // Store the new expiration time in Redis
-        let _: () = con.set(
-            &redis_channel_expiration_key,
-            new_expiration_time.to_rfc3339(),
-        )?;
-        println!(
-            "Set expiration time of channel {} to {}",
-            channel_id, new_expiration_time
-        );
+        if needs_update {
+            let _: () = con.set(
+                &redis_channel_expiration_key,
+                new_expiration_time.to_rfc3339(),
+            )?;
+            println!(
+                "Set expiration time of channel {} to {}",
+                channel_id, new_expiration_time
+            );
+        }
     }
     Ok(())
 }
@@ -210,4 +225,82 @@ fn send_channel_expiration_reminder(
         );
     }
     Ok(())
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum DeletionStatus {
+    Deleted,
+    NotDeleted,
+    AlreadyDeleted,
+}
+
+fn delete_marked_channel(
+    channel_id: u64,
+    con: &mut redis::Connection,
+    discord_api: &crate::discord_bot::CacheAndHttp,
+) -> Result<DeletionStatus, crate::BoxedError> {
+    // Check if there is an expiration time in the future
+    // -> don't delete channel and remove deletion marker
+    let redis_channel_deletion_key = format!("discord_channel:{}:deletion_time", channel_id);
+    let redis_channel_expiration_key = format!("discord_channel:{}:expiration_time", channel_id);
+    // Check if the channel was marked for deletion
+    let deletion_time: Option<String> = con.get(&redis_channel_deletion_key)?;
+    let deletion_time = deletion_time
+        .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
+        .transpose()?
+        .map(|t| t.with_timezone(&chrono::Utc));
+    let deletion_time = match deletion_time {
+        Some(deletion_time) => deletion_time,
+        None => return Ok(DeletionStatus::NotDeleted),
+    };
+    if deletion_time > chrono::Utc::now() {
+        return Ok(DeletionStatus::NotDeleted);
+    }
+    // Check if there is an expiration date that might be in the future
+    let expiration_time: Option<String> = con.get(&redis_channel_expiration_key)?;
+    let expiration_time = expiration_time
+        .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
+        .transpose()?
+        .map(|t| t.with_timezone(&chrono::Utc));
+    if let Some(expiration_time) = expiration_time {
+        if expiration_time > deletion_time {
+            eprintln!(
+                "Channel {} has an expiration time that is later than the \
+                 scheduled deletion time. Not deleting...",
+                channel_id
+            );
+            return Ok(DeletionStatus::NotDeleted);
+        }
+    }
+    // Check whether the Channel still exists on Discord
+    let channel_exists = match ChannelId(channel_id).to_channel(discord_api) {
+        Ok(_) => true,
+        Err(err) => {
+            if let serenity::Error::Http(http_err) = &err {
+                if let serenity::http::HttpError::UnsuccessfulRequest(response) = http_err.as_ref()
+                {
+                    if response.status_code == reqwest::StatusCode::NOT_FOUND {
+                        false
+                    } else {
+                        return Err(Box::new(err));
+                    }
+                } else {
+                    return Err(Box::new(err));
+                }
+            } else {
+                return Err(Box::new(err));
+            }
+        }
+    };
+    if channel_exists {
+        // Delete the channel from Discord
+        ChannelId(channel_id).delete(&discord_api.http)?;
+        // Delete the channel deletion request from Redis
+        let _: () = con.del(&redis_channel_deletion_key)?;
+        // Let the vacuum task handle all other stale Redis keys
+        // and things like the associated roles
+        Ok(DeletionStatus::Deleted)
+    } else {
+        Ok(DeletionStatus::AlreadyDeleted)
+    }
 }
