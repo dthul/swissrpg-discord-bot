@@ -1573,6 +1573,7 @@ dependencies = [
 name = "swissrpg-discord-bot"
 version = "0.1.0"
 dependencies = [
+ "backtrace 0.3.33 (registry+https://github.com/rust-lang/crates.io-index)",
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "cookie 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",

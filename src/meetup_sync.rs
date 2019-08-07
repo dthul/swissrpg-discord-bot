@@ -36,7 +36,7 @@ pub fn create_recurring_syncing_task(
     tokio::timer::Interval::new_interval(Duration::from_secs(15 * 60))
         .map_err(|err| {
             eprintln!("Interval timer error: {}", err);
-            Box::new(err) as crate::BoxedError
+            err.into()
         })
         .for_each(move |_| {
             tokio::spawn(
@@ -123,24 +123,23 @@ fn sync_event(
             Some(id) => match id.as_str().parse::<u64>() {
                 Ok(id) => Some(id),
                 _ => {
-                    return Box::new(future::err(
-                        Box::new(SimpleError::new("Invalid channel id")) as crate::BoxedError,
-                    )) as BoxedFuture<_>
+                    return Box::new(future::err(SimpleError::new("Invalid channel id").into()))
+                        as BoxedFuture<_>
                 }
             },
             _ => {
-                return Box::new(future::err(Box::new(SimpleError::new(
-                    "Internal error parsing channel id",
-                )) as crate::BoxedError)) as BoxedFuture<_>
+                return Box::new(future::err(
+                    SimpleError::new("Internal error parsing channel id").into(),
+                )) as BoxedFuture<_>
             }
         },
         _ => None,
     };
     if indicated_channel_id.is_some() && !(is_new_adventure || is_new_campaign) {
-        return Box::new(future::err(Box::new(SimpleError::new(format!(
+        return Box::new(future::err(SimpleError::new(format!(
             "Skipping event \"{}\" since it indicates a channel to be connected with but is not the start of a new series",
             event.name
-        ))) as crate::BoxedError)) as BoxedFuture<_>;
+        )).into())) as BoxedFuture<_>;
     }
     // Either: new adventure or campaign, Or: event series
     if !(is_new_adventure || is_new_campaign || event_series_captures.is_some()) {
@@ -359,9 +358,7 @@ fn sync_event_series(
     // Get all events belonging to this event series
     let event_ids: Vec<String> = match redis_client.smembers(&redis_series_events_key) {
         Ok(ids) => ids,
-        Err(err) => {
-            return Box::new(future::err(Box::new(err) as crate::BoxedError)) as BoxedFuture<_>
-        }
+        Err(err) => return Box::new(future::err(err.into())) as BoxedFuture<_>,
     };
     let events: Vec<_> = event_ids
         .into_iter()
@@ -480,11 +477,9 @@ fn async_redis_transaction<
             func(con, p).from_err::<crate::BoxedError>().and_then(
                 |(con, response): (_, Option<T>)| {
                     match response {
-                        None => Box::new(future::err(Box::new(SimpleError::new(
-                            "Redis transaction failed",
-                        ))
-                            as crate::BoxedError))
-                            as BoxedFuture<_>,
+                        None => Box::new(future::err(
+                            SimpleError::new("Redis transaction failed").into(),
+                        )) as BoxedFuture<_>,
                         Some(response) => {
                             // make sure no watch is left in the connection, even if
                             // someone forgot to use the pipeline.

@@ -97,10 +97,11 @@ pub fn generate_meetup_linking_link(
     let _: () = match redis_connection.lock().set(&redis_key, discord_id) {
         Ok(id) => id,
         Err(err) => {
-            return Err(Box::new(SimpleError::new(format!(
+            return Err(SimpleError::new(format!(
                 "Redis error when trying to generate Meetup linking link: {}",
                 err
-            ))))
+            ))
+            .into())
         }
     };
     return Ok(format!("{}/link/{}", BASE_URL, &linking_id));
@@ -132,15 +133,9 @@ impl std::error::Error for HandlerError {
     }
 }
 
-impl From<BoxedError> for HandlerError {
-    fn from(err: BoxedError) -> Self {
-        HandlerError::InternalServerError(err)
-    }
-}
-
-impl From<crate::meetup_api::Error> for HandlerError {
-    fn from(err: crate::meetup_api::Error) -> Self {
-        HandlerError::InternalServerError(Box::new(err))
+impl<T: Into<BoxedError>> From<T> for HandlerError {
+    fn from(err: T) -> Self {
+        HandlerError::InternalServerError(err.into())
     }
 }
 
@@ -190,13 +185,13 @@ fn meetup_http_handler(
             Response::builder()
                 .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
                 .body(html_body.into())
-                .map_err(|err| (Box::new(err) as BoxedError).into()),
+                .map_err(|err| err.into()),
         ))
     } else if let (&Method::GET, "/authorize/redirect") = (method, path) {
         let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
         let req_url = match Url::parse(&full_uri) {
             Ok(url) => url,
-            Err(err) => return Box::new(future::err((Box::new(err) as BoxedError).into())),
+            Err(err) => return Box::new(future::err(err.into())),
         };
         let params: Vec<_> = req_url.query_pairs().collect();
         let code = params
@@ -241,10 +236,7 @@ fn meetup_http_handler(
         let future = oauth2_authorization_client
             .exchange_code(code)
             .request_async(async_http_client)
-            .map_err(|err| {
-                (Box::new(SimpleError::new(format!("RequestTokenError: {}", err))) as BoxedError)
-                    .into()
-            })
+            .map_err(|err| SimpleError::new(format!("RequestTokenError: {}", err)).into())
             .and_then(|token_res| {
                 // Check that this token belongs to an organizer of all our Meetup groups
                 let new_async_meetup_client =
@@ -291,7 +283,7 @@ fn meetup_http_handler(
                             },
                         );
                         if let Err(err) = res {
-                            return future::err((Box::new(err) as BoxedError).into());
+                            return future::err(err.into());
                         }
                         // Replace the meetup client
                         let new_blocking_meetup_client =
@@ -317,7 +309,7 @@ fn meetup_http_handler(
             .query(&mut *redis_connection_mutex.lock())
         {
             Ok(id) => id,
-            Err(err) => return Box::new(future::err((Box::new(err) as BoxedError).into())),
+            Err(err) => return Box::new(future::err(err.into())),
         };
         if discord_id.is_none() {
             return Box::new(future::ok(Response::new("This link seems to have expired. Get a new link from the bot with the \"link meetup\" command".into())));
@@ -357,7 +349,7 @@ fn meetup_http_handler(
             Response::builder()
                 .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
                 .body(html_body.into())
-                .map_err(|err| (Box::new(err) as BoxedError).into()),
+                .map_err(|err| (err.into())),
         ))
     } else if let (&Method::GET, Some(captures)) = (method, LINK_REDIRECT_URL_REGEX.captures(path))
     {
@@ -379,7 +371,7 @@ fn meetup_http_handler(
             .query(&mut *redis_connection_mutex.lock())
         {
             Ok(id) => id,
-            Err(err) => return Box::new(future::err((Box::new(err) as BoxedError).into())),
+            Err(err) => return Box::new(future::err(err.into())),
         };
         let discord_id = match discord_id {
             Some(id) => id,
@@ -388,7 +380,7 @@ fn meetup_http_handler(
         let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
         let req_url = match Url::parse(&full_uri) {
             Ok(url) => url,
-            Err(err) => return Box::new(future::err((Box::new(err) as BoxedError).into())),
+            Err(err) => return Box::new(future::err(err.into())),
         };
         let params: Vec<_> = req_url.query_pairs().collect();
         let code = params
@@ -436,8 +428,7 @@ fn meetup_http_handler(
             .exchange_code(code)
             .request_async(async_http_client)
             .map_err(|err| {
-                (Box::new(SimpleError::new(format!("RequestTokenError: {}", err))) as BoxedError)
-                    .into()
+                SimpleError::new(format!("RequestTokenError: {}", err)).into()
             })
             .and_then(move |token_res| {
                 // Get the user's Meetup ID
@@ -483,7 +474,7 @@ fn meetup_http_handler(
                                 );
                                 }
                             }
-                            Err(err) => return future::err((Box::new(err) as BoxedError).into()),
+                            Err(err) => return future::err(err.into()),
                             _ => (),
                         }
                         // Check that the Meetup ID has not been linked to some other Discord ID yet
@@ -504,7 +495,7 @@ fn meetup_http_handler(
                                     .into(),
                                 );
                             }
-                            Err(err) => return future::err((Box::new(err) as BoxedError).into()),
+                            Err(err) => return future::err(err.into()),
                             _ => (),
                         }
                         // Create the link between the Discord and the Meetup ID
@@ -545,7 +536,7 @@ fn meetup_http_handler(
                             )
                         };
                         if let Err(err) = res {
-                            return future::err((Box::new(err) as BoxedError).into());
+                            return future::err(err.into());
                         }
                         if !successful {
                             return future::err(

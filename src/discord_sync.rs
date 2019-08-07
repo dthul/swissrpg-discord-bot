@@ -83,9 +83,7 @@ pub fn sync_discord(
         }
     }
     if some_failed {
-        Err(Box::new(SimpleError::new(
-            "One or more discord event series syncs failed",
-        )))
+        Err(SimpleError::new("One or more discord event series syncs failed").into())
     } else {
         Ok(())
     }
@@ -164,17 +162,19 @@ fn sync_event_series(
     let series_name = match EVENT_NAME_REGEX.captures(event_name) {
         Some(captures) => captures.name("name").unwrap().as_str(),
         None => {
-            return Err(Box::new(SimpleError::new(format!(
+            return Err(SimpleError::new(format!(
                 "Could not extract a series name from the event \"{}\"",
                 event_name
-            ))))
+            ))
+            .into())
         }
     };
     if series_name.len() < 2 || series_name.len() > 80 {
-        return Err(Box::new(SimpleError::new(format!(
+        return Err(SimpleError::new(format!(
             "Channel name \"{}\" is too short or too long",
             series_name
-        ))));
+        ))
+        .into());
     }
     // Step 1: Sync the channel
     let channel_id = sync_channel(
@@ -244,9 +244,7 @@ fn sync_role(
     let mut current_num_try = 0;
     loop {
         if current_num_try > max_retries {
-            return Err(Box::new(SimpleError::new(
-                "Role sync failed, max retries reached",
-            )));
+            return Err(SimpleError::new("Role sync failed, max retries reached").into());
         }
         current_num_try += 1;
         let role = sync_role_impl(
@@ -407,7 +405,7 @@ fn sync_role_impl(
     // if it was newly created or already existing
     channel_role
         .map(|id| RoleId(id.0))
-        .map_err(|err| Box::new(err) as crate::BoxedError)
+        .map_err(|err| err.into())
 }
 
 fn sync_channel(
@@ -421,9 +419,7 @@ fn sync_channel(
     let mut current_num_try = 0;
     loop {
         if current_num_try > max_retries {
-            return Err(Box::new(SimpleError::new(
-                "Channel sync failed, max retries reached",
-            )));
+            return Err(SimpleError::new("Channel sync failed, max retries reached").into());
         }
         current_num_try += 1;
         let channel = sync_channel_impl(
@@ -444,13 +440,13 @@ fn sync_channel(
                         if response.status_code == reqwest::StatusCode::NOT_FOUND {
                             false
                         } else {
-                            return Err(Box::new(err));
+                            return Err(err.into());
                         }
                     } else {
-                        return Err(Box::new(err));
+                        return Err(err.into());
                     }
                 } else {
-                    return Err(Box::new(err));
+                    return Err(err.into());
                 }
             }
         };
@@ -574,9 +570,7 @@ fn sync_channel_impl(
     }
     // Return the channel we got from Redis, no matter
     // if it was newly created or already existing
-    channel
-        .map(|id| ChannelId(id.0))
-        .map_err(|err| Box::new(err) as crate::BoxedError)
+    channel.map(|id| ChannelId(id.0)).map_err(|err| err.into())
 }
 
 // Makes sure that the Discord channel has the appropriate permission

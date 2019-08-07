@@ -1,3 +1,4 @@
+use crate::error::BoxedError;
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
 use serenity::{model::channel::Message, model::user::User, prelude::*};
@@ -25,6 +26,7 @@ pub struct Regexes {
     pub stop_organizer_dm: Regex,
     pub stop_organizer_mention: Regex,
     pub send_expiration_reminder_organizer_mention: Regex,
+    pub close_channel_host_mention: Regex,
 }
 
 impl Regexes {
@@ -144,6 +146,10 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         r"^{bot_mention}\s+(?i)remind\s+expiration\s*$",
         bot_mention = bot_mention
     );
+    let close_channel_host_mention = format!(
+        r"^{bot_mention}\s+(?i)close\s+channel\s*$",
+        bot_mention = bot_mention
+    );
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -167,6 +173,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
             send_expiration_reminder_organizer_mention.as_str(),
         )
         .unwrap(),
+        close_channel_host_mention: Regex::new(close_channel_host_mention.as_str()).unwrap(),
     }
 }
 
@@ -182,10 +189,10 @@ impl crate::discord_bot::Handler {
             let data = ctx.data.read();
             (
                 data.get::<crate::discord_bot::RedisConnectionKey>()
-                    .ok_or_else(|| Box::new(SimpleError::new("Redis connection was not set")))?
+                    .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
                     .clone(),
                 data.get::<crate::discord_bot::MeetupClientKey>()
-                    .ok_or_else(|| Box::new(SimpleError::new("Meetup client was not set")))?
+                    .ok_or_else(|| SimpleError::new("Meetup client was not set"))?
                     .clone(),
             )
         };
@@ -275,10 +282,10 @@ impl crate::discord_bot::Handler {
             let data = ctx.data.read();
             (
                 data.get::<crate::discord_bot::RedisConnectionKey>()
-                    .ok_or_else(|| Box::new(SimpleError::new("Redis connection was not set")))?
+                    .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
                     .clone(),
                 data.get::<crate::discord_bot::MeetupClientKey>()
-                    .ok_or_else(|| Box::new(SimpleError::new("Meetup client was not set")))?
+                    .ok_or_else(|| SimpleError::new("Meetup client was not set"))?
                     .clone(),
             )
         };
@@ -445,43 +452,49 @@ impl crate::discord_bot::Handler {
         Ok(())
     }
 
-    pub fn channel_add_or_remove_user(
+    fn get_channel_roles(
+        channel_id: u64,
+        redis_connection: &mut redis::Connection,
+    ) -> Result<Option<ChannelRoles>, BoxedError> {
+        // Check that this message came from a bot controlled channel
+        let redis_channel_role_key = format!("discord_channel:{}:discord_role", channel_id);
+        let redis_channel_host_role_key =
+            format!("discord_channel:{}:discord_host_role", channel_id);
+        let channel_roles: redis::RedisResult<(Option<u64>, Option<u64>)> = redis::pipe()
+            .get(redis_channel_role_key)
+            .get(redis_channel_host_role_key)
+            .query(redis_connection);
+        match channel_roles {
+            Ok((Some(role), Some(host_role))) => Ok(Some(ChannelRoles {
+                user: role,
+                host: host_role,
+            })),
+            Ok((None, None)) => Ok(None),
+            Ok(_) => {
+                return Err(SimpleError::new("Channel has only one of two roles").into());
+            }
+            Err(err) => {
+                return Err(err.into());
+            }
+        }
+    }
+
+    pub fn close_channel(
         ctx: &Context,
         msg: &Message,
-        discord_id: u64,
-        add: bool,
-        as_host: bool,
-        mut redis_client: redis::Client,
-    ) {
-        // Check that this message came from a bot controlled channel
-        let (channel_role, channel_host_role) = {
-            let redis_channel_role_key = format!("discord_channel:{}:discord_role", msg.channel_id);
-            let redis_channel_host_role_key =
-                format!("discord_channel:{}:discord_host_role", msg.channel_id);
-            let channel_roles: redis::RedisResult<(Option<u64>, Option<u64>)> = redis::pipe()
-                .get(redis_channel_role_key)
-                .get(redis_channel_host_role_key)
-                .query(&mut redis_client);
-            match channel_roles {
-                Ok((Some(role), Some(host_role))) => (role, host_role),
-                Ok((None, None)) => {
-                    let _ = msg.channel_id.say(
-                        &ctx.http,
-                        "This channel does not seem to be under my control",
-                    );
-                    return;
-                }
-                Ok(_) => {
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, "It seems like this channel is broken");
-                    return;
-                }
-                Err(err) => {
-                    eprintln!("{}", err);
-                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
-                    return;
-                }
+        redis_client: redis::Client,
+    ) -> Result<(), BoxedError> {
+        let mut redis_connection = redis_client.get_connection()?;
+        // Check whether this is a bot controlled channel
+        let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+        let channel_roles = match channel_roles {
+            Some(roles) => roles,
+            None => {
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    "This channel does not seem to be under my control",
+                );
+                return Ok(());
             }
         };
         // This is only for organizers and channel hosts
@@ -495,20 +508,106 @@ impl crate::discord_bot::Handler {
             .unwrap_or(false);
         let is_host = msg
             .author
-            .has_role(ctx, crate::discord_sync::GUILD_ID, channel_host_role)
+            .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
         if !is_organizer && !is_host {
             let _ = msg
                 .channel_id
                 .say(&ctx.http, "Only channel hosts and organizers can do that");
-            return;
+            return Ok(());
+        }
+        // Check if there is a channel expiration time in the future
+        let redis_channel_expiration_key =
+            format!("discord_channel:{}:expiration_time", msg.channel_id.0);
+        let expiration_time: Option<String> =
+            redis_connection.get(&redis_channel_expiration_key)?;
+        let expiration_time = expiration_time
+            .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
+            .transpose()?
+            .map(|t| t.with_timezone(&chrono::Utc));
+        if let Some(expiration_time) = expiration_time {
+            if expiration_time > chrono::Utc::now() {
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, "The channel cannot be closed yet");
+                return Ok(());
+            }
+        }
+        // Schedule this channel for deletion
+        // TODO: in 24 hours
+        let new_deletion_time = chrono::Utc::now();
+        let redis_channel_deletion_key =
+            format!("discord_channel:{}:deletion_time", msg.channel_id.0);
+        let current_deletion_time: Option<String> =
+            redis_connection.get(&redis_channel_deletion_key)?;
+        let current_deletion_time = current_deletion_time
+            .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
+            .transpose()?
+            .map(|t| t.with_timezone(&chrono::Utc));
+        if let Some(current_deletion_time) = current_deletion_time {
+            if new_deletion_time > current_deletion_time {
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, "Channel is already marked for closing");
+                return Ok(());
+            }
+        }
+        let _: () =
+            redis_connection.set(&redis_channel_deletion_key, new_deletion_time.to_rfc3339())?;
+        let _ = msg.channel_id.say(
+            &ctx.http,
+            "I marked this channel the be closed in the next 24 hours.\n\
+             Thanks for playing and hope to see you soon!",
+        );
+        Ok(())
+    }
+
+    pub fn channel_add_or_remove_user(
+        ctx: &Context,
+        msg: &Message,
+        discord_id: u64,
+        add: bool,
+        as_host: bool,
+        redis_client: redis::Client,
+    ) -> Result<(), BoxedError> {
+        let mut redis_connection = redis_client.get_connection()?;
+        // Check whether this is a bot controlled channel
+        let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+        let channel_roles = match channel_roles {
+            Some(roles) => roles,
+            None => {
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    "This channel does not seem to be under my control",
+                );
+                return Ok(());
+            }
+        };
+        // This is only for organizers and channel hosts
+        let is_organizer = msg
+            .author
+            .has_role(
+                ctx,
+                crate::discord_sync::GUILD_ID,
+                crate::discord_sync::ORGANIZER_ID,
+            )
+            .unwrap_or(false);
+        let is_host = msg
+            .author
+            .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
+            .unwrap_or(false);
+        if !is_organizer && !is_host {
+            let _ = msg
+                .channel_id
+                .say(&ctx.http, "Only channel hosts and organizers can do that");
+            return Ok(());
         }
         if add {
             // Try to add the user to the channel
             match ctx.http.add_member_role(
                 crate::discord_sync::GUILD_ID.0,
                 discord_id,
-                channel_role,
+                channel_roles.user,
             ) {
                 Ok(()) => {
                     let _ = msg
@@ -526,7 +625,7 @@ impl crate::discord_bot::Handler {
                 match ctx.http.add_member_role(
                     crate::discord_sync::GUILD_ID.0,
                     discord_id,
-                    channel_host_role,
+                    channel_roles.host,
                 ) {
                     Ok(()) => {
                         let _ = msg.channel_id.say(
@@ -543,12 +642,13 @@ impl crate::discord_bot::Handler {
                     }
                 }
             }
+            Ok(())
         } else {
             // Try to remove the user from the channel
             match ctx.http.remove_member_role(
                 crate::discord_sync::GUILD_ID.0,
                 discord_id,
-                channel_host_role,
+                channel_roles.host,
             ) {
                 Err(err) => {
                     eprintln!("Could not remove host channel role: {}", err);
@@ -563,7 +663,7 @@ impl crate::discord_bot::Handler {
                 match ctx.http.remove_member_role(
                     crate::discord_sync::GUILD_ID.0,
                     discord_id,
-                    channel_role,
+                    channel_roles.user,
                 ) {
                     Err(err) => {
                         eprintln!("Could not remove channel role: {}", err);
@@ -578,22 +678,13 @@ impl crate::discord_bot::Handler {
             if as_host {
                 let redis_channel_removed_hosts_key =
                     format!("discord_channel:{}:removed_hosts", msg.channel_id.0);
-                match redis_client.sadd(redis_channel_removed_hosts_key, discord_id) {
-                    Ok(()) => (),
-                    Err(err) => {
-                        eprintln!("Redis error when trying to record removed host: {}", err);
-                    }
-                }
+                redis_connection.sadd(redis_channel_removed_hosts_key, discord_id)?;
             } else {
                 let redis_channel_removed_users_key =
                     format!("discord_channel:{}:removed_users", msg.channel_id.0);
-                match redis_client.sadd(redis_channel_removed_users_key, discord_id) {
-                    Ok(()) => (),
-                    Err(err) => {
-                        eprintln!("Redis error when trying to record removed user: {}", err);
-                    }
-                }
+                redis_connection.sadd(redis_channel_removed_users_key, discord_id)?
             }
+            Ok(())
         }
     }
 
@@ -609,4 +700,9 @@ impl crate::discord_bot::Handler {
                 })
         });
     }
+}
+
+struct ChannelRoles {
+    user: u64,
+    host: u64,
 }

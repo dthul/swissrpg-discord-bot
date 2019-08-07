@@ -70,9 +70,7 @@ fn end_of_game_task(
         }
     }
     if some_failed {
-        Err(Box::new(SimpleError::new(
-            "One or more end of game tasks failed",
-        )))
+        Err(SimpleError::new("One or more end of game tasks failed").into())
     } else {
         Ok(())
     }
@@ -85,7 +83,7 @@ fn update_series_channel_expiration(
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     let redis_series_channel_key = format!("event_series:{}:discord_channel", &series_id);
     // Check if this event series has a channel
-    let channel_id: String = match con.get(&redis_series_channel_key)? {
+    let channel_id: u64 = match con.get(&redis_series_channel_key)? {
         Some(id) => id,
         None => {
             println!(
@@ -130,7 +128,7 @@ fn update_series_channel_expiration(
             last_event_name, last_event_id, series_id, last_event_time
         );
         let redis_channel_expiration_key =
-            format!("discord_channel:{}:expiration_time", &channel_id);
+            format!("discord_channel:{}:expiration_time", channel_id);
         // Query the current expiration time
         let current_expiration_time =
             match con.get::<_, Option<String>>(&redis_channel_expiration_key)? {
@@ -282,13 +280,13 @@ fn delete_marked_channel(
                     if response.status_code == reqwest::StatusCode::NOT_FOUND {
                         false
                     } else {
-                        return Err(Box::new(err));
+                        return Err(err.into());
                     }
                 } else {
-                    return Err(Box::new(err));
+                    return Err(err.into());
                 }
             } else {
-                return Err(Box::new(err));
+                return Err(err.into());
             }
         }
     };

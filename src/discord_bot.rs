@@ -424,14 +424,17 @@ impl EventHandler for Handler {
                     .expect("Redis client was not set")
                     .clone()
             };
-            Self::channel_add_or_remove_user(
+            if let Err(err) = Self::channel_add_or_remove_user(
                 &ctx,
                 &msg,
                 discord_id,
                 /*add*/ true,
                 /*as_host*/ false,
                 redis_client,
-            );
+            ) {
+                eprintln!("Error in add user: {}", err);
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
         } else if let Some(captures) = regexes.add_host_mention.captures(&msg.content) {
             // Get the Discord ID of the user that is supposed to
             // be added to the channel
@@ -452,14 +455,17 @@ impl EventHandler for Handler {
                     .expect("Redis client was not set")
                     .clone()
             };
-            Self::channel_add_or_remove_user(
+            if let Err(err) = Self::channel_add_or_remove_user(
                 &ctx,
                 &msg,
                 discord_id,
                 /*add*/ true,
                 /*as_host*/ true,
                 redis_client,
-            );
+            ) {
+                eprintln!("Error in add host: {}", err);
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
         } else if let Some(captures) = regexes.remove_user_mention.captures(&msg.content) {
             // Get the Discord ID of the user that is supposed to
             // be removed from this channel
@@ -480,14 +486,17 @@ impl EventHandler for Handler {
                     .expect("Redis client was not set")
                     .clone()
             };
-            Self::channel_add_or_remove_user(
+            if let Err(err) = Self::channel_add_or_remove_user(
                 &ctx,
                 &msg,
                 discord_id,
                 /*add*/ false,
                 /*as_host*/ false,
                 redis_client,
-            );
+            ) {
+                eprintln!("Error in remove user: {}", err);
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
         } else if let Some(captures) = regexes.remove_host_mention.captures(&msg.content) {
             // Get the Discord ID of the host that is supposed to
             // be removed from this channel
@@ -508,14 +517,28 @@ impl EventHandler for Handler {
                     .expect("Redis client was not set")
                     .clone()
             };
-            Self::channel_add_or_remove_user(
+            if let Err(err) = Self::channel_add_or_remove_user(
                 &ctx,
                 &msg,
                 discord_id,
                 /*add*/ false,
                 /*as_host*/ true,
                 redis_client,
-            );
+            ) {
+                eprintln!("Error in remove host: {}", err);
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
+        } else if regexes.close_channel_host_mention.is_match(&msg.content) {
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            if let Err(err) = Self::close_channel(&ctx, &msg, redis_client) {
+                eprintln!("Error in close_channel: {}", err);
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
         } else if msg.content == "test" {
             if let Some(user) = UserId(456545153923022849).to_user_cached(&ctx) {
                 Self::send_welcome_message(&ctx, &user.read());

@@ -3,11 +3,13 @@ pub mod discord_bot;
 pub mod discord_bot_commands;
 pub mod discord_end_of_game;
 pub mod discord_sync;
+pub mod error;
 pub mod meetup_api;
 pub mod meetup_oauth2;
 pub mod meetup_sync;
 pub mod strings;
 
+use error::BoxedError;
 use futures::{Future, Stream};
 use redis::Commands;
 use serenity::prelude::{Mutex, RwLock};
@@ -15,7 +17,6 @@ use std::env;
 use std::sync::Arc;
 use tokio;
 
-type BoxedError = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, BoxedError>;
 
 fn main() {
