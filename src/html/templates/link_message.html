@@ -3,17 +3,26 @@
 {% block content %}
 <div id="main">
     <h2>{{title}}</h2>
+    {% match content %}
+    {% when Some with (val) %}
     <p>
-        {% match content %}
-            {% when Some with (val) %}
-                {{val}}
-            {% when None %}
-        {% endmatch %}
-        {% match safe_content %}
-            {% when Some with (val) %}
-                {{val|safe}}
-            {% when None %}
-        {% endmatch %}
+        {{val}}
     </p>
+    {% when None %}
+    {% endmatch %}
+    {% match safe_content %}
+    {% when Some with (val) %}
+    <p>
+        {{val|safe}}
+    </p>
+    {% when None %}
+    {% endmatch %}
+    {% match img_url %}
+    {% when Some with (url) %}
+    <p>
+        <img src="{{url}}">
+    </p>
+    {% when None %}
+    {% endmatch %}
 </div>
 {% endblock %}

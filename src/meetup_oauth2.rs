@@ -44,6 +44,7 @@ struct LinkingMessageTemplate<'a> {
     title: &'a str,
     content: Option<&'a str>,
     safe_content: Option<&'a str>,
+    img_url: Option<&'a str>,
 }
 
 pub fn new_random_id(num_bytes: u32) -> String {
@@ -126,6 +127,7 @@ enum HandlerResponse {
         title: Cow<'static, str>,
         content: Option<Cow<'static, str>>,
         safe_content: Option<Cow<'static, str>>,
+        img_url: Option<Cow<'static, str>>,
     },
 }
 
@@ -144,6 +146,7 @@ impl From<(&'static str, &'static str)> for HandlerResponse {
             title: Cow::Borrowed(title),
             content: Some(Cow::Borrowed(content)),
             safe_content: None,
+            img_url: None,
         }
     }
 }
@@ -154,6 +157,7 @@ impl From<(String, &'static str)> for HandlerResponse {
             title: Cow::Owned(title),
             content: Some(Cow::Borrowed(content)),
             safe_content: None,
+            img_url: None,
         }
     }
 }
@@ -164,6 +168,7 @@ impl From<(&'static str, String)> for HandlerResponse {
             title: Cow::Borrowed(title),
             content: Some(Cow::Owned(content)),
             safe_content: None,
+            img_url: None,
         }
     }
 }
@@ -174,6 +179,7 @@ impl From<(String, String)> for HandlerResponse {
             title: Cow::Owned(title),
             content: Some(Cow::Owned(content)),
             safe_content: None,
+            img_url: None,
         }
     }
 }
@@ -329,8 +335,7 @@ fn meetup_http_handler(
         // Check that it is still valid
         let linking_id = match captures.name("id") {
             Some(id) => id.as_str(),
-            _ =>
-                return Box::new(future::ok(("Invalid Request", "").into()))
+            _ => return Box::new(future::ok(("Invalid Request", "").into())),
         };
         let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
         let (discord_id,): (Option<u64>,) = match redis::pipe()
@@ -346,8 +351,9 @@ fn meetup_http_handler(
             return Box::new(future::ok(
                 (
                     "This link seems to have expired",
-                    "Get a new link from the bot with the \"link meetup\" command"
-                ).into()
+                    "Get a new link from the bot with the \"link meetup\" command",
+                )
+                    .into(),
             ));
         }
         // TODO: check that this Discord ID is not linked yet before generating an authorization URL
@@ -419,11 +425,15 @@ fn meetup_http_handler(
         };
         let discord_id = match discord_id {
             Some(id) => id,
-            None => 
-                return Box::new(future::ok((
-                    "This link seems to have expired",
-                    "Get a new link from the bot with the \"link meetup\" command",
-                ).into()))
+            None => {
+                return Box::new(future::ok(
+                    (
+                        "This link seems to have expired",
+                        "Get a new link from the bot with the \"link meetup\" command",
+                    )
+                        .into(),
+                ))
+            }
         };
         let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
         let req_url = match Url::parse(&full_uri) {
@@ -444,21 +454,25 @@ fn meetup_http_handler(
             if error == "access_denied" {
                 // The user did not grant access
                 // Give them the chance to do it again
-                let linking_url = match generate_meetup_linking_link(&redis_connection_mutex, discord_id) {
-                    Err(err) => return Box::new(future::err(err)),
-                    Ok(url) => url,
-                };
+                let linking_url =
+                    match generate_meetup_linking_link(&redis_connection_mutex, discord_id) {
+                        Err(err) => return Box::new(future::err(err)),
+                        Ok(url) => url,
+                    };
                 return Box::new(future::ok(HandlerResponse::Message {
                     title: Cow::Borrowed("Linking Failure"),
                     content: None,
-                    safe_content: Some(Cow::Owned(format!("Looks like you declined the authorisation. If you want to \
-                    start over, click the button below to give it another go. \
-                    If you are still having issues, please contact an organiser \
-                    by email (organisers@swissrpg.ch) or on Discord (@Organiser).<br>\
-                    <a href=\"{}\" class=\"button\">Start Over</a>", linking_url)))
+                    img_url: None,
+                    safe_content: Some(Cow::Owned(format!(
+                        "Looks like you declined the authorisation. If you want to \
+                         start over, click the button below to give it another go. \
+                         If you are still having issues, please contact an organiser \
+                         by email (organisers@swissrpg.ch) or on Discord (@Organiser).<br>\
+                         <a href=\"{}\" class=\"button\">Start Over</a>",
+                        linking_url
+                    ))),
                 }));
-            }
-            else {
+            } else {
                 // Some other error occured
                 eprintln!("Received an OAuth2 error code from Meetup: {}", error);
                 return Box::new(future::ok(("OAuth2 error", error.to_string()).into()));
@@ -476,10 +490,13 @@ fn meetup_http_handler(
                 Err(err) => return Box::new(future::err(err.into())),
             };
         if !csrf_is_valid {
-            return Box::new(future::ok((
-                "CSRF check failed",
-                "Please go back to the first page, reload, and repeat the process",
-            ).into()));
+            return Box::new(future::ok(
+                (
+                    "CSRF check failed",
+                    "Please go back to the first page, reload, and repeat the process",
+                )
+                    .into(),
+            ));
         }
         // Exchange the code with a token.
         let code = AuthorizationCode::new(code.to_string());
@@ -610,8 +627,13 @@ fn meetup_http_handler(
                             );
                         }
                         if let Some(photo) = meetup_user.photo {
-                            future::ok(("Linking Success!", format!("Successfully linked to {}'s Meetup account<br/><img src=\"{}\" />", meetup_user.name, photo.thumb_link))
-                                    .into())
+                            future::ok(
+                                HandlerResponse::Message {
+                                    title: Cow::Borrowed("Linking Success!"),
+                                    content: Some(Cow::Owned(format!("Successfully linked to {}'s Meetup account", meetup_user.name))),
+                                    safe_content: None,
+                                    img_url: Some(Cow::Owned(photo.thumb_link)),
+                                }.into())
                         }
                         else {
                             future::ok(("Linking Success!",
@@ -701,15 +723,21 @@ impl OAuth2Consumer {
                     )
                     .and_then(|handler_response| match handler_response {
                         HandlerResponse::Response(response) => future::ok(response),
-                        HandlerResponse::Message { title, content, safe_content } => {
-                            let message_template = LinkingMessageTemplate {
+                        HandlerResponse::Message {
+                            title,
+                            content,
+                            safe_content,
+                            img_url,
+                        } => {
+                            let rendered_template = LinkingMessageTemplate {
                                 title: &title,
                                 content: content.as_ref().map(Cow::as_ref),
                                 safe_content: safe_content.as_ref().map(Cow::as_ref),
-                            };
+                                img_url: img_url.as_ref().map(Cow::as_ref),
+                            }
+                            .render();
                             future::result(
-                                message_template
-                                    .render()
+                                rendered_template
                                     .map_err(Into::into)
                                     .map(|html_body| Response::new(html_body.into())),
                             )
@@ -725,6 +753,7 @@ impl OAuth2Consumer {
                                 title: "Internal Server Error",
                                 content: None,
                                 safe_content: None,
+                                img_url: None,
                             };
                             Ok(message_template
                                 .render()
