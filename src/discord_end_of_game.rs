@@ -1,3 +1,4 @@
+use crate::strings;
 use redis::Commands;
 use serenity::model::id::ChannelId;
 use simple_error::SimpleError;
@@ -205,15 +206,7 @@ fn send_channel_expiration_reminder(
         // Send a reminder and update the last reminder time
         println!("Reminding channel {} of its expiration", channel_id);
         ChannelId(channel_id).send_message(&discord_api.http, |message_builder| {
-            message_builder.content(format!(
-                "I hope everyone @here had fun rolling dice!\n\
-                 It looks like your adventure is coming to an end and so will this channel.\n\
-                 As soon as you are ready, any of the hosts can close this channel by writing:\n\
-                 ***<@{}> close channel***\n\
-                 In case you want to continue your adventure instead, please schedule the next session(s) \
-                 on Meetup and I will extend the lifetime of this channel.",
-                bot_id
-            ))
+            message_builder.content(strings::END_OF_ADVENTURE_MESSAGE(bot_id))
         })?;
         let last_reminder_time = chrono::Utc::now().to_rfc3339();
         con.set(&redis_channel_reminder_time, last_reminder_time)?;
