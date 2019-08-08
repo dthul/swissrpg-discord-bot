@@ -56,6 +56,9 @@ See `meetup_event:{}:event_series` for the inverse relationship.
 1:1 relationship between an event series and its bot controlled channel.\
 See `discord_channel:{}:event_series` for the inverse relationship.
 
+`event_series:{}:type`: string\
+'campaign' or 'adventure'
+
 ## Discord Channels
 
 `discord_channels`: set of u64\

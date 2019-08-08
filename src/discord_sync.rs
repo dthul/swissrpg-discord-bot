@@ -25,11 +25,6 @@ pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(6075619496514
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =
         regex::Regex::new(r"^\s*(?P<name>[^\[\(]+[^\s\[\(])").unwrap();
-    static ref ONE_SHOT_REGEX: regex::Regex =
-        regex::Regex::new(r"(?i)[\[\(].*One\s*\-?\s*Shot.*[\]\)]").unwrap();
-    static ref INTRO_REGEX: regex::Regex = regex::Regex::new(r"(?i)[\[\(].*Intro.*[\]\)]").unwrap();
-    static ref CAMPAIGN_REGEX: regex::Regex =
-        regex::Regex::new(r"(?i)[\[\(].*Campaign.*[\]\)]").unwrap();
 }
 
 struct Event {
@@ -229,7 +224,13 @@ fn sync_event_series(
     // Step 6: Make sure that event hosts have the guild's game master role
     sync_game_master_role(series_id, redis_connection, discord_api)?;
     // Step 7: Keep the channel's topic up-to-date
-    sync_channel_topic_and_category(channel_id, &next_event, discord_api)?;
+    sync_channel_topic_and_category(
+        series_id,
+        channel_id,
+        &next_event,
+        redis_connection,
+        discord_api,
+    )?;
     Ok(())
 }
 
@@ -764,19 +765,26 @@ fn sync_game_master_role(
 }
 
 fn sync_channel_topic_and_category(
+    series_id: &str,
     channel_id: ChannelId,
     next_event: &Event,
+    redis_connection: &mut redis::Connection,
     discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
     // Sync the topic and the category
-    let event_name = &next_event.name;
     let topic = format!("Next session: {}", &next_event.link);
-    let category = if CAMPAIGN_REGEX.is_match(event_name) {
-        CAMPAIGN_CATEGORY_ID
-    } else if ONE_SHOT_REGEX.is_match(event_name) || INTRO_REGEX.is_match(event_name) {
-        ONE_SHOT_CATEGORY_ID
-    } else {
-        None
+    let redis_series_type_key = format!("event_series:{}:type", series_id);
+    let event_type: Option<String> = redis_connection.get(&redis_series_type_key)?;
+    let category = match event_type.as_ref().map(String::as_str) {
+        Some("campaign") => CAMPAIGN_CATEGORY_ID,
+        Some("adventure") => ONE_SHOT_CATEGORY_ID,
+        _ => {
+            eprintln!(
+                "Event series {} does not have a type of 'campaign' or 'adventure'",
+                series_id
+            );
+            CAMPAIGN_CATEGORY_ID
+        }
     };
     let channel = channel_id.to_channel(discord_api)?;
     if let serenity::model::channel::Channel::Guild(channel) = channel {

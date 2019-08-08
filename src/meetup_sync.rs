@@ -15,7 +15,7 @@ use tokio::prelude::*;
 const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*adventure\s*[\]\)]";
 const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*campaign\s*[\]\)]";
 const EVENT_SERIES_PATTERN: &'static str =
-    r"(?i)[\[\(]\s*event\s*series\s*(?P<event_id>[a-zA-Z0-9]+)\s*[\]\)]";
+    r"(?i)[\[\(]\s*campaign\s*(?P<event_id>[a-zA-Z0-9]+)\s*[\]\)]";
 const CHANNEL_PATTERN: &'static str = r"(?i)[\[\(]\s*channel\s*(?P<channel_id>[0-9]+)\s*[\]\)]";
 
 lazy_static! {
@@ -327,6 +327,12 @@ fn sync_event(
                                 ("link", event.link),
                                 ("urlname", event.group.urlname),
                             ];
+                            if is_new_adventure || is_new_campaign {
+                                let redis_series_type_key = format!("event_series:{}:type", &series_id);
+                                let series_type = 
+                                    if is_new_campaign { "campaign" } else { "adventure" };
+                                pipe.set(&redis_series_type_key, series_type);
+                            }
                             pipe.sadd(redis_events_key, &event.id)
                                 .sadd(redis_series_key, &series_id)
                                 .sadd(&redis_event_hosts_key, host_user_ids)
