@@ -1,4 +1,5 @@
 use crate::meetup_api::Error as MeetupApiError;
+use askama::Error as AskamaError;
 use backtrace::Backtrace;
 use chrono::format::ParseError as ChronoParseError;
 use hyper::http::Error as HttpError;
@@ -115,6 +116,15 @@ impl From<HttpError> for BoxedError {
 
 impl From<TokioTimerError> for BoxedError {
     fn from(err: TokioTimerError) -> Self {
+        BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
+impl From<AskamaError> for BoxedError {
+    fn from(err: AskamaError) -> Self {
         BoxedError {
             inner: Box::new(err),
             backtrace: Backtrace::new(),

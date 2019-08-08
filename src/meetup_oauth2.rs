@@ -1,5 +1,6 @@
 use crate::meetup_api;
 use crate::BoxedError;
+use askama::Template;
 use cookie::Cookie;
 use futures::future;
 use futures::stream;
@@ -21,8 +22,6 @@ use simple_error::SimpleError;
 use std::sync::Arc;
 use url::Url;
 
-const HTML_LINK_TEMPLATE: &'static str = include_str!("html/link.html");
-
 const DOMAIN: &'static str = "bot.swissrpg.ch";
 const BASE_URL: &'static str = "https://bot.swissrpg.ch";
 lazy_static! {
@@ -31,6 +30,19 @@ lazy_static! {
     static ref LINK_REDIRECT_URL_REGEX: regex::Regex =
         regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)/(?P<type>rsvp|norsvp)/redirect$")
             .unwrap();
+}
+
+#[derive(Template)]
+#[template(path = "link.html")]
+struct LinkingTemplate<'a> {
+    authorize_url: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "link_message.html")]
+struct LinkingMessageTemplate<'a> {
+    title: &'a str,
+    content: &'a str,
 }
 
 pub fn new_random_id(num_bytes: u32) -> String {
@@ -312,7 +324,16 @@ fn meetup_http_handler(
             Err(err) => return Box::new(future::err(err.into())),
         };
         if discord_id.is_none() {
-            return Box::new(future::ok(Response::new("This link seems to have expired. Get a new link from the bot with the \"link meetup\" command".into())));
+            let message_template = LinkingMessageTemplate {
+                title: "This link seems to have expired",
+                content: "Get a new link from the bot with the \"link meetup\" command",
+            };
+            return Box::new(future::result(
+                message_template
+                    .render()
+                    .map_err(Into::into)
+                    .map(|html_body| Response::new(html_body.into())),
+            ));
         }
         // TODO: check that this Discord ID is not linked yet before generating an authorization URL
         // Generate the authorization URL to which we'll redirect the user.
@@ -344,12 +365,19 @@ fn meetup_http_handler(
             Ok(csrf_cookie) => csrf_cookie,
             Err(err) => return Box::new(future::err(err.into())),
         };
-        let html_body = HTML_LINK_TEMPLATE.replace("{authorize_url}", authorize_url_rsvp.as_str());
+        let linking_template = LinkingTemplate {
+            authorize_url: authorize_url_rsvp.as_str(),
+        };
         Box::new(future::result(
-            Response::builder()
-                .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
-                .body(html_body.into())
-                .map_err(|err| (err.into())),
+            linking_template
+                .render()
+                .map_err(Into::into)
+                .and_then(|html_body| {
+                    Response::builder()
+                        .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
+                        .body(html_body.into())
+                        .map_err(Into::into)
+                }),
         ))
     } else if let (&Method::GET, Some(captures)) = (method, LINK_REDIRECT_URL_REGEX.captures(path))
     {
