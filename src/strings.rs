@@ -1,3 +1,17 @@
+// ***********************
+// *** Discord replies ***
+// ***********************
+
+// ** General **
+
+pub const NOT_AN_ORGANISER: &'static str = "Only organizers can do this";
+
+pub const UNSPECIFIED_ERROR: &'static str = "Something went wrong";
+
+pub const INVALID_COMMAND: &'static str = "Sorry, I do not understand that command";
+
+// ** Welcome messages **
+
 pub const WELCOME_MESSAGE_PART1: &'static str =
     "Welcome to **SwissRPG**! We hope you'll enjoy rolling dice with us. \
 Here is some basic info to get you started.
@@ -34,6 +48,8 @@ the adventure's channel. To do that, please link your Meetup profile to your \
 Discord profile. Let’s try this now shall we?
 Reply with ***link meetup*** here to get the process started.";
 
+// ** End of adventure **
+
 #[allow(non_snake_case)]
 pub fn END_OF_ADVENTURE_MESSAGE(bot_id: u64) -> String {
     format!(
@@ -47,3 +63,149 @@ on Meetup and I will extend the lifetime of this channel.",
         bot_id = bot_id
     )
 }
+
+// ** Meetup linking **
+
+#[allow(non_snake_case)]
+pub fn MEETUP_LINKING_MESSAGE(linking_url: &str) -> String {
+    format!(
+        "Visit the following website to link your Meetup profile: {}\n\
+        ***This is a private, ephemeral, one-time use link and meant just for you.***\n\
+        Don't share it with others or they might link your Discord account to their Meetup profile.",
+        linking_url
+    )
+}
+
+#[allow(non_snake_case)]
+pub fn MEETUP_ALREADY_LINKED_SUCCESS(linking_url: &str) -> String {
+    format!(
+        "Visit the following website to link your Meetup profile: {}\n\
+        ***This is a private, ephemeral, one-time use link and meant just for you.***\n\
+        Don't share it with others or they might link your Discord account to their Meetup profile.",
+        linking_url
+    )
+}
+
+#[allow(non_snake_case)]
+pub fn DISCORD_ALREADY_LINKED_MESSAGE1(meetup_name: &str, bot_id: u64) -> String {
+    format!(
+        "You are already linked to {}'s Meetup account. \
+         If you really want to change this, unlink your currently \
+         linked meetup account first by writing:\n\
+         <@{}> unlink meetup",
+        meetup_name, bot_id
+    )
+}
+
+#[allow(non_snake_case)]
+pub fn DISCORD_ALREADY_LINKED_MESSAGE2(bot_id: u64) -> String {
+    format!(
+        "You are already linked to a Meetup account. \
+         If you really want to change this, unlink your currently \
+         linked meetup account first by writing:\n\
+         {} unlink meetup",
+        bot_id
+    )
+}
+
+#[allow(non_snake_case)]
+pub fn NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id: u64) -> String {
+    format!(
+        "You are linked to a seemingly non-existent Meetup account. \
+         If you want to change this, unlink the currently \
+         linked meetup account by writing:\n\
+         {} unlink meetup",
+        bot_id
+    )
+}
+
+pub const MEETUP_UNLINK_SUCCESS: &'static str = "Unlinked your Meetup account";
+pub const MEETUP_UNLINK_NOT_LINKED: &'static str =
+    "There was seemingly no meetup account linked to you";
+
+// ** Channel administration **
+
+pub const NOT_A_CHANNEL_ADMIN: &'static str = "Only channel hosts and organizers can do that";
+
+pub const CHANNEL_NOT_BOT_CONTROLLED: &'static str =
+    "This channel does not seem to be under my control";
+
+pub const CHANNEL_NOT_YET_CLOSEABLE: &'static str = "The channel cannot be closed yet";
+
+pub const CHANNEL_MARKED_FOR_CLOSING: &'static str =
+    "I marked this channel the be closed in the next 24 hours.\n\
+     Thanks for playing and hope to see you soon!";
+
+pub const CHANNEL_ALREADY_MARKED_FOR_CLOSING: &'static str =
+    "Channel is already marked for closing";
+
+pub const CHANNEL_ROLE_ADD_ERROR: &'static str = "Something went wrong assigning the channel role";
+
+pub const CHANNEL_ROLE_REMOVE_ERROR: &'static str =
+    "Something went wrong removing the channel role";
+
+#[allow(non_snake_case)]
+pub fn CHANNEL_ADDED_NEW_HOST(discord_id: u64) -> String {
+    format!("<@{}> is now a host of this channel", discord_id)
+}
+
+pub const CHANNEL_ADD_USER_INVALID_DISCORD: &'static str =
+    "Seems like the specified Discord ID is invalid";
+
+// **************************************
+// *** Meetup linking webpage replies ***
+// **************************************
+
+#[allow(non_snake_case)]
+pub fn OAUTH2_AUTHORISATION_DENIED(linking_url: &str) -> String {
+    format!(
+        "Looks like you declined the authorisation. If you want to \
+         start over, click the button below to give it another go. \
+         If you are still having issues, please contact an organiser \
+         by email (organisers@swissrpg.ch) or on Discord (@Organiser).<br>\
+         <a href=\"{linking_url}\" class=\"button\" style=\"margin-top: 1em;\">Start Over</a>",
+        linking_url = linking_url
+    )
+}
+
+pub const OAUTH2_LINK_EXPIRED_TITLE: &'static str = "This link seems to have expired";
+pub const OAUTH2_LINK_EXPIRED_CONTENT: &'static str =
+    "Get a new link from the bot with the \"link meetup\" command";
+
+pub const OAUTH2_LINKING_SUCCESS_TITLE: &'static str = "Linking Success!";
+#[allow(non_snake_case)]
+pub fn OAUTH2_LINKING_SUCCESS_CONTENT(name: &str) -> String {
+    format!("Successfully linked to {}'s Meetup account", name)
+}
+
+pub const OAUTH2_ALREADY_LINKED_SUCCESS_TITLE: &'static str = "All good!";
+pub const OAUTH2_ALREADY_LINKED_SUCCESS_CONTENT: &'static str =
+    "Your Meetup account was already linked";
+
+pub const OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_TITLE: &'static str = "Linking Failure";
+#[allow(non_snake_case)]
+pub fn OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_CONTENT(bot_name: &str) -> String {
+    format!(
+        "You are already linked to a different Meetup account. \
+         If you really want to change this, unlink your currently \
+         linked meetup account first by writing:\n\
+         {} unlink meetup",
+        bot_name
+    )
+}
+
+pub const OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_TITLE: &'static str = "Linking Failure";
+#[allow(non_snake_case)]
+pub fn OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_CONTENT(bot_name: &str) -> String {
+    format!(
+        "This Meetup account is already linked to a different Discord user. \
+         Did you link this Meetup account to another Discord account in the past? \
+         In that case you can first unlink this Meetup account from the other Discord \
+         account by writing \"@{} unlink meetup\" from the other Discord account. \
+         After that you can link this Meetup account again. \
+         If you did not link this Meetup account before, please contact an @Organiser",
+        bot_name
+    )
+}
+
+pub const INTERNAL_SERVER_ERROR: &'static str = "Internal Server Error";

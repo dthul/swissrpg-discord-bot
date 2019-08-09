@@ -1,4 +1,5 @@
 use crate::meetup_api;
+use crate::strings;
 use askama::Template;
 use cookie::Cookie;
 use futures::future;
@@ -203,6 +204,7 @@ fn meetup_http_handler(
     meetup_client: &Arc<RwLock<Option<meetup_api::Client>>>,
     async_meetup_client: &Arc<RwLock<Option<meetup_api::AsyncClient>>>,
     req: Request<Body>,
+    bot_name: String,
 ) -> ResponseFuture {
     let (method, path) = (req.method(), req.uri().path());
     if let (&Method::GET, "/authorize") = (method, path) {
@@ -350,8 +352,8 @@ fn meetup_http_handler(
         if discord_id.is_none() {
             return Box::new(future::ok(
                 (
-                    "This link seems to have expired",
-                    "Get a new link from the bot with the \"link meetup\" command",
+                    strings::OAUTH2_LINK_EXPIRED_TITLE,
+                    strings::OAUTH2_LINK_EXPIRED_CONTENT,
                 )
                     .into(),
             ));
@@ -428,8 +430,8 @@ fn meetup_http_handler(
             None => {
                 return Box::new(future::ok(
                     (
-                        "This link seems to have expired",
-                        "Get a new link from the bot with the \"link meetup\" command",
+                        strings::OAUTH2_LINK_EXPIRED_TITLE,
+                        strings::OAUTH2_LINK_EXPIRED_CONTENT,
                     )
                         .into(),
                 ))
@@ -463,13 +465,8 @@ fn meetup_http_handler(
                     title: Cow::Borrowed("Linking Failure"),
                     content: None,
                     img_url: None,
-                    safe_content: Some(Cow::Owned(format!(
-                        "Looks like you declined the authorisation. If you want to \
-                         start over, click the button below to give it another go. \
-                         If you are still having issues, please contact an organiser \
-                         by email (organisers@swissrpg.ch) or on Discord (@Organiser).<br>\
-                         <a href=\"{}\" class=\"button\">Start Over</a>",
-                        linking_url
+                    safe_content: Some(Cow::Owned(strings::OAUTH2_AUTHORISATION_DENIED(
+                        &linking_url,
                     ))),
                 }));
             } else {
@@ -508,9 +505,7 @@ fn meetup_http_handler(
             ))
             .exchange_code(code)
             .request_async(async_http_client)
-            .map_err(|err| {
-                SimpleError::new(format!("RequestTokenError: {}", err)).into()
-            })
+            .map_err(|err| SimpleError::new(format!("RequestTokenError: {}", err)).into())
             .and_then(move |token_res| {
                 // Get the user's Meetup ID
                 let async_user_meetup_client =
@@ -522,8 +517,7 @@ fn meetup_http_handler(
                         let meetup_user = match meetup_user {
                             Some(info) => info,
                             _ => {
-                                return future::ok(
-                                    ("Could not find Meetup ID", "").into());
+                                return future::ok(("Could not find Meetup ID", "").into());
                             }
                         };
                         let redis_key_d2m = format!("discord_user:{}:meetup_user", discord_id);
@@ -536,21 +530,21 @@ fn meetup_http_handler(
                                 if existing_meetup_id == meetup_user.id {
                                     return future::ok(
                                         (
-                                            "All good!", "Your Meetup account was already linked"
+                                            strings::OAUTH2_ALREADY_LINKED_SUCCESS_TITLE,
+                                            strings::OAUTH2_ALREADY_LINKED_SUCCESS_CONTENT,
                                         )
-                                        .into(),
+                                            .into(),
                                     );
                                 } else {
                                     return future::ok(
-                                    (
-                                        "Linking Failure",
-                                        "You are already linked to a different Meetup account. \
-                                         If you really want to change this, unlink your currently \
-                                         linked meetup account first by writing:\n\
-                                         {} unlink meetup"
-                                    )
-                                    .into(),
-                                );
+                                        (
+                                            strings::OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_TITLE,
+                                            strings::OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_CONTENT(
+                                                &bot_name,
+                                            ),
+                                        )
+                                            .into(),
+                                    );
                                 }
                             }
                             Err(err) => return future::err(err.into()),
@@ -563,15 +557,12 @@ fn meetup_http_handler(
                             Ok(Some(_)) => {
                                 return future::ok(
                                     (
-                                        "Linking Failure",
-                                        "This Meetup account is already linked to a different Discord user. \
-                                         Did you link this Meetup account to another Discord account in the past? \
-                                         In that case you can first unlink this Meetup account from the other Discord \
-                                         account by writing \"@bot unlink meetup\" from the other Discord account. \
-                                         After that you can link this Meetup account again. \
-                                         If you did not link this Meetup account before, please contact an @Organiser"
+                                        strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_TITLE,
+                                        strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_CONTENT(
+                                            &bot_name,
+                                        ),
                                     )
-                                    .into(),
+                                        .into(),
                                 );
                             }
                             Err(err) => return future::err(err.into()),
@@ -584,12 +575,15 @@ fn meetup_http_handler(
                             // If the "rsvp" scope is part of the token result, store the tokens as well
                             if with_rsvp_scope {
                                 if let Some(refresh_token) = token_res.refresh_token() {
-                                    let redis_user_tokens_key = format!("meetup_user:{}:oauth2_tokens", meetup_user.id);
+                                    let redis_user_tokens_key =
+                                        format!("meetup_user:{}:oauth2_tokens", meetup_user.id);
                                     let fields = &[
                                         ("access_token", token_res.access_token().secret()),
                                         ("refresh_token", refresh_token.secret()),
                                     ];
-                                    let _: redis::RedisResult<()> = redis::pipe().hset_multiple(&redis_user_tokens_key, fields).query(&mut *redis_connection);
+                                    let _: redis::RedisResult<()> = redis::pipe()
+                                        .hset_multiple(&redis_user_tokens_key, fields)
+                                        .query(&mut *redis_connection);
                                 }
                             }
                             redis::transaction(
@@ -623,21 +617,27 @@ fn meetup_http_handler(
                                     "Linking Failure",
                                     "Could not assign meetup id (timing error)",
                                 )
-                                .into(),
+                                    .into(),
                             );
                         }
                         if let Some(photo) = meetup_user.photo {
                             future::ok(
                                 HandlerResponse::Message {
-                                    title: Cow::Borrowed("Linking Success!"),
-                                    content: Some(Cow::Owned(format!("Successfully linked to {}'s Meetup account", meetup_user.name))),
+                                    title: Cow::Borrowed(strings::OAUTH2_LINKING_SUCCESS_TITLE),
+                                    content: Some(Cow::Owned(
+                                        strings::OAUTH2_LINKING_SUCCESS_CONTENT(&meetup_user.name),
+                                    )),
                                     safe_content: None,
                                     img_url: Some(Cow::Owned(photo.thumb_link)),
-                                }.into())
-                        }
-                        else {
-                            future::ok(("Linking Success!",
-                                format!("Successfully linked to {}'s Meetup account", meetup_user.name))
+                                }
+                                .into(),
+                            )
+                        } else {
+                            future::ok(
+                                (
+                                    strings::OAUTH2_LINKING_SUCCESS_TITLE,
+                                    strings::OAUTH2_LINKING_SUCCESS_CONTENT(&meetup_user.name),
+                                )
                                     .into(),
                             )
                         }
@@ -695,6 +695,7 @@ impl OAuth2Consumer {
         discord_http: Arc<serenity::CacheAndHttp>,
         meetup_client: Arc<RwLock<Option<meetup_api::Client>>>,
         async_meetup_client: Arc<RwLock<Option<meetup_api::AsyncClient>>>,
+        bot_name: String,
     ) -> impl Future<Item = (), Error = ()> + Send + 'static {
         let redis_connection_mutex = Arc::new(Mutex::new(redis_connection));
         // And a MakeService to handle each connection...
@@ -711,6 +712,7 @@ impl OAuth2Consumer {
                 let discord_http = discord_http.clone();
                 let meetup_client = meetup_client.clone();
                 let async_meetup_client = async_meetup_client.clone();
+                let bot_name = bot_name.clone();
                 service_fn(move |req| {
                     meetup_http_handler(
                         &redis_connection_mutex,
@@ -720,6 +722,7 @@ impl OAuth2Consumer {
                         &meetup_client,
                         &async_meetup_client,
                         req,
+                        bot_name.clone(),
                     )
                     .and_then(|handler_response| match handler_response {
                         HandlerResponse::Response(response) => future::ok(response),
@@ -750,7 +753,7 @@ impl OAuth2Consumer {
                         |err| -> Result<Response<Body>, crate::BoxedError> {
                             eprintln!("Error in meetup_authorize: {}", err);
                             let message_template = LinkingMessageTemplate {
-                                title: "Internal Server Error",
+                                title: strings::INTERNAL_SERVER_ERROR,
                                 content: None,
                                 safe_content: None,
                                 img_url: None,
@@ -758,7 +761,9 @@ impl OAuth2Consumer {
                             Ok(message_template
                                 .render()
                                 .map(|html_body| Response::new(html_body.into()))
-                                .unwrap_or_else(|_| Response::new("Internal Server Error".into())))
+                                .unwrap_or_else(|_| {
+                                    Response::new(strings::INTERNAL_SERVER_ERROR.into())
+                                }))
                         },
                     )
                 })

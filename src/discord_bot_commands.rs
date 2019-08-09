@@ -1,4 +1,5 @@
 use crate::error::BoxedError;
+use crate::strings;
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
 use serenity::{model::channel::Message, model::user::User, prelude::*};
@@ -178,14 +179,9 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
 }
 
 impl crate::discord_bot::Handler {
-    pub fn link_meetup(
-        ctx: &Context,
-        msg: &Message,
-        regexes: &Regexes,
-        user_id: u64,
-    ) -> crate::Result<()> {
+    pub fn link_meetup(ctx: &Context, msg: &Message, user_id: u64) -> crate::Result<()> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
-        let (redis_connection_mutex, meetup_client_mutex) = {
+        let (redis_connection_mutex, meetup_client_mutex, bot_id) = {
             let data = ctx.data.read();
             (
                 data.get::<crate::discord_bot::RedisConnectionKey>()
@@ -193,6 +189,9 @@ impl crate::discord_bot::Handler {
                     .clone(),
                 data.get::<crate::discord_bot::MeetupClientKey>()
                     .ok_or_else(|| SimpleError::new("Meetup client was not set"))?
+                    .clone(),
+                data.get::<crate::discord_bot::BotIdKey>()
+                    .ok_or_else(|| SimpleError::new("Bot ID was not set"))?
                     .clone(),
             )
         };
@@ -208,25 +207,16 @@ impl crate::discord_bot::Handler {
                     match meetup_client.get_member_profile(Some(linked_meetup_id))? {
                         Some(user) => {
                             let _ = msg.author.direct_message(ctx, |message| {
-                                message.content(format!(
-                                    "You are already linked to {}'s Meetup account. \
-                                     If you really want to change this, unlink your currently \
-                                     linked meetup account first by writing:\n\
-                                     {} unlink meetup",
-                                    user.name, regexes.bot_mention
+                                message.content(strings::DISCORD_ALREADY_LINKED_MESSAGE1(
+                                    &user.name, bot_id.0,
                                 ))
                             });
                             let _ = msg.react(ctx, "\u{2705}");
                         }
                         _ => {
                             let _ = msg.author.direct_message(ctx, |message| {
-                                message.content(format!(
-                                    "You are linked to a seemingly non-existent Meetup account. \
-                                     If you want to change this, unlink the currently \
-                                     linked meetup account by writing:\n\
-                                     {} unlink meetup",
-                                    regexes.bot_mention
-                                ))
+                                message
+                                    .content(strings::NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id.0))
                             });
                             let _ = msg.react(ctx, "\u{2705}");
                         }
@@ -234,13 +224,7 @@ impl crate::discord_bot::Handler {
                 }
                 _ => {
                     let _ = msg.author.direct_message(ctx, |message| {
-                        message.content(format!(
-                            "You are already linked to a Meetup account. \
-                             If you really want to change this, unlink your currently \
-                             linked meetup account first by writing:\n\
-                             {} unlink meetup",
-                            regexes.bot_mention
-                        ))
+                        message.content(strings::DISCORD_ALREADY_LINKED_MESSAGE2(bot_id.0))
                     });
                     let _ = msg.react(ctx, "\u{2705}");
                 }
@@ -250,12 +234,7 @@ impl crate::discord_bot::Handler {
         let url =
             crate::meetup_oauth2::generate_meetup_linking_link(&redis_connection_mutex, user_id)?;
         let dm = msg.author.direct_message(ctx, |message| {
-            message.content(format!(
-                "Visit the following website to link your Meetup profile: {}\n\
-                 ***This is a private, ephemeral, one-time use link and meant just for you.***\n\
-                 Don't share it with others or they might link your Discord account to their Meetup profile.",
-                url
-            ))
+            message.content(strings::MEETUP_LINKING_MESSAGE(&url))
         });
         match dm {
             Ok(_) => {
@@ -433,7 +412,7 @@ impl crate::discord_bot::Handler {
                 let message = if is_organizer_command {
                     Cow::Owned(format!("Unlinked <@{}>'s Meetup account", user_id))
                 } else {
-                    Cow::Borrowed("Unlinked your Meetup account")
+                    Cow::Borrowed(strings::MEETUP_UNLINK_SUCCESS)
                 };
                 let _ = msg.channel_id.say(&ctx.http, message);
             }
@@ -444,7 +423,7 @@ impl crate::discord_bot::Handler {
                         user_id
                     ))
                 } else {
-                    Cow::Borrowed("There was seemingly no meetup account linked to you")
+                    Cow::Borrowed(strings::MEETUP_UNLINK_NOT_LINKED)
                 };
                 let _ = msg.channel_id.say(&ctx.http, message);
             }
@@ -490,10 +469,9 @@ impl crate::discord_bot::Handler {
         let channel_roles = match channel_roles {
             Some(roles) => roles,
             None => {
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    "This channel does not seem to be under my control",
-                );
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, strings::CHANNEL_NOT_BOT_CONTROLLED);
                 return Ok(());
             }
         };
@@ -511,9 +489,7 @@ impl crate::discord_bot::Handler {
             .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
         if !is_organizer && !is_host {
-            let _ = msg
-                .channel_id
-                .say(&ctx.http, "Only channel hosts and organizers can do that");
+            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
             return Ok(());
         }
         // Check if there is a channel expiration time in the future
@@ -529,7 +505,7 @@ impl crate::discord_bot::Handler {
             if expiration_time > chrono::Utc::now() {
                 let _ = msg
                     .channel_id
-                    .say(&ctx.http, "The channel cannot be closed yet");
+                    .say(&ctx.http, strings::CHANNEL_NOT_YET_CLOSEABLE);
                 return Ok(());
             }
         }
@@ -548,17 +524,15 @@ impl crate::discord_bot::Handler {
             if new_deletion_time > current_deletion_time {
                 let _ = msg
                     .channel_id
-                    .say(&ctx.http, "Channel is already marked for closing");
+                    .say(&ctx.http, strings::CHANNEL_ALREADY_MARKED_FOR_CLOSING);
                 return Ok(());
             }
         }
         let _: () =
             redis_connection.set(&redis_channel_deletion_key, new_deletion_time.to_rfc3339())?;
-        let _ = msg.channel_id.say(
-            &ctx.http,
-            "I marked this channel the be closed in the next 24 hours.\n\
-             Thanks for playing and hope to see you soon!",
-        );
+        let _ = msg
+            .channel_id
+            .say(&ctx.http, strings::CHANNEL_MARKED_FOR_CLOSING);
         Ok(())
     }
 
@@ -576,10 +550,9 @@ impl crate::discord_bot::Handler {
         let channel_roles = match channel_roles {
             Some(roles) => roles,
             None => {
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    "This channel does not seem to be under my control",
-                );
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, strings::CHANNEL_NOT_BOT_CONTROLLED);
                 return Ok(());
             }
         };
@@ -597,9 +570,7 @@ impl crate::discord_bot::Handler {
             .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
         if !is_organizer && !is_host {
-            let _ = msg
-                .channel_id
-                .say(&ctx.http, "Only channel hosts and organizers can do that");
+            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
             return Ok(());
         }
         if add {
@@ -618,7 +589,7 @@ impl crate::discord_bot::Handler {
                     eprintln!("Could not assign channel role: {}", err);
                     let _ = msg
                         .channel_id
-                        .say(&ctx.http, "Something went wrong assigning the channel role");
+                        .say(&ctx.http, strings::CHANNEL_ROLE_ADD_ERROR);
                 }
             }
             if as_host {
@@ -628,17 +599,15 @@ impl crate::discord_bot::Handler {
                     channel_roles.host,
                 ) {
                     Ok(()) => {
-                        let _ = msg.channel_id.say(
-                            &ctx.http,
-                            format!("<@{}> is now a host of this channel", discord_id),
-                        );
+                        let _ = msg
+                            .channel_id
+                            .say(&ctx.http, strings::CHANNEL_ADDED_NEW_HOST(discord_id));
                     }
                     Err(err) => {
                         eprintln!("Could not assign channel role: {}", err);
-                        let _ = msg.channel_id.say(
-                            &ctx.http,
-                            "Something went wrong assigning the channel host role",
-                        );
+                        let _ = msg
+                            .channel_id
+                            .say(&ctx.http, strings::CHANNEL_ROLE_ADD_ERROR);
                     }
                 }
             }
@@ -652,10 +621,9 @@ impl crate::discord_bot::Handler {
             ) {
                 Err(err) => {
                     eprintln!("Could not remove host channel role: {}", err);
-                    let _ = msg.channel_id.say(
-                        &ctx.http,
-                        "Something went wrong removing the channel host role",
-                    );
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, strings::CHANNEL_ROLE_REMOVE_ERROR);
                 }
                 _ => (),
             }
@@ -669,7 +637,7 @@ impl crate::discord_bot::Handler {
                         eprintln!("Could not remove channel role: {}", err);
                         let _ = msg
                             .channel_id
-                            .say(&ctx.http, "Something went wrong removing the channel role");
+                            .say(&ctx.http, strings::CHANNEL_ROLE_REMOVE_ERROR);
                     }
                     _ => (),
                 }

@@ -1,3 +1,4 @@
+use crate::strings;
 use futures::Future;
 use serenity::{
     model::{
@@ -25,11 +26,11 @@ pub fn create_discord_client(
     let client = Client::new(&discord_token, Handler)?;
 
     // We will fetch the bot's id.
-    let bot_id = client
+    let (bot_id, bot_name) = client
         .cache_and_http
         .http
         .get_current_application_info()
-        .map(|info| info.id)?;
+        .map(|info| (info.id, info.name))?;
 
     // pre-compile the regexes
     let regexes = crate::discord_bot_commands::compile_regexes(bot_id.0);
@@ -38,6 +39,7 @@ pub fn create_discord_client(
     {
         let mut data = client.data.write();
         data.insert::<BotIdKey>(bot_id);
+        data.insert::<BotNameKey>(bot_name);
         data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(redis_connection)));
         data.insert::<RegexesKey>(Arc::new(regexes));
         data.insert::<MeetupClientKey>(meetup_client);
@@ -53,6 +55,11 @@ pub fn create_discord_client(
 pub struct BotIdKey;
 impl TypeMapKey for BotIdKey {
     type Value = UserId;
+}
+
+pub struct BotNameKey;
+impl TypeMapKey for BotNameKey {
+    type Value = String;
 }
 
 pub struct RedisConnectionKey;
@@ -174,7 +181,7 @@ impl EventHandler for Handler {
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
                 return;
             }
             std::process::Command::new("sudo")
@@ -183,10 +190,10 @@ impl EventHandler for Handler {
                 .expect("Could not stop the bot");
         } else if regexes.link_meetup(is_dm).is_match(&msg.content) {
             let user_id = msg.author.id.0;
-            match Self::link_meetup(&ctx, &msg, &regexes, user_id) {
+            match Self::link_meetup(&ctx, &msg, user_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
-                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
                     return;
                 }
                 _ => return,
@@ -202,7 +209,7 @@ impl EventHandler for Handler {
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
                 return;
             }
             let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -222,7 +229,7 @@ impl EventHandler for Handler {
             match Self::link_meetup_organizer(&ctx, &msg, &regexes, discord_id, meetup_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
-                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
                     return;
                 }
                 _ => return,
@@ -232,7 +239,7 @@ impl EventHandler for Handler {
             match Self::unlink_meetup(&ctx, &msg, /*is_organizer_command*/ false, user_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
-                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
                     return;
                 }
                 _ => return,
@@ -255,7 +262,7 @@ impl EventHandler for Handler {
             match Self::unlink_meetup(&ctx, &msg, /*is_organizer_command*/ true, discord_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
-                    let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
                     return;
                 }
                 _ => return,
@@ -271,7 +278,7 @@ impl EventHandler for Handler {
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
                 return;
             }
             let (async_meetup_client, redis_client, mut future_spawner) = {
@@ -326,7 +333,7 @@ impl EventHandler for Handler {
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
                 return;
             }
             let (redis_client, bot_id, task_scheduler) = {
@@ -372,7 +379,7 @@ impl EventHandler for Handler {
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, "Only organizers can do this");
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
                 return;
             }
             let (redis_client, bot_id, task_scheduler) = {
@@ -414,7 +421,7 @@ impl EventHandler for Handler {
                 _ => {
                     let _ = msg
                         .channel_id
-                        .say(&ctx.http, "Seems like the specified Discord ID is invalid");
+                        .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
                     return;
                 }
             };
@@ -433,7 +440,7 @@ impl EventHandler for Handler {
                 redis_client,
             ) {
                 eprintln!("Error in add user: {}", err);
-                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
             }
         } else if let Some(captures) = regexes.add_host_mention.captures(&msg.content) {
             // Get the Discord ID of the user that is supposed to
@@ -445,7 +452,7 @@ impl EventHandler for Handler {
                 _ => {
                     let _ = msg
                         .channel_id
-                        .say(&ctx.http, "Seems like the specified Discord ID is invalid");
+                        .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
                     return;
                 }
             };
@@ -476,7 +483,7 @@ impl EventHandler for Handler {
                 _ => {
                     let _ = msg
                         .channel_id
-                        .say(&ctx.http, "Seems like the specified Discord ID is invalid");
+                        .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
                     return;
                 }
             };
@@ -507,7 +514,7 @@ impl EventHandler for Handler {
                 _ => {
                     let _ = msg
                         .channel_id
-                        .say(&ctx.http, "Seems like the specified Discord ID is invalid");
+                        .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
                     return;
                 }
             };
@@ -526,7 +533,7 @@ impl EventHandler for Handler {
                 redis_client,
             ) {
                 eprintln!("Error in remove host: {}", err);
-                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
             }
         } else if regexes.close_channel_host_mention.is_match(&msg.content) {
             let redis_client = {
@@ -537,7 +544,7 @@ impl EventHandler for Handler {
             };
             if let Err(err) = Self::close_channel(&ctx, &msg, redis_client) {
                 eprintln!("Error in close_channel: {}", err);
-                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
             }
         } else if msg.content == "test" {
             if let Some(user) = UserId(456545153923022849).to_user_cached(&ctx) {
@@ -545,9 +552,7 @@ impl EventHandler for Handler {
                 println!("Sent welcome message!");
             }
         } else {
-            let _ = msg
-                .channel_id
-                .say(&ctx.http, "Sorry, I do not understand that command");
+            let _ = msg.channel_id.say(&ctx.http, strings::INVALID_COMMAND);
         }
     }
 

@@ -104,6 +104,11 @@ fn main() {
         bot.cache_and_http.clone(),
         meetup_client.clone(),
         async_meetup_client.clone(),
+        bot.data
+            .read()
+            .get::<discord_bot::BotNameKey>()
+            .expect("Bot name was not set")
+            .clone(),
     );
 
     // let meetup_syncing_task = meetup_sync::create_recurring_syncing_task(
