@@ -42,7 +42,8 @@ struct LinkingTemplate<'a> {
 #[template(path = "link_message.html")]
 struct LinkingMessageTemplate<'a> {
     title: &'a str,
-    content: &'a str,
+    content: Option<&'a str>,
+    safe_content: Option<&'a str>,
 }
 
 pub fn new_random_id(num_bytes: u32) -> String {
@@ -123,7 +124,8 @@ enum HandlerResponse {
     Response(Response<Body>),
     Message {
         title: Cow<'static, str>,
-        content: Cow<'static, str>,
+        content: Option<Cow<'static, str>>,
+        safe_content: Option<Cow<'static, str>>,
     },
 }
 
@@ -140,7 +142,8 @@ impl From<(&'static str, &'static str)> for HandlerResponse {
     fn from((title, content): (&'static str, &'static str)) -> Self {
         HandlerResponse::Message {
             title: Cow::Borrowed(title),
-            content: Cow::Borrowed(content),
+            content: Some(Cow::Borrowed(content)),
+            safe_content: None,
         }
     }
 }
@@ -149,7 +152,8 @@ impl From<(String, &'static str)> for HandlerResponse {
     fn from((title, content): (String, &'static str)) -> Self {
         HandlerResponse::Message {
             title: Cow::Owned(title),
-            content: Cow::Borrowed(content),
+            content: Some(Cow::Borrowed(content)),
+            safe_content: None,
         }
     }
 }
@@ -158,7 +162,8 @@ impl From<(&'static str, String)> for HandlerResponse {
     fn from((title, content): (&'static str, String)) -> Self {
         HandlerResponse::Message {
             title: Cow::Borrowed(title),
-            content: Cow::Owned(content),
+            content: Some(Cow::Owned(content)),
+            safe_content: None,
         }
     }
 }
@@ -167,7 +172,8 @@ impl From<(String, String)> for HandlerResponse {
     fn from((title, content): (String, String)) -> Self {
         HandlerResponse::Message {
             title: Cow::Owned(title),
-            content: Cow::Owned(content),
+            content: Some(Cow::Owned(content)),
+            safe_content: None,
         }
     }
 }
@@ -323,15 +329,8 @@ fn meetup_http_handler(
         // Check that it is still valid
         let linking_id = match captures.name("id") {
             Some(id) => id.as_str(),
-            _ => {
-                let message_template = LinkingMessageTemplate {
-                    title: "Invalid request",
-                    content: "",
-                };
-                return Box::new(future::result(HandlerResponse::from_template(
-                    message_template,
-                )));
-            }
+            _ =>
+                return Box::new(future::ok(("Invalid Request", "").into()))
         };
         let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
         let (discord_id,): (Option<u64>,) = match redis::pipe()
@@ -344,13 +343,12 @@ fn meetup_http_handler(
             Err(err) => return Box::new(future::err(err.into())),
         };
         if discord_id.is_none() {
-            let message_template = LinkingMessageTemplate {
-                title: "This link seems to have expired",
-                content: "Get a new link from the bot with the \"link meetup\" command",
-            };
-            return Box::new(future::result(HandlerResponse::from_template(
-                message_template,
-            )));
+            return Box::new(future::ok(
+                (
+                    "This link seems to have expired",
+                    "Get a new link from the bot with the \"link meetup\" command"
+                ).into()
+            ));
         }
         // TODO: check that this Discord ID is not linked yet before generating an authorization URL
         // Generate the authorization URL to which we'll redirect the user.
@@ -421,15 +419,11 @@ fn meetup_http_handler(
         };
         let discord_id = match discord_id {
             Some(id) => id,
-            None => {
-                let message_template = LinkingMessageTemplate {
-                    title: "This link seems to have expired",
-                    content: "Get a new link from the bot with the \"link meetup\" command",
-                };
-                return Box::new(future::result(HandlerResponse::from_template(
-                    message_template,
-                )));
-            }
+            None => 
+                return Box::new(future::ok((
+                    "This link seems to have expired",
+                    "Get a new link from the bot with the \"link meetup\" command",
+                ).into()))
         };
         let full_uri = format!("{}{}", BASE_URL, &req.uri().to_string());
         let req_url = match Url::parse(&full_uri) {
@@ -447,7 +441,28 @@ fn meetup_http_handler(
             .iter()
             .find_map(|(key, value)| if key == "error" { Some(value) } else { None });
         if let Some(error) = error {
-            return Box::new(future::ok(("OAuth2 error", error.to_string()).into()));
+            if error == "access_denied" {
+                // The user did not grant access
+                // Give them the chance to do it again
+                let linking_url = match generate_meetup_linking_link(&redis_connection_mutex, discord_id) {
+                    Err(err) => return Box::new(future::err(err)),
+                    Ok(url) => url,
+                };
+                return Box::new(future::ok(HandlerResponse::Message {
+                    title: Cow::Borrowed("Linking Failure"),
+                    content: None,
+                    safe_content: Some(Cow::Owned(format!("Looks like you declined the authorisation. If you want to \
+                    start over, click the button below to give it another go. \
+                    If you are still having issues, please contact an organiser \
+                    by email (organisers@swissrpg.ch) or on Discord (@Organiser).<br>\
+                    <a href=\"{}\" class=\"button\">Start Over</a>", linking_url)))
+                }));
+            }
+            else {
+                // Some other error occured
+                eprintln!("Received an OAuth2 error code from Meetup: {}", error);
+                return Box::new(future::ok(("OAuth2 error", error.to_string()).into()));
+            }
         }
         let (code, csrf_state) = match (code, state) {
             (Some(code), Some(state)) => (code, state),
@@ -461,13 +476,10 @@ fn meetup_http_handler(
                 Err(err) => return Box::new(future::err(err.into())),
             };
         if !csrf_is_valid {
-            let message_template = LinkingMessageTemplate {
-                title: "CSRF check failed",
-                content: "Please go back to the first page, reload, and repeat the process",
-            };
-            return Box::new(future::result(HandlerResponse::from_template(
-                message_template,
-            )));
+            return Box::new(future::ok((
+                "CSRF check failed",
+                "Please go back to the first page, reload, and repeat the process",
+            ).into()));
         }
         // Exchange the code with a token.
         let code = AuthorizationCode::new(code.to_string());
@@ -689,10 +701,11 @@ impl OAuth2Consumer {
                     )
                     .and_then(|handler_response| match handler_response {
                         HandlerResponse::Response(response) => future::ok(response),
-                        HandlerResponse::Message { title, content } => {
+                        HandlerResponse::Message { title, content, safe_content } => {
                             let message_template = LinkingMessageTemplate {
                                 title: &title,
-                                content: &content,
+                                content: content.as_ref().map(Cow::as_ref),
+                                safe_content: safe_content.as_ref().map(Cow::as_ref),
                             };
                             future::result(
                                 message_template
@@ -710,7 +723,8 @@ impl OAuth2Consumer {
                             eprintln!("Error in meetup_authorize: {}", err);
                             let message_template = LinkingMessageTemplate {
                                 title: "Internal Server Error",
-                                content: "",
+                                content: None,
+                                safe_content: None,
                             };
                             Ok(message_template
                                 .render()

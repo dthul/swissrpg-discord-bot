@@ -4,7 +4,16 @@
 <div id="main">
     <h2>{{title}}</h2>
     <p>
-        {{content}}
+        {% match content %}
+            {% when Some with (val) %}
+                {{val}}
+            {% when None %}
+        {% endmatch %}
+        {% match safe_content %}
+            {% when Some with (val) %}
+                {{val|safe}}
+            {% when None %}
+        {% endmatch %}
     </p>
 </div>
 {% endblock %}
