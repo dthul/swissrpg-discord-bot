@@ -59,6 +59,18 @@ appendfsync everysec
 aof-use-rdb-preamble yes
 ```
 
+# Sudo
+
+The bot's `stop` command needs access to `systemctl`. In order to grant this access,
+enter the following text into file `/etc/sudoers.d/100-discord-bot` using the
+`visudo` command (`visudo -f /etc/sudoers.d/100-discord-bot`):
+
+```
+# Bot systemctl commands
+Cmnd_Alias BOT_SYSTEMD = /bin/systemctl start bot, /bin/systemctl stop bot, /bin/systemctl restart bot, /bin/systemctl kill bot
+bot ALL=(ALL) NOPASSWD: BOT_SYSTEMD
+```
+
 # To link statically
 
 ## For OpenSSL
