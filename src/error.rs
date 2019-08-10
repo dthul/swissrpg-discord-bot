@@ -4,9 +4,11 @@ use backtrace::Backtrace;
 use chrono::format::ParseError as ChronoParseError;
 use hyper::http::Error as HttpError;
 use redis::RedisError;
+use regex::Error as RegexError;
 use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
+use std::num::ParseIntError;
 use tokio::timer::Error as TokioTimerError;
 use url::ParseError as UrlParseError;
 
@@ -125,6 +127,24 @@ impl From<TokioTimerError> for BoxedError {
 
 impl From<AskamaError> for BoxedError {
     fn from(err: AskamaError) -> Self {
+        BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
+impl From<RegexError> for BoxedError {
+    fn from(err: RegexError) -> Self {
+        BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
+impl From<ParseIntError> for BoxedError {
+    fn from(err: ParseIntError) -> Self {
         BoxedError {
             inner: Box::new(err),
             backtrace: Backtrace::new(),

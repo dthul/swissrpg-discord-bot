@@ -8,6 +8,7 @@ pub mod meetup_api;
 pub mod meetup_oauth2;
 pub mod meetup_sync;
 pub mod strings;
+pub mod vacuum;
 
 use error::BoxedError;
 use futures::{Future, Stream};
