@@ -1,5 +1,6 @@
 use redis::Commands;
 use regex::Regex;
+use serenity::model::id::ChannelId;
 use std::collections::HashSet;
 
 // Vacuum task:
@@ -42,16 +43,34 @@ pub fn vacuum(
 
 fn vacuum_discord_channels(
     con: &mut redis::Connection,
-    _discord_api: &crate::discord_bot::CacheAndHttp,
+    discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
     // Step 0: Figure out all the Discord channel IDs that Redis knows about.
     // We could just use the `discord_channels` set, but maybe the Redis state
     // is inconsistent, so we actually scan for all keys that might contain
     // a channel ID.
-    let _orphaned_discord_channel_ids: Vec<u64> = con.smembers("orphaned_discord_channels")?;
-    let _discord_channel_ids = get_redis_discord_channel_ids(con)?;
-    // Step 1: Check whether this channel still exists on Discord.
-    // TODO
+    let orphaned_discord_channel_ids: Vec<u64> = con.smembers("orphaned_discord_channels")?;
+    // Step 1: Try to delete orphaned Discord channels
+    for orphaned_channel_id in orphaned_discord_channel_ids {
+        if channel_exists(ChannelId(orphaned_channel_id), discord_api)? {
+            // Delete it from Discord
+            discord_api.http.delete_channel(orphaned_channel_id)?;
+        }
+        // Remove it from orphaned_channels (only if Discord deletion was successful)
+        let _: () = con.srem("orphaned_discord_channels", orphaned_channel_id)?;
+    }
+    // Step 2: Check all channel IDs we store in Redis.
+    // If a channel does not exist anymore on Discord, remove it from Redis
+    let discord_channel_ids = get_redis_discord_channel_ids(con)?;
+    for channel_id in discord_channel_ids {
+        if !channel_exists(ChannelId(channel_id), discord_api)? {
+            // TODO: remove from Redis
+            // redis::pipe()
+            // .atomic()
+            // .srem("discord_channels", channel_id)
+            // .del(format!("event_series:{}:discord_channel", )
+        }
+    }
     Ok(())
 }
 
@@ -171,4 +190,30 @@ where
         })
         .collect();
     Ok(ids)
+}
+
+// TODO: check that the below method of checking existence actually works\
+fn channel_exists(
+    channel_id: ChannelId,
+    discord_api: &crate::discord_bot::CacheAndHttp,
+) -> Result<bool, crate::BoxedError> {
+    match channel_id.to_channel(discord_api) {
+        Ok(_) => Ok(true),
+        Err(err) => {
+            if let serenity::Error::Http(http_err) = &err {
+                if let serenity::http::HttpError::UnsuccessfulRequest(response) = http_err.as_ref()
+                {
+                    if response.status_code == reqwest::StatusCode::NOT_FOUND {
+                        Ok(false)
+                    } else {
+                        return Err(err.into());
+                    }
+                } else {
+                    return Err(err.into());
+                }
+            } else {
+                return Err(err.into());
+            }
+        }
+    }
 }
