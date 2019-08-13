@@ -10,4 +10,4 @@ fi
 docker start swissrpg-compile-container
 # Run the build command inside of the container
 # TODO: replace 'cp /tmp/target/release...' with Cargo's --out-dir option once it is stable
-docker exec -it swissrpg-compile-container /bin/bash -lc 'cd /opt && cargo build --target-dir /tmp/target && strip /tmp/target/debug/swissrpg-discord-bot && cp /tmp/target/debug/swissrpg-discord-bot /opt/'
+docker exec -it swissrpg-compile-container /bin/bash -lc 'cd /opt && cargo build --target-dir /tmp/target && cp /tmp/target/debug/swissrpg-discord-bot /opt/'
