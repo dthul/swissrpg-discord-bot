@@ -735,8 +735,8 @@ fn sync_game_master_role(
             .into_iter()
             .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
             .collect();
-        let (discord_host_ids,): (Vec<Option<u64>>,) = redis::pipe()
-            .get(redis_meetup_host_discord_keys)
+        let discord_host_ids: Vec<Option<u64>> = redis::cmd("MGET")
+            .arg(redis_meetup_host_discord_keys)
             .query(redis_connection)?;
         // Filter the None values
         let discord_host_ids: Vec<_> = discord_host_ids.into_iter().filter_map(|id| id).collect();
