@@ -8,6 +8,7 @@ pub mod meetup_api;
 pub mod meetup_oauth2;
 pub mod meetup_sync;
 pub mod strings;
+pub mod sync;
 pub mod vacuum;
 
 use error::BoxedError;
@@ -91,7 +92,7 @@ fn main() {
         redis_client.clone(),
         meetup_client.clone(),
         async_meetup_client.clone(),
-        task_scheduler,
+        task_scheduler.clone(),
         tx,
     )
     .expect("Could not create the Discord bot");
@@ -112,16 +113,28 @@ fn main() {
             .clone(),
     );
 
-    // let meetup_syncing_task = meetup_sync::create_recurring_syncing_task(
-    //     async_meetup_client.clone(),
-    //     redis_client.clone(),
-    // )
-    // .map_err(|err| eprintln!("Meetup syncing task failed: {}", err));
+    let discord_api = discord_bot::CacheAndHttp {
+        cache: bot.cache_and_http.cache.clone().into(),
+        http: bot.cache_and_http.http.clone(),
+    };
+    let syncing_task = sync::create_recurring_syncing_task(
+        redis_client.clone(),
+        async_meetup_client.clone(),
+        discord_api,
+        bot.data
+            .read()
+            .get::<discord_bot::BotIdKey>()
+            .expect("Bot ID was not set")
+            .clone(),
+        task_scheduler.clone(),
+    )
+    .map_err(|err| eprintln!("Syncing task failed: {}", err));
 
     std::thread::spawn(move || {
         tokio::run(
             meetup_oauth2_server
                 .join(spawn_other_futures_future)
+                .join(syncing_task)
                 .map(|_| ()),
         )
     });

@@ -8,7 +8,6 @@ use redis::PipelineCommands;
 use serenity::prelude::RwLock;
 use simple_error::SimpleError;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio;
 use tokio::prelude::*;
 
@@ -27,32 +26,6 @@ lazy_static! {
 }
 
 pub type BoxedFuture<T, E = crate::BoxedError> = Box<dyn Future<Item = T, Error = E> + Send>;
-
-pub fn create_recurring_syncing_task(
-    meetup_client: Arc<RwLock<Option<meetup_api::AsyncClient>>>,
-    redis_client: redis::Client,
-) -> impl Future<Item = (), Error = crate::BoxedError> {
-    // Run forever
-    tokio::timer::Interval::new_interval(Duration::from_secs(15 * 60))
-        .map_err(|err| {
-            eprintln!("Interval timer error: {}", err);
-            err.into()
-        })
-        .for_each(move |_| {
-            tokio::spawn(
-                sync_task(meetup_client.clone(), redis_client.clone())
-                    .map_err(|err| {
-                        eprintln!("Syncing task failed: {}", err);
-                        err
-                    })
-                    .timeout(Duration::from_secs(360))
-                    .map_err(|err| {
-                        eprintln!("Syncing task timed out: {}", err);
-                    }),
-            );
-            future::ok(())
-        })
-}
 
 // TODO: Introduce a type like "Meetup connection" that contains
 // an Arc<RwLock<Option<MeetupClient>>> internally and has the same
