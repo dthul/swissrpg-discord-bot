@@ -107,8 +107,9 @@ fn sync_event_series(
     // Only sync event series that have events in the future
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
+    let event_id_refs: Vec<&str> = event_ids.iter().map(AsRef::as_ref).collect();
     let events: Vec<_> = event_ids
-        .into_iter()
+        .iter()
         .filter_map(|event_id| {
             let redis_event_key = format!("meetup_event:{}", event_id);
             let tuple: redis::RedisResult<(String, String, String)> =
@@ -116,7 +117,7 @@ fn sync_event_series(
             match tuple {
                 Ok((time, name, link)) => match chrono::DateTime::parse_from_rfc3339(&time) {
                     Ok(time) => Some(Event {
-                        id: event_id,
+                        id: event_id.clone(),
                         name: name,
                         time: time.with_timezone(&chrono::Utc),
                         link: link,
@@ -171,6 +172,37 @@ fn sync_event_series(
         ))
         .into());
     }
+    // Query the RSVPd guests and hosts
+    let meetup_guest_ids =
+        get_events_participants(&event_id_refs, /*hosts*/ false, redis_connection)?;
+    let meetup_host_ids =
+        get_events_participants(&event_id_refs, /*hosts*/ true, redis_connection)?;
+    let discord_guest_ids = meetup_to_discord_ids(&meetup_guest_ids, redis_connection)?;
+    let discord_host_ids = meetup_to_discord_ids(&meetup_host_ids, redis_connection)?;
+    // Filter the None values
+    let discord_guest_ids: Vec<_> = discord_guest_ids
+        .into_iter()
+        .filter_map(|id_mapping| id_mapping.1)
+        .collect();
+    let discord_host_ids: Vec<_> = discord_host_ids
+        .into_iter()
+        .filter_map(|id_mapping| id_mapping.1)
+        .collect();
+    // Convert host IDs to user objects
+    let discord_hosts: Vec<_> = discord_host_ids
+        .iter()
+        .map(|&host_id| UserId(host_id).to_user(discord_api))
+        .filter_map(|res| match res {
+            Ok(user) => Some(user),
+            Err(err) => {
+                eprintln!(
+                    "Error converting Discord host ID to Discord user object: {}",
+                    err
+                );
+                None
+            }
+        })
+        .collect();
     // Step 1: Sync the channel
     let channel_id = sync_channel(
         series_name,
@@ -180,8 +212,14 @@ fn sync_event_series(
         discord_api,
     )?;
     // Step 2: Sync the channel's associated role
+    let guest_tag = if discord_hosts.is_empty() {
+        "Player".to_string()
+    } else {
+        itertools::join(discord_hosts.iter().map(|host| &host.name), ", ")
+    };
+    let guest_role_name = format!("[{}] {}", guest_tag, series_name);
     let channel_role_id = sync_role(
-        series_name,
+        &guest_role_name,
         /*is_host_role*/ false,
         channel_id,
         redis_connection,
@@ -206,7 +244,7 @@ fn sync_event_series(
     )?;
     // Step 5: Sync RSVP'd users
     sync_user_role_assignments(
-        series_id,
+        &discord_guest_ids,
         channel_id,
         channel_role_id,
         /*is_host_role*/ false,
@@ -214,7 +252,7 @@ fn sync_event_series(
         discord_api,
     )?;
     sync_user_role_assignments(
-        series_id,
+        &discord_host_ids,
         channel_id,
         channel_host_role_id,
         /*is_host_role*/ true,
@@ -621,29 +659,18 @@ fn sync_channel_permissions(
     Ok(())
 }
 
-fn sync_user_role_assignments(
-    event_series_id: &str,
-    channel: ChannelId,
-    role: RoleId,
-    is_host_role: bool,
+// Return a list of Meetup IDs of all participants of the specified events.
+// If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
+fn get_events_participants(
+    event_ids: &[&str],
+    hosts: bool,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::discord_bot::CacheAndHttp,
-) -> Result<(), crate::BoxedError> {
-    // First, find all events belonging to this event series
-    let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
-    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
-    if event_ids.is_empty() {
-        println!(
-            "Event series \"{}\" seems to have no events associated with it, not syncing to Discord",
-            event_series_id
-        );
-        return Ok(());
-    }
-    // Then, find all Meetup users RSVP'd to those events
+) -> Result<Vec<u64>, crate::BoxedError> {
+    // Find all Meetup users RSVP'd to the specified events
     let redis_event_users_keys: Vec<_> = event_ids
         .iter()
         .map(|event_id| {
-            if is_host_role {
+            if hosts {
                 format!("meetup_event:{}:meetup_hosts", event_id)
             } else {
                 format!("meetup_event:{}:meetup_users", event_id)
@@ -653,16 +680,39 @@ fn sync_user_role_assignments(
     let (meetup_user_ids,): (Vec<u64>,) = redis::pipe()
         .sunion(redis_event_users_keys)
         .query(redis_connection)?;
-    // Now, try to associate the RSVP'd Meetup users with Discord users
+    Ok(meetup_user_ids)
+}
+
+// Try to translate Meetup user IDs to Discord user IDs. Returns mappings from
+// the Meetup ID to a Discord ID or None if the user is not linked. The order of
+// the mapping is the same as the input order.
+fn meetup_to_discord_ids(
+    meetup_user_ids: &[u64],
+    redis_connection: &mut redis::Connection,
+) -> Result<Vec<(u64, Option<u64>)>, crate::BoxedError> {
+    // Try to associate the RSVP'd Meetup users with Discord users
     let discord_user_ids: Result<Vec<Option<u64>>, _> = meetup_user_ids
-        .into_iter()
+        .iter()
         .map(|meetup_id| {
             let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
             redis_connection.get(&redis_meetup_discord_key)
         })
         .collect();
-    // Filter the None values
-    let discord_user_ids: Vec<_> = discord_user_ids?.into_iter().filter_map(|id| id).collect();
+    Ok(meetup_user_ids
+        .iter()
+        .cloned()
+        .zip(discord_user_ids?.into_iter())
+        .collect())
+}
+
+fn sync_user_role_assignments(
+    discord_user_ids: &[u64],
+    channel: ChannelId,
+    role: RoleId,
+    is_host_role: bool,
+    redis_connection: &mut redis::Connection,
+    discord_api: &crate::discord_bot::CacheAndHttp,
+) -> Result<(), crate::BoxedError> {
     // Check whether any users have manually removed roles and don't add them back
     let redis_channel_removed_hosts_key = format!("discord_channel:{}:removed_hosts", channel.0);
     let redis_channel_removed_users_key = format!("discord_channel:{}:removed_users", channel.0);
@@ -679,7 +729,7 @@ fn sync_user_role_assignments(
         redis_connection.smembers(&redis_channel_removed_users_key)?
     };
     // Lastly, actually assign the role to the Discord users
-    for user_id in discord_user_ids {
+    for &user_id in discord_user_ids {
         if ignore_discord_user_ids.contains(&user_id) {
             continue;
         }
