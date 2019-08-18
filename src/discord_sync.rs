@@ -372,6 +372,7 @@ fn sync_role_impl(
     let temp_channel_role = GUILD_ID.create_role(discord_api.http(), |role_builder| {
         role_builder
             .name(role_name)
+            .colour(serenity::utils::Colour::BLUE.0 as u64)
             .permissions(Permissions::empty())
     })?;
     println!(
