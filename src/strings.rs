@@ -145,6 +145,34 @@ pub const CHANNEL_ROLE_REMOVE_ERROR: &'static str =
     "Something went wrong removing the channel role";
 
 #[allow(non_snake_case)]
+pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[u64]) -> String {
+    let mentions = itertools::join(
+        discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
+        ", ",
+    );
+    format!("Welcome {}! Please check this channel's pinned messages (if any) for basic information about the adventure.", mentions)
+}
+
+#[allow(non_snake_case)]
+pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[u64]) -> String {
+    let mentions = itertools::join(
+        discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
+        ", ",
+    );
+    if discord_user_ids.len() > 1 {
+        format!(
+            "Welcome {}! This is your channel as host of the upcoming adventure.",
+            mentions
+        )
+    } else {
+        format!(
+            "Welcome {}! This is your channel as hosts of the upcoming adventure.",
+            mentions
+        )
+    }
+}
+
+#[allow(non_snake_case)]
 pub fn CHANNEL_ADDED_NEW_HOST(discord_id: u64) -> String {
     format!("<@{}> is now a host of this channel", discord_id)
 }

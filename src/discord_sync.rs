@@ -730,6 +730,7 @@ fn sync_user_role_assignments(
         redis_connection.smembers(&redis_channel_removed_users_key)?
     };
     // Lastly, actually assign the role to the Discord users
+    let mut newly_added_user_ids = vec![];
     for &user_id in discord_user_ids {
         if ignore_discord_user_ids.contains(&user_id) {
             continue;
@@ -742,7 +743,10 @@ fn sync_user_role_assignments(
                             .http()
                             .add_member_role(GUILD_ID.0, user_id, role.0)
                         {
-                            Ok(_) => println!("Assigned user {} to role {}", user_id, role.0),
+                            Ok(_) => {
+                                println!("Assigned user {} to role {}", user_id, role.0);
+                                newly_added_user_ids.push(user_id);
+                            }
                             Err(err) => eprintln!(
                                 "Could not assign user {} to role {}: {}",
                                 user_id, role.0, err
@@ -757,6 +761,22 @@ fn sync_user_role_assignments(
             },
             Err(err) => eprintln!("Could not find the user {}: {}", user_id, err),
         }
+    }
+    // Announce the newly added users
+    if !newly_added_user_ids.is_empty() {
+        if let Err(err) = channel.send_message(&discord_api.http, |message_builder| {
+            if is_host_role {
+                message_builder.content(crate::strings::CHANNEL_ADDED_HOSTS(&newly_added_user_ids))
+            } else {
+                message_builder
+                    .content(crate::strings::CHANNEL_ADDED_PLAYERS(&newly_added_user_ids))
+            }
+        }) {
+            eprintln!(
+                "Could not announce new players in channel {}: {}",
+                channel.0, err
+            );
+        };
     }
     Ok(())
 }
