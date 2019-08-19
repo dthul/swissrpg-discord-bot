@@ -404,7 +404,7 @@ impl EventHandler for Handler {
                         cache: ctx.cache.clone(),
                         http: ctx.http.clone(),
                     },
-                    bot_id.0,
+                    bot_id,
                     /*recurring*/ false,
                 ),
             );

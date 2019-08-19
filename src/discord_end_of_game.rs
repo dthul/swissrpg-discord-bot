@@ -1,17 +1,17 @@
 use crate::strings;
 use redis::Commands;
-use serenity::model::id::ChannelId;
+use serenity::model::id::{ChannelId, UserId};
 use simple_error::SimpleError;
 
 // Sends channel deletion reminders to expired Discord channels
 pub fn create_end_of_game_task(
     redis_client: redis::Client,
     mut discord_api: crate::discord_bot::CacheAndHttp,
-    bot_id: u64,
+    bot_id: UserId,
     recurring: bool,
 ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static {
     move |_ctx| {
-        let next_sync_time = match end_of_game_task(&redis_client, &mut discord_api, bot_id) {
+        let next_sync_time = match end_of_game_task(&redis_client, &mut discord_api, bot_id.0) {
             Err(err) => {
                 eprintln!("End of game task failed: {}", err);
                 // Retry in an hour

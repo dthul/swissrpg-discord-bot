@@ -59,30 +59,6 @@ fn main() {
     let task_scheduler = Arc::new(Mutex::new(white_rabbit::Scheduler::new(
         /*thread_count*/ 1,
     )));
-    // Check Redis for a refresh time. If there is one, use that
-    // if it is in the future. Otherwise schedule the task now
-    let next_refresh_time: Option<String> = redis_connection
-        .get("meetup_access_token_refresh_time")
-        .expect("Could not query Redis for the next refresh time");
-    // Try to get the next scheduled refresh time from Redis, otherwise
-    // schedule a refresh immediately
-    let next_refresh_time = match next_refresh_time.and_then(|time_string| {
-        white_rabbit::DateTime::parse_from_rfc3339(&time_string)
-            .ok()
-            .map(|date_time| date_time.with_timezone(&white_rabbit::Utc))
-    }) {
-        Some(time) => time,
-        None => white_rabbit::Utc::now(),
-    };
-    task_scheduler.lock().add_task_datetime(
-        next_refresh_time,
-        meetup_oauth2_consumer.token_refresh_task(
-            redis_client
-                .get_connection()
-                .expect("Could not connect to Redis"),
-            meetup_client.clone(),
-        ),
-    );
 
     let (tx, rx) = futures::sync::mpsc::channel::<crate::meetup_sync::BoxedFuture<(), ()>>(1);
     let spawn_other_futures_future = rx.for_each(|fut| tokio::spawn(fut));
@@ -113,10 +89,58 @@ fn main() {
             .clone(),
     );
 
+    // Check Redis for a refresh time. If there is one, use that
+    // if it is in the future. Otherwise schedule the task now
+    let next_refresh_time: Option<String> = redis_connection
+        .get("meetup_access_token_refresh_time")
+        .expect("Could not query Redis for the next refresh time");
+    // Try to get the next scheduled refresh time from Redis, otherwise
+    // schedule a refresh immediately
+    let next_refresh_time = match next_refresh_time.and_then(|time_string| {
+        white_rabbit::DateTime::parse_from_rfc3339(&time_string)
+            .ok()
+            .map(|date_time| date_time.with_timezone(&white_rabbit::Utc))
+    }) {
+        Some(time) => time,
+        None => white_rabbit::Utc::now(),
+    };
+    task_scheduler.lock().add_task_datetime(
+        next_refresh_time,
+        meetup_oauth2_consumer.token_refresh_task(
+            redis_client
+                .get_connection()
+                .expect("Could not connect to Redis"),
+            meetup_client.clone(),
+        ),
+    );
     let discord_api = discord_bot::CacheAndHttp {
         cache: bot.cache_and_http.cache.clone().into(),
         http: bot.cache_and_http.http.clone(),
     };
+    // Schedule the end of game task
+    let end_of_game_task = discord_end_of_game::create_end_of_game_task(
+        redis_client.clone(),
+        discord_api.clone(),
+        bot.data
+            .read()
+            .get::<discord_bot::BotIdKey>()
+            .expect("Bot ID was not set")
+            .clone(),
+        /*recurring*/ true,
+    );
+    let next_end_of_game_task_time = {
+        let mut task_time = white_rabbit::Utc::now().date().and_hms(18, 30, 0);
+        // Check if it is later than 6:30pm
+        // In that case, run the task tomorrow
+        if white_rabbit::Utc::now() > task_time {
+            task_time = task_time + white_rabbit::Duration::days(1);
+        }
+        task_time
+    };
+    task_scheduler
+        .lock()
+        .add_task_datetime(next_end_of_game_task_time, end_of_game_task);
+
     let syncing_task = sync::create_recurring_syncing_task(
         redis_client.clone(),
         async_meetup_client.clone(),
