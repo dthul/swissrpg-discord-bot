@@ -848,8 +848,8 @@ impl OAuth2Consumer {
                 if let Err(err) = res {
                     eprintln!("Error storing new Meetup tokens in Redis: {}", err);
                 }
-                // Refresh the access token in a week from now
-                let next_refresh = white_rabbit::Utc::now() + white_rabbit::Duration::weeks(1);
+                // Refresh the access token in two days from now
+                let next_refresh = white_rabbit::Utc::now() + white_rabbit::Duration::days(2);
                 // Store refresh date in Redis, ignore failures
                 let _: redis::RedisResult<()> = redis_connection.set(
                     "meetup_access_token_refresh_time",
