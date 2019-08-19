@@ -111,6 +111,7 @@ fn main() {
                 .get_connection()
                 .expect("Could not connect to Redis"),
             meetup_client.clone(),
+            async_meetup_client.clone(),
         ),
     );
     let discord_api = discord_bot::CacheAndHttp {

@@ -781,6 +781,7 @@ impl OAuth2Consumer {
         &self,
         mut redis_connection: redis::Connection,
         meetup_client: Arc<RwLock<Option<meetup_api::Client>>>,
+        async_meetup_client: Arc<RwLock<Option<meetup_api::AsyncClient>>>,
     ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static
     {
         let oauth2_client = self.authorization_client.clone();
@@ -840,6 +841,8 @@ impl OAuth2Consumer {
                     }
                 };
                 *meetup_client.write() = Some(meetup_api::Client::new(new_access_token.secret()));
+                *async_meetup_client.write() =
+                    Some(meetup_api::AsyncClient::new(new_access_token.secret()));
                 // Store the new tokens in Redis
                 let res: RedisResult<()> = redis_connection.set_multiple(&[
                     ("meetup_access_token", new_access_token.secret()),
