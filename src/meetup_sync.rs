@@ -75,6 +75,13 @@ pub fn sync_task(
                         )
                         .from_err::<crate::BoxedError>()
                     })
+                    // Catch any errors such as not to abort the stream
+                    .then(|res| {
+                        if let Err(err) = res {
+                            eprintln!("Series sync failed: {}", err);
+                        }
+                        future::ok(())
+                    })
                 })
             })
     };
