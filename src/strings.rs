@@ -58,7 +58,7 @@ pub fn END_OF_ADVENTURE_MESSAGE(bot_id: u64) -> String {
 Now that your adventure is complete, this channel will be closed soon.
 As soon as you are ready, the GM can close this channel by typing here:
 ***<@{bot_id}> end adventure***
-This will set the channel for closure in the next 24 hours (just enough to say thanks and goodbye.
+This will set the channel for closure in the next 24 hours, just enough time to say thanks and goodbye.
 If you're not quite done with this adventure, please schedule the next session(s) \
 on Meetup and I will extend the lifetime of this channel.",
         bot_id = bot_id
