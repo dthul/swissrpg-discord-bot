@@ -170,18 +170,18 @@ impl EventHandler for Handler {
             is_dm = false;
         }
         // TODO: might want to use a RegexSet here to speed up matching
-        if regexes.stop_organizer(is_dm).is_match(&msg.content) {
-            // This is only for organizers
+        if regexes.stop_bot_admin(is_dm).is_match(&msg.content) {
+            // This is only for bot_admins
             if !msg
                 .author
                 .has_role(
                     &ctx,
                     crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::ORGANIZER_ID,
+                    crate::discord_sync::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
             std::process::Command::new("sudo")
@@ -198,18 +198,18 @@ impl EventHandler for Handler {
                 }
                 _ => return,
             }
-        } else if let Some(captures) = regexes.link_meetup_organizer(is_dm).captures(&msg.content) {
-            // This is only for organizers
+        } else if let Some(captures) = regexes.link_meetup_bot_admin(is_dm).captures(&msg.content) {
+            // This is only for bot_admins
             if !msg
                 .author
                 .has_role(
                     &ctx,
                     crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::ORGANIZER_ID,
+                    crate::discord_sync::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
             let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -226,7 +226,7 @@ impl EventHandler for Handler {
                         return;
                     }
                 };
-            match Self::link_meetup_organizer(&ctx, &msg, &regexes, discord_id, meetup_id) {
+            match Self::link_meetup_bot_admin(&ctx, &msg, &regexes, discord_id, meetup_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
                     let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
@@ -236,7 +236,7 @@ impl EventHandler for Handler {
             }
         } else if regexes.unlink_meetup(is_dm).is_match(&msg.content) {
             let user_id = msg.author.id.0;
-            match Self::unlink_meetup(&ctx, &msg, /*is_organizer_command*/ false, user_id) {
+            match Self::unlink_meetup(&ctx, &msg, /*is_bot_admin_command*/ false, user_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
                     let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
@@ -245,7 +245,7 @@ impl EventHandler for Handler {
                 _ => return,
             }
         } else if let Some(captures) = regexes
-            .unlink_meetup_organizer(is_dm)
+            .unlink_meetup_bot_admin(is_dm)
             .captures(&msg.content)
         {
             let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -259,7 +259,7 @@ impl EventHandler for Handler {
                     return;
                 }
             };
-            match Self::unlink_meetup(&ctx, &msg, /*is_organizer_command*/ true, discord_id) {
+            match Self::unlink_meetup(&ctx, &msg, /*is_bot_admin_command*/ true, discord_id) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
                     let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
@@ -268,17 +268,17 @@ impl EventHandler for Handler {
                 _ => return,
             }
         } else if regexes.sync_meetup_mention.is_match(&msg.content) {
-            // This is only for organizers
+            // This is only for bot_admins
             if !msg
                 .author
                 .has_role(
                     &ctx,
                     crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::ORGANIZER_ID,
+                    crate::discord_sync::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
             let (async_meetup_client, redis_client, mut future_spawner) = {
@@ -323,17 +323,17 @@ impl EventHandler for Handler {
                 }
             }
         } else if regexes.sync_discord_mention.is_match(&msg.content) {
-            // This is only for organizers
+            // This is only for bot_admins
             if !msg
                 .author
                 .has_role(
                     &ctx,
                     crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::ORGANIZER_ID,
+                    crate::discord_sync::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
             let (redis_client, bot_id, task_scheduler) = {
@@ -366,20 +366,20 @@ impl EventHandler for Handler {
                 .channel_id
                 .say(&ctx.http, "Started Discord synchronization task");
         } else if regexes
-            .send_expiration_reminder_organizer_mention
+            .send_expiration_reminder_bot_admin_mention
             .is_match(&msg.content)
         {
-            // This is only for organizers
+            // This is only for bot_admins
             if !msg
                 .author
                 .has_role(
                     &ctx,
                     crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::ORGANIZER_ID,
+                    crate::discord_sync::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_AN_ORGANISER);
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
             let (redis_client, bot_id, task_scheduler) = {

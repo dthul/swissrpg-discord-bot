@@ -12,21 +12,21 @@ pub struct Regexes {
     pub bot_mention: String,
     pub link_meetup_dm: Regex,
     pub link_meetup_mention: Regex,
-    pub link_meetup_organizer_dm: Regex,
-    pub link_meetup_organizer_mention: Regex,
+    pub link_meetup_bot_admin_dm: Regex,
+    pub link_meetup_bot_admin_mention: Regex,
     pub unlink_meetup_dm: Regex,
     pub unlink_meetup_mention: Regex,
-    pub unlink_meetup_organizer_dm: Regex,
-    pub unlink_meetup_organizer_mention: Regex,
+    pub unlink_meetup_bot_admin_dm: Regex,
+    pub unlink_meetup_bot_admin_mention: Regex,
     pub sync_meetup_mention: Regex,
     pub sync_discord_mention: Regex,
     pub add_user_mention: Regex,
     pub add_host_mention: Regex,
     pub remove_user_mention: Regex,
     pub remove_host_mention: Regex,
-    pub stop_organizer_dm: Regex,
-    pub stop_organizer_mention: Regex,
-    pub send_expiration_reminder_organizer_mention: Regex,
+    pub stop_bot_admin_dm: Regex,
+    pub stop_bot_admin_mention: Regex,
+    pub send_expiration_reminder_bot_admin_mention: Regex,
     pub close_channel_host_mention: Regex,
 }
 
@@ -39,11 +39,11 @@ impl Regexes {
         }
     }
 
-    pub fn link_meetup_organizer(&self, is_dm: bool) -> &Regex {
+    pub fn link_meetup_bot_admin(&self, is_dm: bool) -> &Regex {
         if is_dm {
-            &self.link_meetup_organizer_dm
+            &self.link_meetup_bot_admin_dm
         } else {
-            &self.link_meetup_organizer_mention
+            &self.link_meetup_bot_admin_mention
         }
     }
 
@@ -55,19 +55,19 @@ impl Regexes {
         }
     }
 
-    pub fn unlink_meetup_organizer(&self, is_dm: bool) -> &Regex {
+    pub fn unlink_meetup_bot_admin(&self, is_dm: bool) -> &Regex {
         if is_dm {
-            &self.unlink_meetup_organizer_dm
+            &self.unlink_meetup_bot_admin_dm
         } else {
-            &self.unlink_meetup_organizer_mention
+            &self.unlink_meetup_bot_admin_mention
         }
     }
 
-    pub fn stop_organizer(&self, is_dm: bool) -> &Regex {
+    pub fn stop_bot_admin(&self, is_dm: bool) -> &Regex {
         if is_dm {
-            &self.stop_organizer_dm
+            &self.stop_bot_admin_dm
         } else {
-            &self.stop_organizer_mention
+            &self.stop_bot_admin_mention
         }
     }
 }
@@ -79,18 +79,18 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         r"^{bot_mention}\s+link[ -]?meetup\s*$",
         bot_mention = bot_mention
     );
-    let link_meetup_organizer = format!(
+    let link_meetup_bot_admin = format!(
         r"link[ -]?meetup\s+{mention_pattern}\s+(?P<meetupid>[0-9]+)",
         mention_pattern = MENTION_PATTERN
     );
-    let link_meetup_organizer_dm = format!(
-        r"^{link_meetup_organizer}\s*$",
-        link_meetup_organizer = link_meetup_organizer
+    let link_meetup_bot_admin_dm = format!(
+        r"^{link_meetup_bot_admin}\s*$",
+        link_meetup_bot_admin = link_meetup_bot_admin
     );
-    let link_meetup_organizer_mention = format!(
-        r"^{bot_mention}\s+{link_meetup_organizer}\s*$",
+    let link_meetup_bot_admin_mention = format!(
+        r"^{bot_mention}\s+{link_meetup_bot_admin}\s*$",
         bot_mention = bot_mention,
-        link_meetup_organizer = link_meetup_organizer
+        link_meetup_bot_admin = link_meetup_bot_admin
     );
     let unlink_meetup = r"unlink[ -]?meetup";
     let unlink_meetup_dm = format!(r"^{unlink_meetup}\s*$", unlink_meetup = unlink_meetup);
@@ -99,18 +99,18 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         unlink_meetup = unlink_meetup
     );
-    let unlink_meetup_organizer = format!(
+    let unlink_meetup_bot_admin = format!(
         r"unlink[ -]?meetup\s+{mention_pattern}",
         mention_pattern = MENTION_PATTERN
     );
-    let unlink_meetup_organizer_dm = format!(
-        r"^{unlink_meetup_organizer}\s*$",
-        unlink_meetup_organizer = unlink_meetup_organizer
+    let unlink_meetup_bot_admin_dm = format!(
+        r"^{unlink_meetup_bot_admin}\s*$",
+        unlink_meetup_bot_admin = unlink_meetup_bot_admin
     );
-    let unlink_meetup_organizer_mention = format!(
-        r"^{bot_mention}\s+{unlink_meetup_organizer}\s*$",
+    let unlink_meetup_bot_admin_mention = format!(
+        r"^{bot_mention}\s+{unlink_meetup_bot_admin}\s*$",
         bot_mention = bot_mention,
-        unlink_meetup_organizer = unlink_meetup_organizer
+        unlink_meetup_bot_admin = unlink_meetup_bot_admin
     );
     let sync_meetup_mention = format!(
         r"^{bot_mention}\s+sync\s+meetup\s*$",
@@ -140,10 +140,10 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
-    let stop_organizer_dm = r"^(?i)stop\s*$";
-    let stop_organizer_mention =
+    let stop_bot_admin_dm = r"^(?i)stop\s*$";
+    let stop_bot_admin_mention =
         format!(r"^{bot_mention}\s+(?i)stop\s*$", bot_mention = bot_mention);
-    let send_expiration_reminder_organizer_mention = format!(
+    let send_expiration_reminder_bot_admin_mention = format!(
         r"^{bot_mention}\s+(?i)remind\s+expiration\s*$",
         bot_mention = bot_mention
     );
@@ -155,12 +155,12 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
         link_meetup_mention: Regex::new(link_meetup_mention.as_str()).unwrap(),
-        link_meetup_organizer_dm: Regex::new(link_meetup_organizer_dm.as_str()).unwrap(),
-        link_meetup_organizer_mention: Regex::new(link_meetup_organizer_mention.as_str()).unwrap(),
+        link_meetup_bot_admin_dm: Regex::new(link_meetup_bot_admin_dm.as_str()).unwrap(),
+        link_meetup_bot_admin_mention: Regex::new(link_meetup_bot_admin_mention.as_str()).unwrap(),
         unlink_meetup_dm: Regex::new(unlink_meetup_dm.as_str()).unwrap(),
         unlink_meetup_mention: Regex::new(unlink_meetup_mention.as_str()).unwrap(),
-        unlink_meetup_organizer_dm: Regex::new(unlink_meetup_organizer_dm.as_str()).unwrap(),
-        unlink_meetup_organizer_mention: Regex::new(unlink_meetup_organizer_mention.as_str())
+        unlink_meetup_bot_admin_dm: Regex::new(unlink_meetup_bot_admin_dm.as_str()).unwrap(),
+        unlink_meetup_bot_admin_mention: Regex::new(unlink_meetup_bot_admin_mention.as_str())
             .unwrap(),
         sync_meetup_mention: Regex::new(sync_meetup_mention.as_str()).unwrap(),
         sync_discord_mention: Regex::new(sync_discord_mention.as_str()).unwrap(),
@@ -168,10 +168,10 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         add_host_mention: Regex::new(add_host_mention.as_str()).unwrap(),
         remove_user_mention: Regex::new(remove_user_mention.as_str()).unwrap(),
         remove_host_mention: Regex::new(remove_host_mention.as_str()).unwrap(),
-        stop_organizer_dm: Regex::new(stop_organizer_dm).unwrap(),
-        stop_organizer_mention: Regex::new(stop_organizer_mention.as_str()).unwrap(),
-        send_expiration_reminder_organizer_mention: Regex::new(
-            send_expiration_reminder_organizer_mention.as_str(),
+        stop_bot_admin_dm: Regex::new(stop_bot_admin_dm).unwrap(),
+        stop_bot_admin_mention: Regex::new(stop_bot_admin_mention.as_str()).unwrap(),
+        send_expiration_reminder_bot_admin_mention: Regex::new(
+            send_expiration_reminder_bot_admin_mention.as_str(),
         )
         .unwrap(),
         close_channel_host_mention: Regex::new(close_channel_host_mention.as_str()).unwrap(),
@@ -248,7 +248,7 @@ impl crate::discord_bot::Handler {
         Ok(())
     }
 
-    pub fn link_meetup_organizer(
+    pub fn link_meetup_bot_admin(
         ctx: &Context,
         msg: &Message,
         regexes: &Regexes,
@@ -391,7 +391,7 @@ impl crate::discord_bot::Handler {
     pub fn unlink_meetup(
         ctx: &Context,
         msg: &Message,
-        is_organizer_command: bool,
+        is_bot_admin_command: bool,
         user_id: u64,
     ) -> crate::Result<()> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
@@ -409,7 +409,7 @@ impl crate::discord_bot::Handler {
             Some(meetup_id) => {
                 let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
                 redis_connection.del(&[&redis_key_d2m, &redis_key_m2d])?;
-                let message = if is_organizer_command {
+                let message = if is_bot_admin_command {
                     Cow::Owned(format!("Unlinked <@{}>'s Meetup account", user_id))
                 } else {
                     Cow::Borrowed(strings::MEETUP_UNLINK_SUCCESS)
@@ -417,7 +417,7 @@ impl crate::discord_bot::Handler {
                 let _ = msg.channel_id.say(&ctx.http, message);
             }
             None => {
-                let message = if is_organizer_command {
+                let message = if is_bot_admin_command {
                     Cow::Owned(format!(
                         "There was seemingly no meetup account linked to <@{}>",
                         user_id
@@ -475,20 +475,20 @@ impl crate::discord_bot::Handler {
                 return Ok(());
             }
         };
-        // This is only for organizers and channel hosts
-        let is_organizer = msg
+        // This is only for bot_admins and channel hosts
+        let is_bot_admin = msg
             .author
             .has_role(
                 ctx,
                 crate::discord_sync::GUILD_ID,
-                crate::discord_sync::ORGANIZER_ID,
+                crate::discord_sync::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
         let is_host = msg
             .author
             .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
-        if !is_organizer && !is_host {
+        if !is_bot_admin && !is_host {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
             return Ok(());
         }
@@ -556,20 +556,20 @@ impl crate::discord_bot::Handler {
                 return Ok(());
             }
         };
-        // This is only for organizers and channel hosts
-        let is_organizer = msg
+        // This is only for bot_admins and channel hosts
+        let is_bot_admin = msg
             .author
             .has_role(
                 ctx,
                 crate::discord_sync::GUILD_ID,
-                crate::discord_sync::ORGANIZER_ID,
+                crate::discord_sync::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
         let is_host = msg
             .author
             .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
-        if !is_organizer && !is_host {
+        if !is_bot_admin && !is_host {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
             return Ok(());
         }

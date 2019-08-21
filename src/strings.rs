@@ -4,7 +4,7 @@
 
 // ** General **
 
-pub const NOT_AN_ORGANISER: &'static str = "Only organizers can do this";
+pub const NOT_A_BOT_ADMIN: &'static str = "Only admins can do this";
 
 pub const UNSPECIFIED_ERROR: &'static str = "Something went wrong";
 
@@ -125,7 +125,7 @@ pub const MEETUP_UNLINK_NOT_LINKED: &'static str =
 
 // ** Channel administration **
 
-pub const NOT_A_CHANNEL_ADMIN: &'static str = "Only channel hosts and organizers can do that";
+pub const NOT_A_CHANNEL_ADMIN: &'static str = "Only channel hosts and admins can do that";
 
 pub const CHANNEL_NOT_BOT_CONTROLLED: &'static str =
     "This channel does not seem to be under my control";
