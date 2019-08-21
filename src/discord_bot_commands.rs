@@ -74,13 +74,13 @@ impl Regexes {
 
 pub fn compile_regexes(bot_id: u64) -> Regexes {
     let bot_mention = format!(r"<@{}>", bot_id);
-    let link_meetup_dm = r"^link[ -]?meetup\s*$";
+    let link_meetup_dm = r"^(?i)link[ -]?meetup\s*$";
     let link_meetup_mention = format!(
-        r"^{bot_mention}\s+link[ -]?meetup\s*$",
+        r"^{bot_mention}\s+(?i)link[ -]?meetup\s*$",
         bot_mention = bot_mention
     );
     let link_meetup_bot_admin = format!(
-        r"link[ -]?meetup\s+{mention_pattern}\s+(?P<meetupid>[0-9]+)",
+        r"(?i)link[ -]?meetup\s+{mention_pattern}\s+(?P<meetupid>[0-9]+)",
         mention_pattern = MENTION_PATTERN
     );
     let link_meetup_bot_admin_dm = format!(
@@ -92,7 +92,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         link_meetup_bot_admin = link_meetup_bot_admin
     );
-    let unlink_meetup = r"unlink[ -]?meetup";
+    let unlink_meetup = r"(?i)unlink[ -]?meetup";
     let unlink_meetup_dm = format!(r"^{unlink_meetup}\s*$", unlink_meetup = unlink_meetup);
     let unlink_meetup_mention = format!(
         r"^{bot_mention}\s+{unlink_meetup}\s*$",
@@ -100,7 +100,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         unlink_meetup = unlink_meetup
     );
     let unlink_meetup_bot_admin = format!(
-        r"unlink[ -]?meetup\s+{mention_pattern}",
+        r"(?i)unlink[ -]?meetup\s+{mention_pattern}",
         mention_pattern = MENTION_PATTERN
     );
     let unlink_meetup_bot_admin_dm = format!(
@@ -113,30 +113,30 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         unlink_meetup_bot_admin = unlink_meetup_bot_admin
     );
     let sync_meetup_mention = format!(
-        r"^{bot_mention}\s+sync\s+meetup\s*$",
+        r"^{bot_mention}\s+(?i)sync\s+meetup\s*$",
         bot_mention = bot_mention
     );
     let sync_discord_mention = format!(
-        r"^{bot_mention}\s+sync\s+discord\s*$",
+        r"^{bot_mention}\s+(?i)sync\s+discord\s*$",
         bot_mention = bot_mention
     );
     let add_user_mention = format!(
-        r"^{bot_mention}\s+add\s+{mention_pattern}\s*$",
+        r"^{bot_mention}\s+(?i)add\s+{mention_pattern}\s*$",
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
     let add_host_bot_admin_mention = format!(
-        r"^{bot_mention}\s+add\s+host\s+{mention_pattern}\s*$",
+        r"^{bot_mention}\s+(?i)add\s+host\s+{mention_pattern}\s*$",
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
     let remove_user_mention = format!(
-        r"^{bot_mention}\s+remove\s+{mention_pattern}\s*$",
+        r"^{bot_mention}\s+(?i)remove\s+{mention_pattern}\s*$",
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
     let remove_host_bot_admin_mention = format!(
-        r"^{bot_mention}\s+remove\s+host\s+{mention_pattern}\s*$",
+        r"^{bot_mention}\s+(?i)remove\s+host\s+{mention_pattern}\s*$",
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
