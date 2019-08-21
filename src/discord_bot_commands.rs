@@ -27,7 +27,7 @@ pub struct Regexes {
     pub stop_bot_admin_dm: Regex,
     pub stop_bot_admin_mention: Regex,
     pub send_expiration_reminder_bot_admin_mention: Regex,
-    pub close_channel_host_mention: Regex,
+    pub end_adventure_host_mention: Regex,
 }
 
 impl Regexes {
@@ -147,8 +147,8 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         r"^{bot_mention}\s+(?i)remind\s+expiration\s*$",
         bot_mention = bot_mention
     );
-    let close_channel_host_mention = format!(
-        r"^{bot_mention}\s+(?i)close\s+channel\s*$",
+    let end_adventure_host_mention = format!(
+        r"^{bot_mention}\s+(?i)end\s+adventure\s*$",
         bot_mention = bot_mention
     );
     Regexes {
@@ -174,7 +174,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
             send_expiration_reminder_bot_admin_mention.as_str(),
         )
         .unwrap(),
-        close_channel_host_mention: Regex::new(close_channel_host_mention.as_str()).unwrap(),
+        end_adventure_host_mention: Regex::new(end_adventure_host_mention.as_str()).unwrap(),
     }
 }
 
@@ -458,7 +458,7 @@ impl crate::discord_bot::Handler {
         }
     }
 
-    pub fn close_channel(
+    pub fn end_adventure(
         ctx: &Context,
         msg: &Message,
         redis_client: redis::Client,

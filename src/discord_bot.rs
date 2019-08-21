@@ -535,15 +535,15 @@ impl EventHandler for Handler {
                 eprintln!("Error in remove host: {}", err);
                 let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
             }
-        } else if regexes.close_channel_host_mention.is_match(&msg.content) {
+        } else if regexes.end_adventure_host_mention.is_match(&msg.content) {
             let redis_client = {
                 let data = ctx.data.read();
                 data.get::<RedisClientKey>()
                     .expect("Redis client was not set")
                     .clone()
             };
-            if let Err(err) = Self::close_channel(&ctx, &msg, redis_client) {
-                eprintln!("Error in close_channel: {}", err);
+            if let Err(err) = Self::end_adventure(&ctx, &msg, redis_client) {
+                eprintln!("Error in end_adventure: {}", err);
                 let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
             }
         } else if msg.content == "test" {

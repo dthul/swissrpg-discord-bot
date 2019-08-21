@@ -56,7 +56,7 @@ pub fn END_OF_ADVENTURE_MESSAGE(bot_id: u64) -> String {
         "I hope everyone @here had fun rolling dice!
 It looks like your adventure is coming to an end and so will this channel.
 As soon as you are ready, the host can close this channel by typing here:
-***<@{bot_id}> close channel***
+***<@{bot_id}> end adventure***
 This will mark the channel for closure in the next 24 hours.
 In case you want to continue your adventure instead, please schedule the next session(s) \
 on Meetup and I will extend the lifetime of this channel.",
