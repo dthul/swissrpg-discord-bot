@@ -236,7 +236,9 @@ impl EventHandler for Handler {
             }
         } else if regexes.unlink_meetup(is_dm).is_match(&msg.content) {
             let user_id = msg.author.id.0;
-            match Self::unlink_meetup(&ctx, &msg, /*is_bot_admin_command*/ false, user_id) {
+            match Self::unlink_meetup(
+                &ctx, &msg, /*is_bot_admin_command*/ false, user_id, bot_id.0,
+            ) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
                     let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
@@ -259,7 +261,9 @@ impl EventHandler for Handler {
                     return;
                 }
             };
-            match Self::unlink_meetup(&ctx, &msg, /*is_bot_admin_command*/ true, discord_id) {
+            match Self::unlink_meetup(
+                &ctx, &msg, /*is_bot_admin_command*/ true, discord_id, bot_id.0,
+            ) {
                 Err(err) => {
                     eprintln!("Error: {}", err);
                     let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
@@ -553,7 +557,9 @@ impl EventHandler for Handler {
                 println!("Sent welcome message!");
             }
         } else {
-            let _ = msg.channel_id.say(&ctx.http, strings::INVALID_COMMAND);
+            let _ = msg
+                .channel_id
+                .say(&ctx.http, strings::INVALID_COMMAND(bot_id.0));
         }
     }
 
