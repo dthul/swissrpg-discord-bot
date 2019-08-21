@@ -1,6 +1,6 @@
 use crate::strings;
 use redis::Commands;
-use serenity::model::id::{ChannelId, UserId};
+use serenity::model::id::{ChannelId, RoleId, UserId};
 use simple_error::SimpleError;
 
 // Sends channel deletion reminders to expired Discord channels
@@ -288,10 +288,51 @@ fn delete_marked_channel(
         ChannelId(channel_id).delete(&discord_api.http)?;
         // Delete the channel deletion request from Redis
         let _: () = con.del(&redis_channel_deletion_key)?;
+        // Delete the associated roles
+        let host_role: Option<u64> =
+            con.get(format!("discord_channel:{}:discord_host_role", channel_id))?;
+        if let Some(host_role) = host_role {
+            delete_role(RoleId(host_role), con, discord_api)?;
+        }
+        let player_role: Option<u64> =
+            con.get(format!("discord_channel:{}:discord_role", channel_id))?;
+        if let Some(player_role) = player_role {
+            delete_role(RoleId(player_role), con, discord_api)?;
+        }
         // Let the vacuum task handle all other stale Redis keys
-        // and things like the associated roles
         Ok(DeletionStatus::Deleted)
     } else {
         Ok(DeletionStatus::AlreadyDeleted)
     }
+}
+
+fn delete_role(
+    role_id: RoleId,
+    con: &mut redis::Connection,
+    discord_api: &crate::discord_bot::CacheAndHttp,
+) -> Result<(), crate::BoxedError> {
+    // Try to delete the role
+    if let Err(err) = crate::discord_sync::GUILD_ID.delete_role(&discord_api.http, role_id) {
+        // If something went wrong, check whether we should record this role as orphaned
+        let role_is_orphaned = if let serenity::Error::Http(http_err) = &err {
+            if let serenity::http::HttpError::UnsuccessfulRequest(response) = http_err.as_ref() {
+                if response.status_code == reqwest::StatusCode::NOT_FOUND {
+                    false
+                } else {
+                    true
+                }
+            } else {
+                true
+            }
+        } else {
+            true
+        };
+        if role_is_orphaned {
+            // Try to add this role to Redis
+            let _: () = con.sadd("orphaned_roles", role_id.0)?;
+        }
+        // Return the error to the caller
+        return Err(err.into());
+    }
+    Ok(())
 }
