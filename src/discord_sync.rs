@@ -261,18 +261,18 @@ fn sync_event_series(
     )?;
     // Step 5: Sync RSVP'd users
     sync_user_role_assignments(
-        &discord_guest_ids,
-        channel_id,
-        channel_role_id,
-        /*is_host_role*/ false,
-        redis_connection,
-        discord_api,
-    )?;
-    sync_user_role_assignments(
         &discord_host_ids,
         channel_id,
         channel_host_role_id,
         /*is_host_role*/ true,
+        redis_connection,
+        discord_api,
+    )?;
+    sync_user_role_assignments(
+        &discord_guest_ids,
+        channel_id,
+        channel_role_id,
+        /*is_host_role*/ false,
         redis_connection,
         discord_api,
     )?;
