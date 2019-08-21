@@ -161,12 +161,12 @@ pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[u64]) -> String {
     );
     if discord_user_ids.len() > 1 {
         format!(
-            "Welcome {}! This is your channel as host of the upcoming adventure.",
+            "{} are the Game Masters of this channel! All hail to you!",
             mentions
         )
     } else {
         format!(
-            "Welcome {}! This is your channel as hosts of the upcoming adventure.",
+            "{} is the Game Master of this channel! All hail to thee!",
             mentions
         )
     }
