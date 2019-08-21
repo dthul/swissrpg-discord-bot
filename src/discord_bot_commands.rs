@@ -393,6 +393,7 @@ impl crate::discord_bot::Handler {
         msg: &Message,
         is_bot_admin_command: bool,
         user_id: u64,
+        bot_id: u64,
     ) -> crate::Result<()> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
         let redis_connection_mutex = {
@@ -410,9 +411,9 @@ impl crate::discord_bot::Handler {
                 let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
                 redis_connection.del(&[&redis_key_d2m, &redis_key_m2d])?;
                 let message = if is_bot_admin_command {
-                    Cow::Owned(format!("Unlinked <@{}>'s Meetup account", user_id))
+                    format!("Unlinked <@{}>'s Meetup account", user_id)
                 } else {
-                    Cow::Borrowed(strings::MEETUP_UNLINK_SUCCESS)
+                    strings::MEETUP_UNLINK_SUCCESS(bot_id)
                 };
                 let _ = msg.channel_id.say(&ctx.http, message);
             }
