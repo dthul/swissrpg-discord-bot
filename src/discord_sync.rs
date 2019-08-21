@@ -12,12 +12,14 @@ use white_rabbit;
 // Test server:
 pub const GUILD_ID: GuildId = GuildId(601070848446824509);
 pub const ORGANIZER_ID: RoleId = RoleId(606829075226689536);
+pub const PUBLISHER_ID: RoleId = RoleId(613769364990066699);
 pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
 pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561808429056042));
 pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561949651402772));
 // SwissRPG:
 // pub const GUILD_ID: GuildId = GuildId(401856510709202945);
 // pub const ORGANIZER_ID: RoleId = RoleId(539447673988841492);
+// pub const PUBLISHER_ID: RoleId = RoleId(611290948395073585);
 // pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
 // pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(562607292176924694));
 // pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(414074722259828736));
@@ -250,9 +252,11 @@ fn sync_event_series(
     // Step 4: Sync the channel permissions
     sync_channel_permissions(
         channel_id,
+        series_id,
         channel_role_id,
         channel_host_role_id,
         bot_id,
+        redis_connection,
         discord_api,
     )?;
     // Step 5: Sync RSVP'd users
@@ -632,18 +636,28 @@ fn sync_channel_impl(
 // that the channel might have.
 fn sync_channel_permissions(
     channel_id: ChannelId,
+    series_id: &str,
     role_id: RoleId,
     host_role_id: RoleId,
     bot_id: u64,
+    redis_connection: &mut redis::Connection,
     discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
     // The @everyone role has the same id as the guild
     let role_everyone_id = RoleId(GUILD_ID.0);
     // Make this channel private.
     // This is achieved by denying @everyone the READ_MESSAGES permission
-    // but allowing the now role the READ_MESSAGES permission.
+    // but allowing the new role the READ_MESSAGES permission.
     // see: https://support.discordapp.com/hc/en-us/articles/206143877-How-do-I-set-up-a-Role-Exclusive-channel-
-    let permission_overwrites = [
+    let is_campaign = {
+        let redis_series_type_key = format!("event_series:{}:type", series_id);
+        let series_type: Option<String> = redis_connection.get(&redis_series_type_key)?;
+        match series_type.as_ref().map(String::as_str) {
+            Some("campaign") => true,
+            _ => false,
+        }
+    };
+    let mut permission_overwrites = vec![
         PermissionOverwrite {
             allow: Permissions::empty(),
             deny: Permissions::READ_MESSAGES,
@@ -667,6 +681,14 @@ fn sync_channel_permissions(
             kind: PermissionOverwriteType::Role(host_role_id),
         },
     ];
+    if is_campaign {
+        // Grant the publisher role access to campaign channels
+        permission_overwrites.push(PermissionOverwrite {
+            allow: Permissions::READ_MESSAGES | Permissions::MENTION_EVERYONE,
+            deny: Permissions::empty(),
+            kind: PermissionOverwriteType::Role(PUBLISHER_ID),
+        });
+    }
     for permission_overwrite in &permission_overwrites {
         channel_id.create_permission(discord_api.http(), permission_overwrite)?;
     }
