@@ -134,6 +134,19 @@ fn sync_event_series(
             }
         })
         .collect();
+    // Upgrade this event series to a campaign if there is more than one event
+    let redis_series_type_key = format!("event_series:{}:type", series_id);
+    let current_series_type: Option<String> = redis_connection.get(&redis_series_type_key)?;
+    if event_ids.len() > 1 {
+        let needs_update = if let Some(current_series_type) = current_series_type {
+            current_series_type != "campaign"
+        } else {
+            true
+        };
+        if needs_update {
+            let _: () = redis_connection.set(&redis_series_type_key, "campaign")?;
+        }
+    }
     // Filter past events
     let now = chrono::Utc::now();
     let mut upcoming: Vec<_> = events
