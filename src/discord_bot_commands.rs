@@ -21,9 +21,9 @@ pub struct Regexes {
     pub sync_meetup_mention: Regex,
     pub sync_discord_mention: Regex,
     pub add_user_mention: Regex,
-    pub add_host_mention: Regex,
+    pub add_host_bot_admin_mention: Regex,
     pub remove_user_mention: Regex,
-    pub remove_host_mention: Regex,
+    pub remove_host_bot_admin_mention: Regex,
     pub stop_bot_admin_dm: Regex,
     pub stop_bot_admin_mention: Regex,
     pub send_expiration_reminder_bot_admin_mention: Regex,
@@ -125,7 +125,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
-    let add_host_mention = format!(
+    let add_host_bot_admin_mention = format!(
         r"^{bot_mention}\s+add\s+host\s+{mention_pattern}\s*$",
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
@@ -135,7 +135,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
-    let remove_host_mention = format!(
+    let remove_host_bot_admin_mention = format!(
         r"^{bot_mention}\s+remove\s+host\s+{mention_pattern}\s*$",
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
@@ -165,9 +165,9 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         sync_meetup_mention: Regex::new(sync_meetup_mention.as_str()).unwrap(),
         sync_discord_mention: Regex::new(sync_discord_mention.as_str()).unwrap(),
         add_user_mention: Regex::new(add_user_mention.as_str()).unwrap(),
-        add_host_mention: Regex::new(add_host_mention.as_str()).unwrap(),
+        add_host_bot_admin_mention: Regex::new(add_host_bot_admin_mention.as_str()).unwrap(),
         remove_user_mention: Regex::new(remove_user_mention.as_str()).unwrap(),
-        remove_host_mention: Regex::new(remove_host_mention.as_str()).unwrap(),
+        remove_host_bot_admin_mention: Regex::new(remove_host_bot_admin_mention.as_str()).unwrap(),
         stop_bot_admin_dm: Regex::new(stop_bot_admin_dm).unwrap(),
         stop_bot_admin_mention: Regex::new(stop_bot_admin_mention.as_str()).unwrap(),
         send_expiration_reminder_bot_admin_mention: Regex::new(
@@ -569,8 +569,14 @@ impl crate::discord_bot::Handler {
             .author
             .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
+        // Only bot admins and channel hosts can add/remove users
         if !is_bot_admin && !is_host {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
+            return Ok(());
+        }
+        // Only bot admins can add/remove hosts
+        if !is_bot_admin && as_host {
+            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
             return Ok(());
         }
         if add {

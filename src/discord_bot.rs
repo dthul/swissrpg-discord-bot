@@ -442,7 +442,7 @@ impl EventHandler for Handler {
                 eprintln!("Error in add user: {}", err);
                 let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
             }
-        } else if let Some(captures) = regexes.add_host_mention.captures(&msg.content) {
+        } else if let Some(captures) = regexes.add_host_bot_admin_mention.captures(&msg.content) {
             // Get the Discord ID of the user that is supposed to
             // be added to the channel
             let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -504,7 +504,8 @@ impl EventHandler for Handler {
                 eprintln!("Error in remove user: {}", err);
                 let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
             }
-        } else if let Some(captures) = regexes.remove_host_mention.captures(&msg.content) {
+        } else if let Some(captures) = regexes.remove_host_bot_admin_mention.captures(&msg.content)
+        {
             // Get the Discord ID of the host that is supposed to
             // be removed from this channel
             let discord_id = captures.name("mention_id").unwrap().as_str();
