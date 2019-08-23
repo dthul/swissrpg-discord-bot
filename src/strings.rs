@@ -62,12 +62,12 @@ Reply with ***link meetup*** here to get the process started.";
 #[allow(non_snake_case)]
 pub fn END_OF_ADVENTURE_MESSAGE(bot_id: u64) -> String {
     format!(
-        "I hope everyone @here had fun on this adventure!
-Now that your adventure is complete, this channel will be closed soon.
-As soon as you are ready, the GM can close this channel by typing here:
+        "I hope everyone @here had fun on this adventure.
+Now that your adventure is over, it's time to close this channel.
+Can the GM please confirm this by typing here:
 ***<@{bot_id}> end adventure***
-This will set the channel for closure in the next 24 hours, just enough time to say thanks and goodbye.
-If you are not quite done with this adventure, please schedule the next session(s) \
+This will set the channel for closure in the next 24 hours, which should be just enough time to say thanks and goodbye.
+If you are not quite done with this adventure, please contact an @organiser to schedule another session \
 on Meetup and I will extend the lifetime of this channel.",
         bot_id = bot_id
     )
@@ -83,13 +83,12 @@ pub fn MEETUP_LINKING_MESSAGE(linking_url: &str) -> String {
         "Let's get you hooked up :thumbsup:\n\
         \n\
         ***Important note:*** If you are on mobile, please copy and paste the link \
-        into your browser rather than clicking it here and make sure you are \
-        logged in to Meetup before you do.\n\
+        into your browser rather than clicking it here.\n\
         \n\
         Use this link to connect your Meetup profile:\n\
         {}\n\
         ***This is a private, ephemeral, one-time use link and meant just for you.***\n\
-        Don't share it with others or they might link your Discord account to their Meetup profile.",
+        Don't share it with anyone or bad things can happen (to you, I'll be fine).",
         linking_url
     )
 }
@@ -151,7 +150,7 @@ pub const CHANNEL_NOT_BOT_CONTROLLED: &'static str =
 pub const CHANNEL_NOT_YET_CLOSEABLE: &'static str = "Too soon mate. Please wait for my request for deletion first. This is to avoid accidental deletion of channels :grimacing:";
 
 pub const CHANNEL_MARKED_FOR_CLOSING: &'static str =
-    "Roger that. I've marked this channel the be closed in the next 24 hours.\n\
+    "Roger that. I've marked this channel to be closed in the next 24 hours.\n\
      Thanks for playing and hope to see you at another game soon.";
 
 pub const CHANNEL_ALREADY_MARKED_FOR_CLOSING: &'static str =
