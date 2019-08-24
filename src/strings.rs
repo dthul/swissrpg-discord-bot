@@ -57,7 +57,7 @@ the adventure's channel. To do that, please link your Meetup profile to your \
 Discord profile. Let’s try this now shall we?
 Reply with ***link meetup*** here to get the process started.";
 
-// ** End of one-shot adventure **
+// ** End of one-shot **
 
 #[allow(non_snake_case)]
 pub fn END_OF_ADVENTURE_MESSAGE(bot_id: u64) -> String {
@@ -73,7 +73,22 @@ on Meetup and I will extend the lifetime of this channel.",
     )
 }
 
-// ** End of campaign adventure - TBD **
+// ** End of campaign **
+
+#[allow(non_snake_case)]
+pub fn END_OF_CAMPAIGN_MESSAGE(bot_id: u64) -> String {
+    format!(
+        "I hope everyone @here had fun at the last session!
+It's time to book your next session. As soon as you have it scheduled, \
+please write the date in this channel and tag `@publisher (campaigns)`. \
+I'll remind you in a few days until your new session is published.
+
+If your adventure is over, the Game Master can inform me of this by typing here:
+***<@{bot_id}> end adventure***
+This will set the channel for closure in the next 24 hours, just enough to say thanks and goodbye.",
+        bot_id = bot_id
+    )
+}
 
 // ** Meetup linking **
 

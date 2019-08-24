@@ -119,6 +119,15 @@ fn update_series_channel_expiration(
         .collect();
     // Sort by date
     events.sort_unstable_by_key(|pair| pair.1);
+    // Check if this is a one-shot or a campaign series
+    let is_campaign = {
+        let redis_series_type_key = format!("event_series:{}:type", series_id);
+        let series_type: Option<String> = con.get(&redis_series_type_key)?;
+        match series_type.as_ref().map(String::as_str) {
+            Some("campaign") => true,
+            _ => false,
+        }
+    };
     // The last element in this vector will be the last event in the series
     if let Some(last_event) = events.last() {
         let last_event_id = last_event.0.clone();
@@ -145,10 +154,14 @@ fn update_series_channel_expiration(
                 },
                 None => None,
             };
-        let new_expiration_time = last_event_time + chrono::Duration::days(1);
+        let new_expiration_time = if is_campaign {
+            last_event_time + chrono::Duration::days(3)
+        } else {
+            last_event_time + chrono::Duration::days(1)
+        };
         let (new_expiration_time, needs_update) = match current_expiration_time {
             Some(current_expiration_time) => {
-                if current_expiration_time > new_expiration_time {
+                if current_expiration_time >= new_expiration_time {
                     (current_expiration_time, false)
                 } else {
                     (new_expiration_time, true)
@@ -192,21 +205,42 @@ fn send_channel_expiration_reminder(
         .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
         .transpose()?
         .map(|t| t.with_timezone(&chrono::Utc));
+    // Check if this is a one-shot or a campaign series
+    let is_campaign = {
+        let series_id: String = con.get(format!("discord_channel:{}:event_series", channel_id))?;
+        let redis_series_type_key = format!("event_series:{}:type", &series_id);
+        let series_type: Option<String> = con.get(&redis_series_type_key)?;
+        match series_type.as_ref().map(String::as_str) {
+            Some("campaign") => true,
+            _ => false,
+        }
+    };
     if let Some(expiration_time) = expiration_time {
         if expiration_time > chrono::Utc::now() {
             // The expiration time hasn't come yet
             return Ok(());
         }
         if let Some(last_reminder_time) = last_reminder_time {
-            if last_reminder_time + chrono::Duration::hours(46) > chrono::Utc::now() {
-                // We already sent a reminder in the last two days
+            // Reminders will be sent with an interval of two days for
+            // one-shots and four days for campaign channels
+            let reminder_interval = if is_campaign {
+                chrono::Duration::days(4) - chrono::Duration::hours(2)
+            } else {
+                chrono::Duration::days(2) - chrono::Duration::hours(2)
+            };
+            if last_reminder_time + reminder_interval > chrono::Utc::now() {
+                // We already sent a reminder recently
                 return Ok(());
             }
         }
         // Send a reminder and update the last reminder time
         println!("Reminding channel {} of its expiration", channel_id);
         ChannelId(channel_id).send_message(&discord_api.http, |message_builder| {
-            message_builder.content(strings::END_OF_ADVENTURE_MESSAGE(bot_id))
+            if is_campaign {
+                message_builder.content(strings::END_OF_CAMPAIGN_MESSAGE(bot_id))
+            } else {
+                message_builder.content(strings::END_OF_ADVENTURE_MESSAGE(bot_id))
+            }
         })?;
         let last_reminder_time = chrono::Utc::now().to_rfc3339();
         con.set(&redis_channel_reminder_time, last_reminder_time)?;
