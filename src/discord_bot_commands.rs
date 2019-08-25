@@ -2,7 +2,7 @@ use crate::error::BoxedError;
 use crate::strings;
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
-use serenity::{model::channel::Message, model::user::User, prelude::*};
+use serenity::{model::channel::Message, model::id::UserId, model::user::User, prelude::*};
 use simple_error::SimpleError;
 use std::borrow::Cow;
 
@@ -28,6 +28,8 @@ pub struct Regexes {
     pub stop_bot_admin_mention: Regex,
     pub send_expiration_reminder_bot_admin_mention: Regex,
     pub end_adventure_host_mention: Regex,
+    pub help_dm: Regex,
+    pub help_mention: Regex,
 }
 
 impl Regexes {
@@ -68,6 +70,14 @@ impl Regexes {
             &self.stop_bot_admin_dm
         } else {
             &self.stop_bot_admin_mention
+        }
+    }
+
+    pub fn help(&self, is_dm: bool) -> &Regex {
+        if is_dm {
+            &self.help_dm
+        } else {
+            &self.help_mention
         }
     }
 }
@@ -151,6 +161,8 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         r"^{bot_mention}\s+(?i)end\s+adventure\s*$",
         bot_mention = bot_mention
     );
+    let help_dm = r"^(?i)help\s*$";
+    let help_mention = format!(r"^{bot_mention}\s+(?i)help\s*$", bot_mention = bot_mention);
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -175,6 +187,8 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         )
         .unwrap(),
         end_adventure_host_mention: Regex::new(end_adventure_host_mention.as_str()).unwrap(),
+        help_dm: Regex::new(help_dm).unwrap(),
+        help_mention: Regex::new(help_mention.as_str()).unwrap(),
     }
 }
 
@@ -674,6 +688,47 @@ impl crate::discord_bot::Handler {
                         .description(crate::strings::WELCOME_MESSAGE_PART2_EMBED_CONTENT)
                 })
         });
+    }
+
+    pub fn send_help_message(ctx: &Context, msg: &Message, bot_id: UserId) {
+        let is_bot_admin = msg
+            .author
+            .has_role(
+                ctx,
+                crate::discord_sync::GUILD_ID,
+                crate::discord_sync::BOT_ADMIN_ID,
+            )
+            .unwrap_or(false);
+        let dm = msg.author.direct_message(ctx, |message_builder| {
+            let mb = message_builder
+                .content(crate::strings::HELP_MESSAGE_INTRO(bot_id.0))
+                .embed(|embed_builder| {
+                    embed_builder
+                        .colour(serenity::utils::Colour::BLUE)
+                        .title(crate::strings::HELP_MESSAGE_PLAYER_EMBED_TITLE)
+                        .description(crate::strings::HELP_MESSAGE_PLAYER_EMBED_CONTENT)
+                })
+                .embed(|embed_builder| {
+                    embed_builder
+                        .colour(serenity::utils::Colour::DARK_GREEN)
+                        .title(crate::strings::HELP_MESSAGE_GM_EMBED_TITLE)
+                        .description(crate::strings::HELP_MESSAGE_GM_EMBED_CONTENT(bot_id.0))
+                });
+            if is_bot_admin {
+                mb.embed(|embed_builder| {
+                    embed_builder
+                        .colour(serenity::utils::Colour::from_rgb(255, 23, 68))
+                        .title(crate::strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
+                        .description(crate::strings::HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id.0))
+                })
+            } else {
+                mb
+            }
+        });
+        if let Err(err) = dm {
+            eprintln!("Could not send help message as a DM: {}", err);
+        }
+        let _ = msg.react(ctx, "\u{2705}");
     }
 }
 

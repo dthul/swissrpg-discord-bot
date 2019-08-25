@@ -551,6 +551,8 @@ impl EventHandler for Handler {
                 eprintln!("Error in end_adventure: {}", err);
                 let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
             }
+        } else if regexes.help(is_dm).is_match(&msg.content) {
+            Self::send_help_message(&ctx, &msg, bot_id);
         } else if msg.content == "test" {
             if let Some(user) = UserId(456545153923022849).to_user_cached(&ctx) {
                 Self::send_welcome_message(&ctx, &user.read());

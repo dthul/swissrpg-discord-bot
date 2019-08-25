@@ -19,6 +19,66 @@ pub fn INVALID_COMMAND(bot_id: u64) -> String {
     )
 }
 
+#[allow(non_snake_case)]
+pub fn HELP_MESSAGE_INTRO(bot_id: u64) -> String {
+    format!(
+        "**Help Response**\n\
+         \n\
+         Of course, I'm happy to serve (because I've been programmed to). \
+         Here are the commands I understand.\n\
+         \n\
+         ```Note: Unless specified, you can type all these commands in this private chat. \
+         Any commands you type in a channel should start with the mention of my name \
+         <@{bot_id}>, but be mindful not to spam the public channels please.```",
+        bot_id = bot_id
+    )
+}
+
+pub const HELP_MESSAGE_ADMIN_EMBED_TITLE: &'static str = "**Admin commands**";
+
+#[allow(non_snake_case)]
+pub fn HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id: u64) -> String {
+    format!(
+        ":white_small_square: **link meetup `@some-user` `meetup-ID`** - \
+         link another user's Meetup and Discord profile.\n\
+         :white_small_square: **link meetup `@some-user`** - \
+         unlink another user's Meetup and Discord profile.\n\
+         :white_small_square: **<@{bot_id}> add host `@some-user`** - \
+         _(in game channel)_ makes a user an additional Host. _(Desktop only)_\n\
+         :white_small_square: **<@{bot_id}> remove host `@some-user`** - \
+         _(in game channel)_ makes a user no longer a Host.\n\
+         :white_small_square: **<@{bot_id}> add `@some-user`** - \
+         _(in game channel)_ adds a user to the channel. _(Desktop only)_",
+        bot_id = bot_id
+    )
+}
+
+pub const HELP_MESSAGE_GM_EMBED_TITLE: &'static str =
+    "**Game Master commands** _(use in game channel)_";
+
+#[allow(non_snake_case)]
+pub fn HELP_MESSAGE_GM_EMBED_CONTENT(bot_id: u64) -> String {
+    format!(
+        ":white_small_square: **<@{bot_id}> remove `@some-user`** - \
+         removes a user from the channel.\n\
+         :white_small_square: **<@{bot_id}> end adventure** - \
+         sets the channel for closure at the end of an adventure. The channel \
+         won't be deleted immediately but within 24 hours.",
+        bot_id = bot_id
+    )
+}
+
+pub const HELP_MESSAGE_PLAYER_EMBED_TITLE: &'static str = "**Player commands**";
+
+pub const HELP_MESSAGE_PLAYER_EMBED_CONTENT: &'static str =
+    ":white_small_square: **help** - \
+     do I really need to explain this one?\n\
+     :white_small_square: **link meetup** - \
+     starts the process to link your Meetup and Discord profiles. \
+     If you haven't yet, you should really do that now.\n\
+     :white_small_square: **unlink meetup** - \
+     unlinks your Meetup and Discord profiles.";
+
 // ** Welcome messages **
 
 pub const WELCOME_MESSAGE_PART1: &'static str =
