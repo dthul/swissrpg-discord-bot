@@ -7,7 +7,8 @@ use serde::de::Error as _;
 use serde::Deserialize;
 
 const BASE_URL: &'static str = "https://api.meetup.com";
-pub const URLNAMES: [&'static str; 2] = ["SwissRPG-Zurich", "SwissRPG-Central"];
+pub const URLNAMES: [&'static str; 3] =
+    ["SwissRPG-Zurich", "SwissRPG-Central", "SwissRPG-Romandie"];
 
 #[derive(Debug, Clone)]
 pub struct Client {
