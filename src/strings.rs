@@ -22,14 +22,12 @@ pub fn INVALID_COMMAND(bot_id: u64) -> String {
 #[allow(non_snake_case)]
 pub fn HELP_MESSAGE_INTRO(bot_id: u64) -> String {
     format!(
-        "**Help Response**\n\
-         \n\
-         Of course, I'm happy to serve (because I've been programmed to). \
+        "Of course, I'm happy to serve (because I've been programmed to). \
          Here are the commands I understand.\n\
          \n\
-         ```Note: Unless specified, you can type all these commands in this private chat. \
+         ***Note:*** *Unless specified, you can type all these commands in this private chat. \
          Any commands you type in a channel should start with the mention of my name \
-         <@{bot_id}>, but be mindful not to spam the public channels please.```",
+         <@{bot_id}>, but be mindful not to spam the public channels please.*",
         bot_id = bot_id
     )
 }

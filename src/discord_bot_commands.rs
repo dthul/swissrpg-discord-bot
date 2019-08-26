@@ -699,33 +699,41 @@ impl crate::discord_bot::Handler {
                 crate::discord_sync::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
-        let dm = msg.author.direct_message(ctx, |message_builder| {
-            let mb = message_builder
-                .content(crate::strings::HELP_MESSAGE_INTRO(bot_id.0))
-                .embed(|embed_builder| {
-                    embed_builder
-                        .colour(serenity::utils::Colour::BLUE)
-                        .title(crate::strings::HELP_MESSAGE_PLAYER_EMBED_TITLE)
-                        .description(crate::strings::HELP_MESSAGE_PLAYER_EMBED_CONTENT)
+        let mut dm_result = msg
+            .author
+            .direct_message(ctx, |message_builder| {
+                message_builder
+                    .content(crate::strings::HELP_MESSAGE_INTRO(bot_id.0))
+                    .embed(|embed_builder| {
+                        embed_builder
+                            .colour(serenity::utils::Colour::BLUE)
+                            .title(crate::strings::HELP_MESSAGE_PLAYER_EMBED_TITLE)
+                            .description(crate::strings::HELP_MESSAGE_PLAYER_EMBED_CONTENT)
+                    })
+            })
+            .and_then(|_| {
+                msg.author.direct_message(ctx, |message_builder| {
+                    message_builder.embed(|embed_builder| {
+                        embed_builder
+                            .colour(serenity::utils::Colour::DARK_GREEN)
+                            .title(crate::strings::HELP_MESSAGE_GM_EMBED_TITLE)
+                            .description(crate::strings::HELP_MESSAGE_GM_EMBED_CONTENT(bot_id.0))
+                    })
                 })
-                .embed(|embed_builder| {
-                    embed_builder
-                        .colour(serenity::utils::Colour::DARK_GREEN)
-                        .title(crate::strings::HELP_MESSAGE_GM_EMBED_TITLE)
-                        .description(crate::strings::HELP_MESSAGE_GM_EMBED_CONTENT(bot_id.0))
-                });
-            if is_bot_admin {
-                mb.embed(|embed_builder| {
-                    embed_builder
-                        .colour(serenity::utils::Colour::from_rgb(255, 23, 68))
-                        .title(crate::strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
-                        .description(crate::strings::HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id.0))
+            });
+        if is_bot_admin {
+            dm_result = dm_result.and_then(|_| {
+                msg.author.direct_message(ctx, |message_builder| {
+                    message_builder.embed(|embed_builder| {
+                        embed_builder
+                            .colour(serenity::utils::Colour::from_rgb(255, 23, 68))
+                            .title(crate::strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
+                            .description(crate::strings::HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id.0))
+                    })
                 })
-            } else {
-                mb
-            }
-        });
-        if let Err(err) = dm {
+            });
+        }
+        if let Err(err) = dm_result {
             eprintln!("Could not send help message as a DM: {}", err);
         }
         let _ = msg.react(ctx, "\u{2705}");
