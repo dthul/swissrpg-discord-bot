@@ -6,7 +6,7 @@ use serenity::{model::channel::Message, model::id::UserId, model::user::User, pr
 use simple_error::SimpleError;
 use std::borrow::Cow;
 
-const MENTION_PATTERN: &'static str = r"<@(?P<mention_id>[0-9]+)>";
+const MENTION_PATTERN: &'static str = r"<@!?(?P<mention_id>[0-9]+)>";
 
 pub struct Regexes {
     pub bot_mention: String,
