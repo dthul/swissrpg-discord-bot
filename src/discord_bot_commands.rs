@@ -645,13 +645,15 @@ impl crate::discord_bot::Handler {
                 discord_id,
                 channel_roles.host,
             ) {
+                Ok(()) => {
+                    let _ = msg.react(ctx, "\u{2705}");
+                }
                 Err(err) => {
                     eprintln!("Could not remove host channel role: {}", err);
                     let _ = msg
                         .channel_id
                         .say(&ctx.http, strings::CHANNEL_ROLE_REMOVE_ERROR);
                 }
-                _ => (),
             }
             if !as_host {
                 match ctx.http.remove_member_role(
