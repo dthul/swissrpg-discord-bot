@@ -669,7 +669,7 @@ fn sync_channel_permissions(
             kind: PermissionOverwriteType::Member(UserId(bot_id)),
         },
         PermissionOverwrite {
-            allow: Permissions::READ_MESSAGES | Permissions::MENTION_EVERYONE,
+            allow: Permissions::READ_MESSAGES,
             deny: Permissions::empty(),
             kind: PermissionOverwriteType::Role(role_id),
         },
