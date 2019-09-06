@@ -415,7 +415,7 @@ impl EventHandler for Handler {
             let _ = msg
                 .channel_id
                 .say(&ctx.http, "Started expiration reminder task");
-        } else if let Some(captures) = regexes.add_user_mention.captures(&msg.content) {
+        } else if let Some(captures) = regexes.add_user_bot_admin_mention.captures(&msg.content) {
             // Get the Discord ID of the user that is supposed to
             // be added to the channel
             let discord_id = captures.name("mention_id").unwrap().as_str();

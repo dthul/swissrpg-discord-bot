@@ -20,7 +20,7 @@ pub struct Regexes {
     pub unlink_meetup_bot_admin_mention: Regex,
     pub sync_meetup_mention: Regex,
     pub sync_discord_mention: Regex,
-    pub add_user_mention: Regex,
+    pub add_user_bot_admin_mention: Regex,
     pub add_host_bot_admin_mention: Regex,
     pub remove_user_mention: Regex,
     pub remove_host_bot_admin_mention: Regex,
@@ -130,7 +130,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         r"^{bot_mention}\s+(?i)sync\s+discord\s*$",
         bot_mention = bot_mention
     );
-    let add_user_mention = format!(
+    let add_user_bot_admin_mention = format!(
         r"^{bot_mention}\s+(?i)add\s+{mention_pattern}\s*$",
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
@@ -176,7 +176,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
             .unwrap(),
         sync_meetup_mention: Regex::new(sync_meetup_mention.as_str()).unwrap(),
         sync_discord_mention: Regex::new(sync_discord_mention.as_str()).unwrap(),
-        add_user_mention: Regex::new(add_user_mention.as_str()).unwrap(),
+        add_user_bot_admin_mention: Regex::new(add_user_bot_admin_mention.as_str()).unwrap(),
         add_host_bot_admin_mention: Regex::new(add_host_bot_admin_mention.as_str()).unwrap(),
         remove_user_mention: Regex::new(remove_user_mention.as_str()).unwrap(),
         remove_host_bot_admin_mention: Regex::new(remove_host_bot_admin_mention.as_str()).unwrap(),
@@ -591,6 +591,11 @@ impl crate::discord_bot::Handler {
         }
         // Only bot admins can add/remove hosts
         if !is_bot_admin && as_host {
+            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+            return Ok(());
+        }
+        // Only bot admins can add users
+        if !is_bot_admin && add {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
             return Ok(());
         }
