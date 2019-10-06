@@ -1,22 +1,25 @@
 use crate::strings;
-use futures::Future;
+use futures::future::TryFutureExt;
+use futures_util::lock::Mutex as AsyncMutex;
 use serenity::{
     model::{
-        channel::Channel, channel::Message, gateway::Ready, guild::Member, id::GuildId, id::UserId,
+        channel::{Channel, Message},
+        gateway::Ready,
+        guild::Member,
+        id::{GuildId, UserId},
     },
     prelude::*,
 };
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::prelude::*;
 
 pub fn create_discord_client(
     discord_token: &str,
     redis_client: redis::Client,
-    meetup_client: Arc<RwLock<Option<crate::meetup_api::Client>>>,
-    async_meetup_client: Arc<RwLock<Option<crate::meetup_api::AsyncClient>>>,
-    task_scheduler: Arc<Mutex<white_rabbit::Scheduler>>,
-    futures_spawner: futures::sync::mpsc::Sender<crate::meetup_sync::BoxedFuture<(), ()>>,
+    meetup_client: Arc<AsyncMutex<Option<crate::meetup_api::Client>>>,
+    async_meetup_client: Arc<AsyncMutex<Option<crate::meetup_api::AsyncClient>>>,
+    task_scheduler: Arc<AsyncMutex<white_rabbit::Scheduler>>,
+    futures_spawner: futures_channel::mpsc::Sender<crate::meetup_sync::BoxedFuture<()>>,
 ) -> crate::Result<Client> {
     let redis_connection = redis_client.get_connection()?;
 
@@ -74,12 +77,12 @@ impl TypeMapKey for RegexesKey {
 
 pub struct MeetupClientKey;
 impl TypeMapKey for MeetupClientKey {
-    type Value = Arc<RwLock<Option<crate::meetup_api::Client>>>;
+    type Value = Arc<AsyncMutex<Option<crate::meetup_api::Client>>>;
 }
 
 pub struct AsyncMeetupClientKey;
 impl TypeMapKey for AsyncMeetupClientKey {
-    type Value = Arc<RwLock<Option<crate::meetup_api::AsyncClient>>>;
+    type Value = Arc<AsyncMutex<Option<crate::meetup_api::AsyncClient>>>;
 }
 
 pub struct RedisClientKey;
@@ -89,12 +92,12 @@ impl TypeMapKey for RedisClientKey {
 
 pub struct TaskSchedulerKey;
 impl TypeMapKey for TaskSchedulerKey {
-    type Value = Arc<Mutex<white_rabbit::Scheduler>>;
+    type Value = Arc<AsyncMutex<white_rabbit::Scheduler>>;
 }
 
 pub struct FuturesSpawnerKey;
 impl TypeMapKey for FuturesSpawnerKey {
-    type Value = futures::sync::mpsc::Sender<crate::meetup_sync::BoxedFuture<(), ()>>;
+    type Value = futures_channel::mpsc::Sender<crate::meetup_sync::BoxedFuture<()>>;
 }
 
 #[derive(Clone)]
@@ -303,12 +306,11 @@ impl EventHandler for Handler {
             };
             let sync_task = Box::new(
                 crate::meetup_sync::sync_task(async_meetup_client, redis_client)
-                    .map_err(|err| {
+                    .unwrap_or_else(|err| {
                         eprintln!("Syncing task failed: {}", err);
-                        err
                     })
                     .timeout(Duration::from_secs(60))
-                    .map_err(|err| {
+                    .unwrap_or_else(|err| {
                         eprintln!("Syncing task timed out: {}", err);
                     }),
             );
@@ -321,9 +323,15 @@ impl EventHandler for Handler {
                     );
                 }
                 Err(err) => {
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, format!("Could not submit asynchronous Meetup synchronization task to the queue (full={}, disconnected={})", err.is_full(), err.is_disconnected()));
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        format!(
+                            "Could not submit asynchronous Meetup synchronization task to the \
+                             queue (full={}, disconnected={})",
+                            err.is_full(),
+                            err.is_disconnected()
+                        ),
+                    );
                 }
             }
         } else if regexes.sync_discord_mention.is_match(&msg.content) {
@@ -354,7 +362,8 @@ impl EventHandler for Handler {
                 (redis_client, bot_id, task_scheduler)
             };
             // Send the syncing task to the scheduler
-            task_scheduler.lock().add_task_datetime(
+            let mut task_scheduler_guard = crate::ASYNC_RUNTIME.block_on(task_scheduler.lock());
+            task_scheduler_guard.add_task_datetime(
                 white_rabbit::Utc::now(),
                 crate::discord_sync::create_sync_discord_task(
                     redis_client,
@@ -366,6 +375,7 @@ impl EventHandler for Handler {
                     /*recurring*/ false,
                 ),
             );
+            drop(task_scheduler_guard);
             let _ = msg
                 .channel_id
                 .say(&ctx.http, "Started Discord synchronization task");
@@ -400,7 +410,8 @@ impl EventHandler for Handler {
                 (redis_client, bot_id, task_scheduler)
             };
             // Send the syncing task to the scheduler
-            task_scheduler.lock().add_task_datetime(
+            let mut task_scheduler_guard = crate::ASYNC_RUNTIME.block_on(task_scheduler.lock());
+            task_scheduler_guard.add_task_datetime(
                 white_rabbit::Utc::now(),
                 crate::discord_end_of_game::create_end_of_game_task(
                     redis_client,
@@ -412,6 +423,7 @@ impl EventHandler for Handler {
                     /*recurring*/ false,
                 ),
             );
+            drop(task_scheduler_guard);
             let _ = msg
                 .channel_id
                 .say(&ctx.http, "Started expiration reminder task");

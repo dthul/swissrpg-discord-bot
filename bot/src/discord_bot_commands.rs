@@ -1,8 +1,11 @@
-use crate::error::BoxedError;
-use crate::strings;
+use crate::{error::BoxedError, strings};
+use futures_util::compat::Future01CompatExt;
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
-use serenity::{model::channel::Message, model::id::UserId, model::user::User, prelude::*};
+use serenity::{
+    model::{channel::Message, id::UserId, user::User},
+    prelude::*,
+};
 use simple_error::SimpleError;
 use std::borrow::Cow;
 
@@ -195,9 +198,12 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
 impl crate::discord_bot::Handler {
     pub fn link_meetup(ctx: &Context, msg: &Message, user_id: u64) -> crate::Result<()> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
-        let (redis_connection_mutex, meetup_client_mutex, bot_id) = {
+        let (redis_client, redis_connection_mutex, meetup_client_mutex, bot_id) = {
             let data = ctx.data.read();
             (
+                data.get::<crate::discord_bot::RedisClientKey>()
+                    .ok_or_else(|| SimpleError::new("Redis client was not set"))?
+                    .clone(),
                 data.get::<crate::discord_bot::RedisConnectionKey>()
                     .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
                     .clone(),
@@ -216,7 +222,8 @@ impl crate::discord_bot::Handler {
             redis_connection.get(&redis_key_d2m)?
         };
         if let Some(linked_meetup_id) = linked_meetup_id {
-            match *meetup_client_mutex.read() {
+            let meetup_client_guard = crate::ASYNC_RUNTIME.block_on(meetup_client_mutex.lock());
+            match *meetup_client_guard {
                 Some(ref meetup_client) => {
                     match meetup_client.get_member_profile(Some(linked_meetup_id))? {
                         Some(user) => {
@@ -245,8 +252,11 @@ impl crate::discord_bot::Handler {
             }
             return Ok(());
         }
-        let url =
-            crate::meetup_oauth2::generate_meetup_linking_link(&redis_connection_mutex, user_id)?;
+        // TODO: creates a new Redis connection. Not optimal...
+        let (_, url) = crate::ASYNC_RUNTIME.block_on(async {
+            let redis_connection = redis_client.get_async_connection().compat().await?;
+            crate::meetup_oauth2::generate_meetup_linking_link(redis_connection, user_id).await
+        })?;
         let dm = msg.author.direct_message(ctx, |message| {
             message.content(strings::MEETUP_LINKING_MESSAGE(&url))
         });
@@ -303,10 +313,9 @@ impl crate::discord_bot::Handler {
                 let _ = msg.channel_id.say(
                     &ctx.http,
                     format!(
-                        "<@{discord_id}> is already linked to a different Meetup account. \
-                         If you want to change this, unlink the currently \
-                         linked Meetup account first by writing:\n\
-                         {bot_mention} unlink meetup <@{discord_id}>",
+                        "<@{discord_id}> is already linked to a different Meetup account. If you \
+                         want to change this, unlink the currently linked Meetup account first by \
+                         writing:\n{bot_mention} unlink meetup <@{discord_id}>",
                         discord_id = user_id,
                         bot_mention = regexes.bot_mention
                     ),
@@ -323,10 +332,9 @@ impl crate::discord_bot::Handler {
         if let Some(linked_discord_id) = linked_discord_id {
             let _ = msg.author.direct_message(ctx, |message_builder| {
                 message_builder.content(format!(
-                    "This Meetup account is alread linked to <@{linked_discord_id}>. \
-                     If you want to change this, unlink the Meetup account first \
-                     by writing\n\
-                     {bot_mention} unlink meetup <@{linked_discord_id}>",
+                    "This Meetup account is alread linked to <@{linked_discord_id}>. If you want \
+                     to change this, unlink the Meetup account first by writing\n{bot_mention} \
+                     unlink meetup <@{linked_discord_id}>",
                     linked_discord_id = linked_discord_id,
                     bot_mention = regexes.bot_mention
                 ))
@@ -335,11 +343,12 @@ impl crate::discord_bot::Handler {
         }
         // The user has not yet linked their meetup account.
         // Test whether the specified Meetup user actually exists.
-        let meetup_user = meetup_client_mutex
-            .read()
+        let meetup_client_guard = crate::ASYNC_RUNTIME.block_on(meetup_client_mutex.lock());
+        let meetup_user = meetup_client_guard
             .as_ref()
             .ok_or_else(|| SimpleError::new("Meetup API unavailable"))?
             .get_member_profile(Some(meetup_id))?;
+        drop(meetup_client_guard);
         match meetup_user {
             None => {
                 let _ = msg.channel_id.say(

@@ -1,10 +1,12 @@
 use chrono::serde::ts_milliseconds;
-use futures::stream;
-use futures::{Future, Stream};
-use reqwest::header::{HeaderMap, AUTHORIZATION};
-use reqwest::{Method, Request};
-use serde::de::Error as _;
-use serde::Deserialize;
+use futures::{stream::StreamExt, Stream};
+use futures_util::{stream, TryFutureExt};
+use reqwest::{
+    blocking::Request,
+    header::{HeaderMap, AUTHORIZATION},
+    Method,
+};
+use serde::{de::Error as _, Deserialize};
 
 const BASE_URL: &'static str = "https://api.meetup.com";
 pub const URLNAMES: [&'static str; 3] =
@@ -12,12 +14,12 @@ pub const URLNAMES: [&'static str; 3] =
 
 #[derive(Debug, Clone)]
 pub struct Client {
-    client: reqwest::Client,
+    client: reqwest::blocking::Client,
 }
 
 #[derive(Debug, Clone)]
 pub struct AsyncClient {
-    client: reqwest::r#async::Client,
+    client: reqwest::Client,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -157,7 +159,7 @@ impl Client {
             format!("Bearer {}", access_token).parse().unwrap(),
         );
         Client {
-            client: reqwest::Client::builder()
+            client: reqwest::blocking::Client::builder()
                 .default_headers(headers)
                 .build()
                 .expect("Could not initialize the reqwest client"),
@@ -167,16 +169,18 @@ impl Client {
     pub fn get_group_profile(&self, id: Option<u64>, urlname: &str) -> crate::Result<Option<User>> {
         let url = match id {
             Some(id) => format!(
-                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
+                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&\
+                 omit=group_profile.group,group_profile.answers",
                 BASE_URL, urlname, id
             ),
             _ => format!(
-                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
+                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&\
+                 omit=group_profile.group,group_profile.answers",
                 BASE_URL, urlname
             ),
         };
         let url = url.parse()?;
-        let mut response = self.client.execute(Request::new(Method::GET, url))?;
+        let response = self.client.execute(Request::new(Method::GET, url))?;
         if let Ok(user) = response.json::<User>() {
             return Ok(Some(user));
         } else {
@@ -196,7 +200,7 @@ impl Client {
             ),
         };
         let url = url.parse()?;
-        let mut response = self.client.execute(Request::new(Method::GET, url))?;
+        let response = self.client.execute(Request::new(Method::GET, url))?;
         if let Ok(user) = response.json::<User>() {
             return Ok(Some(user));
         } else {
@@ -259,35 +263,31 @@ impl AsyncClient {
 
     // Gets the user with the specified ID
     // TODO: currently we cannot distinguish between a non-existing user or some other kind of error
-    pub fn get_group_profile(
+    pub async fn get_group_profile(
         &self,
         id: Option<u64>,
         urlname: &str,
-    ) -> impl Future<Item = Option<User>, Error = Error> {
+    ) -> Result<Option<User>, Error> {
         let url = match id {
             Some(id) => format!(
-                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
+                "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&\
+                 omit=group_profile.group,group_profile.answers",
                 BASE_URL, urlname, id
             ),
             _ => format!(
-                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&omit=group_profile.group,group_profile.answers",
+                "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&\
+                 omit=group_profile.group,group_profile.answers",
                 BASE_URL, urlname
             ),
         };
-        self.client
-            .get(&url)
-            .send()
-            .from_err::<Error>()
-            .and_then(Self::try_deserialize)
-            .map(|user: User| Some(user))
+        let res = self.client.get(&url).send().await?;
+        let user = Self::try_deserialize(res).await?;
+        Ok(Some(user))
     }
 
     // Gets the user with the specified ID
     // TODO: currently we cannot distinguish between a non-existing user or some other kind of error
-    pub fn get_member_profile(
-        &self,
-        id: Option<u64>,
-    ) -> impl Future<Item = Option<User>, Error = Error> {
+    pub async fn get_member_profile(&self, id: Option<u64>) -> Result<Option<User>, Error> {
         let url = match id {
             Some(id) => format!(
                 "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
@@ -298,62 +298,56 @@ impl AsyncClient {
                 BASE_URL
             ),
         };
-        self.client
-            .get(&url)
-            .send()
-            .from_err::<Error>()
-            .and_then(Self::try_deserialize)
-            .map(|user: User| Some(user))
+        let res = self.client.get(&url).send().await?;
+        let user = Self::try_deserialize(res).await?;
+        Ok(Some(user))
     }
 
     // Doesn't implement pagination. But since Meetup returns 200 elements per page,
     // this does not matter for us anyway
-    pub fn get_upcoming_events(&self, urlname: &str) -> impl Stream<Item = Event, Error = Error> {
-        let url = format!("{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&has_ended=false&status=upcoming&only=description,event_hosts.id,event_hosts.name,id,link,time,name,group.urlname", BASE_URL, 
-        urlname);
+    pub fn get_upcoming_events(&self, urlname: &str) -> impl Stream<Item = Result<Event, Error>> {
+        let url = format!(
+            "{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&\
+             has_ended=false&status=upcoming&only=description,event_hosts.id,event_hosts.name,id,\
+             link,time,name,group.urlname",
+            BASE_URL, urlname
+        );
         let request = self.client.get(&url);
         request
             .send()
-            .from_err::<Error>()
+            .err_into::<Error>()
             .and_then(Self::try_deserialize)
-            .map(|event_list: Vec<Event>| stream::iter_ok(event_list))
-            .flatten_stream()
+            .map_ok(|event_list: Vec<Event>| stream::iter(event_list.into_iter().map(Ok)))
+            .try_flatten_stream()
     }
 
-    pub fn get_upcoming_events_all_groups(&self) -> impl Stream<Item = Event, Error = Error> {
+    pub fn get_upcoming_events_all_groups(&self) -> impl Stream<Item = Result<Event, Error>> {
         let streams: Vec<_> = URLNAMES
             .iter()
             .map(|urlname| self.get_upcoming_events(urlname))
             .collect();
-        stream::iter_ok::<_, Error>(streams).flatten()
+        stream::iter(streams).flatten()
     }
 
     // Get members that RSVP'd yes
-    pub fn get_rsvps(
-        &self,
-        urlname: &str,
-        event_id: &str,
-    ) -> impl Future<Item = Vec<RSVP>, Error = Error> {
-        let url = format!("{}/{}/events/{}/rsvps?&sign=true&photo-host=public&page=200&only=response,member&omit=member.photo,member.event_context", BASE_URL, urlname, event_id);
-        let request = self.client.get(&url);
-        request
-            .send()
-            .from_err::<Error>()
-            .and_then(Self::try_deserialize)
+    pub async fn get_rsvps(&self, urlname: &str, event_id: &str) -> Result<Vec<RSVP>, Error> {
+        let url = format!(
+            "{}/{}/events/{}/rsvps?&sign=true&photo-host=public&page=200&only=response,member&\
+             omit=member.photo,member.event_context",
+            BASE_URL, urlname, event_id
+        );
+        let res = self.client.get(&url).send().await?;
+        Self::try_deserialize(res).await
     }
 
-    fn try_deserialize<T: serde::de::DeserializeOwned>(
-        mut response: reqwest::r#async::Response,
-    ) -> impl Future<Item = T, Error = Error> {
-        response.text().then(|text| match text {
-            Ok(text) => {
-                let value: T = serde_json::from_str(&text).map_err(|err| Error::Serde {
-                    error: err,
-                    input: text,
-                })?;
-                Ok(value)
-            }
-            Err(err) => Err(Error::Reqwest(err)),
-        })
+    async fn try_deserialize<T: serde::de::DeserializeOwned>(
+        response: reqwest::r#async::Response,
+    ) -> Result<T, Error> {
+        let text = response.text().await?;
+        let value: T = serde_json::from_str(&text).map_err(|err| Error::Serde {
+            error: err,
+            input: text,
+        })?;
+        Ok(value)
     }
 }

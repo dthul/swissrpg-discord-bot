@@ -151,3 +151,16 @@ impl From<ParseIntError> for BoxedError {
         }
     }
 }
+
+type RequestTokenError = oauth2::RequestTokenError<
+    oauth2::reqwest::Error,
+    oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
+>;
+impl From<RequestTokenError> for BoxedError {
+    fn from(err: RequestTokenError) -> Self {
+        BoxedError {
+            inner: Box::new(SimpleError::new(format!("RequestTokenError: {}", err))),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
