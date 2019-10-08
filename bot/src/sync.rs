@@ -19,7 +19,7 @@ pub async fn create_recurring_syncing_task(
         let discord_api = discord_api.clone();
         let meetup_client = meetup_client.clone();
         let task_scheduler = task_scheduler.clone();
-        tokio::spawn(async move {
+        crate::ASYNC_RUNTIME.spawn(async move {
             let sync_result = meetup_sync::sync_task(meetup_client, redis_client.clone())
                 .map_err(|err| {
                     eprintln!("Syncing task failed: {}", err);

@@ -1,6 +1,4 @@
 #![recursion_limit = "256"]
-#![feature(box_into_pin)]
-#![feature(async_closure)]
 pub mod discord_bot;
 pub mod discord_bot_commands;
 pub mod discord_end_of_game;
@@ -18,6 +16,7 @@ use futures::future;
 use futures_util::stream::StreamExt;
 use lazy_static::lazy_static;
 use redis::Commands;
+use std::pin::Pin;
 use std::{env, sync::Arc};
 use tokio;
 
@@ -72,7 +71,8 @@ fn main() {
 
     let (tx, rx) = futures_channel::mpsc::channel::<crate::meetup_sync::BoxedFuture<()>>(1);
     let spawn_other_futures_future = rx.for_each(|fut| {
-        tokio::spawn(Box::into_pin(fut));
+        let pinned_fut: Pin<Box<_>> = fut.into();
+        crate::ASYNC_RUNTIME.spawn(pinned_fut);
         future::ready(())
     });
 

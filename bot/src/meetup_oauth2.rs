@@ -206,8 +206,6 @@ async fn get_group_profiles(
     Ok(profiles)
 }
 
-// TODO: switch to future-aware mutexes
-// TODO: switch to async Redis
 // type ResponseFuture = Box<dyn Future<Output = Result<HandlerResponse, crate::BoxedError>> + Send>;
 async fn meetup_http_handler(
     redis_connection: redis::aio::Connection,
@@ -306,18 +304,20 @@ async fn meetup_http_handler(
         // Store the new access and refresh tokens in Redis
         let transaction_fn = {
             let token_res = &token_res;
-            async move |con: redis::aio::Connection, mut pipe: redis::Pipeline| match token_res
-                .refresh_token()
-            {
-                Some(refresh_token) => {
-                    pipe.set("meetup_access_token", token_res.access_token().secret())
-                        .set("meetup_refresh_token", refresh_token.secret());
-                    pipe.query_async(con).compat().await
-                }
-                None => {
-                    // Don't delete the (possibly existing) old refresh token
-                    pipe.set("meetup_access_token", token_res.access_token().secret());
-                    pipe.query_async(con).compat().await
+            move |con: redis::aio::Connection, mut pipe: redis::Pipeline| {
+                async move {
+                    match token_res.refresh_token() {
+                        Some(refresh_token) => {
+                            pipe.set("meetup_access_token", token_res.access_token().secret())
+                                .set("meetup_refresh_token", refresh_token.secret());
+                            pipe.query_async(con).compat().await
+                        }
+                        None => {
+                            // Don't delete the (possibly existing) old refresh token
+                            pipe.set("meetup_access_token", token_res.access_token().secret());
+                            pipe.query_async(con).compat().await
+                        }
+                    }
                 }
             }
         };
@@ -468,11 +468,11 @@ async fn meetup_http_handler(
         }
         // Exchange the code with a token.
         let code = AuthorizationCode::new(code.to_string());
+        let redirect_url =
+            RedirectUrl::new(url1::Url::parse(format!("{}{}", BASE_URL, path).as_str()).unwrap());
         let token_res = oauth2_link_client
             .clone()
-            .set_redirect_url(RedirectUrl::new(
-                url1::Url::parse(format!("{}{}", BASE_URL, path).as_str()).unwrap(),
-            ))
+            .set_redirect_url(redirect_url)
             .exchange_code(code)
             .request_async(async_http_client)
             .compat()
@@ -553,29 +553,31 @@ async fn meetup_http_handler(
                 let redis_key_d2m = &redis_key_d2m;
                 let redis_key_m2d = &redis_key_m2d;
                 let meetup_user_id = meetup_user.id;
-                async move |con: redis::aio::Connection, mut pipe: redis::Pipeline| {
-                    let (con, linked_meetup_id): (_, Option<u64>) = redis::cmd("GET")
-                        .arg(redis_key_d2m)
-                        .query_async(con)
-                        .compat()
-                        .await?;
-                    let (con, linked_discord_id): (_, Option<u64>) = redis::cmd("GET")
-                        .arg(redis_key_m2d)
-                        .query_async(con)
-                        .compat()
-                        .await?;
-                    if linked_meetup_id.is_some() || linked_discord_id.is_some() {
-                        // The meetup id was linked in the meantime, abort
-                        successful = false;
-                        // Execute empty transaction just to get out of the closure
-                        pipe.query_async(con).compat().await
-                    } else {
-                        pipe.sadd("meetup_users", meetup_user_id)
-                            .sadd("discord_users", discord_id)
-                            .set(redis_key_d2m, meetup_user_id)
-                            .set(redis_key_m2d, discord_id);
-                        successful = true;
-                        pipe.query_async(con).compat().await
+                move |con: redis::aio::Connection, mut pipe: redis::Pipeline| {
+                    async move {
+                        let (con, linked_meetup_id): (_, Option<u64>) = redis::cmd("GET")
+                            .arg(redis_key_d2m)
+                            .query_async(con)
+                            .compat()
+                            .await?;
+                        let (con, linked_discord_id): (_, Option<u64>) = redis::cmd("GET")
+                            .arg(redis_key_m2d)
+                            .query_async(con)
+                            .compat()
+                            .await?;
+                        if linked_meetup_id.is_some() || linked_discord_id.is_some() {
+                            // The meetup id was linked in the meantime, abort
+                            successful = false;
+                            // Execute empty transaction just to get out of the closure
+                            pipe.query_async(con).compat().await
+                        } else {
+                            pipe.sadd("meetup_users", meetup_user_id)
+                                .sadd("discord_users", discord_id)
+                                .set(redis_key_d2m, meetup_user_id)
+                                .set(redis_key_m2d, discord_id);
+                            successful = true;
+                            pipe.query_async(con).compat().await
+                        }
                     }
                 }
             };
