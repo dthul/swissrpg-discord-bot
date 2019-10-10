@@ -22,7 +22,7 @@ oauth2 = "3.0.0-alpha"
 rand = "0.7"
 redis = "0.12"
 regex = "1"
-reqwest = { git = "https://github.com/seanmonstar/reqwest", rev = "bb3d672cd8", features = ["blocking", "json"] }
+reqwest = { version = "0.10.0-alpha.1", features = ["blocking", "json"] }
 serde = "1.0"
 serde_json = "1.0"
 serenity = "0.7"
