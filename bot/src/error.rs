@@ -153,7 +153,7 @@ impl From<ParseIntError> for BoxedError {
 }
 
 type RequestTokenError = oauth2::RequestTokenError<
-    oauth2::reqwest::Error,
+    crate::oauth2_async_http_client::Error,
     oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
 >;
 impl From<RequestTokenError> for BoxedError {

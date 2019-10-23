@@ -8,8 +8,8 @@ use hyper::{
 };
 use lazy_static::lazy_static;
 use oauth2::{
-    basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
-    ClientSecret, CsrfToken, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl,
+    Scope, TokenResponse, TokenUrl,
 };
 use rand::Rng;
 use redis::{Commands, PipelineCommands, RedisResult};
@@ -273,7 +273,7 @@ async fn meetup_http_handler(
         let async_meetup_client = async_meetup_client.clone();
         let token_res = oauth2_authorization_client
             .exchange_code(code)
-            .request_async(async_http_client)
+            .request_async(crate::oauth2_async_http_client::async_http_client)
             .compat()
             .await?;
         // Check that this token belongs to an organizer of all our Meetup groups
@@ -470,7 +470,7 @@ async fn meetup_http_handler(
             .clone()
             .set_redirect_url(redirect_url)
             .exchange_code(code)
-            .request_async(async_http_client)
+            .request_async(crate::oauth2_async_http_client::async_http_client)
             .compat()
             .await?;
         // Get the user's Meetup ID
@@ -792,7 +792,7 @@ impl OAuth2Consumer {
                 let refresh_token_response = crate::ASYNC_RUNTIME.block_on(
                     oauth2_client
                         .exchange_refresh_token(&refresh_token)
-                        .request_async(oauth2::reqwest::async_http_client)
+                        .request_async(crate::oauth2_async_http_client::async_http_client)
                         .compat(),
                 );
                 let refresh_token_response = match refresh_token_response {

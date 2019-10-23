@@ -12,13 +12,17 @@ backtrace = "0.3"
 base64 = "0.10"
 chrono = "0.4"
 cookie = "0.12"
+failure = "0.1" # Just for oauth2 reqwest async client
+failure_derive = "0.1" # Just for oauth2 reqwest async client
+futures_01 = { version = "0.1", package = "futures" } # Just for oauth2 reqwest async client
 futures-channel-preview = "0.3.0-alpha.19"
 futures-preview = "0.3.0-alpha.19"
 futures-util-preview = { version = "0.3.0-alpha.19", features = ["compat"] }
+http = "0.1" # Just for oauth2 reqwest async client
 hyper = "0.13.0-alpha.4"
 itertools = "0.8"
 lazy_static = "1.4"
-oauth2 = "3.0.0-alpha"
+oauth2 = { version = "3.0.0-alpha.4", default-features = false }
 rand = "0.7"
 redis = "0.12"
 regex = "1"
