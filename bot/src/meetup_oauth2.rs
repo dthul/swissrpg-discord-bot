@@ -359,10 +359,8 @@ async fn meetup_http_handler(
         let (_authorize_url_basic, csrf_state) = oauth2_link_client
             .clone()
             .set_redirect_url(RedirectUrl::new(
-                url1::Url::parse(
-                    format!("{}/link/{}/norsvp/redirect", BASE_URL, linking_id).as_str(),
-                )
-                .unwrap(),
+                Url::parse(format!("{}/link/{}/norsvp/redirect", BASE_URL, linking_id).as_str())
+                    .unwrap(),
             ))
             .authorize_url(|| csrf_state)
             .add_scope(Scope::new("basic".to_string()))
@@ -370,10 +368,8 @@ async fn meetup_http_handler(
         let (authorize_url_rsvp, csrf_state) = oauth2_link_client
             .clone()
             .set_redirect_url(RedirectUrl::new(
-                url1::Url::parse(
-                    format!("{}/link/{}/rsvp/redirect", BASE_URL, linking_id).as_str(),
-                )
-                .unwrap(),
+                Url::parse(format!("{}/link/{}/rsvp/redirect", BASE_URL, linking_id).as_str())
+                    .unwrap(),
             ))
             .authorize_url(|| csrf_state)
             .add_scope(Scope::new("basic".to_string()))
@@ -469,7 +465,7 @@ async fn meetup_http_handler(
         // Exchange the code with a token.
         let code = AuthorizationCode::new(code.to_string());
         let redirect_url =
-            RedirectUrl::new(url1::Url::parse(format!("{}{}", BASE_URL, path).as_str()).unwrap());
+            RedirectUrl::new(Url::parse(format!("{}{}", BASE_URL, path).as_str()).unwrap());
         let token_res = oauth2_link_client
             .clone()
             .set_redirect_url(redirect_url)
@@ -628,9 +624,9 @@ impl OAuth2Consumer {
         let meetup_client_id = ClientId::new(meetup_client_id);
         let meetup_client_secret = ClientSecret::new(meetup_client_secret);
         let auth_url =
-            AuthUrl::new(url1::Url::parse("https://secure.meetup.com/oauth2/authorize").unwrap());
+            AuthUrl::new(Url::parse("https://secure.meetup.com/oauth2/authorize").unwrap());
         let token_url =
-            TokenUrl::new(url1::Url::parse("https://secure.meetup.com/oauth2/access").unwrap());
+            TokenUrl::new(Url::parse("https://secure.meetup.com/oauth2/access").unwrap());
 
         // Set up the config for the Github OAuth2 process.
         let authorization_client = BasicClient::new(
@@ -641,12 +637,12 @@ impl OAuth2Consumer {
         )
         .set_auth_type(oauth2::AuthType::RequestBody)
         .set_redirect_url(RedirectUrl::new(
-            url1::Url::parse(format!("{}/authorize/redirect", BASE_URL).as_str()).unwrap(),
+            Url::parse(format!("{}/authorize/redirect", BASE_URL).as_str()).unwrap(),
         ));
         let link_client = authorization_client
             .clone()
             .set_redirect_url(RedirectUrl::new(
-                url1::Url::parse(format!("{}/link/redirect", BASE_URL).as_str()).unwrap(),
+                Url::parse(format!("{}/link/redirect", BASE_URL).as_str()).unwrap(),
             ));
         let authorization_client = Arc::new(authorization_client);
         let link_client = Arc::new(link_client);
@@ -793,10 +789,13 @@ impl OAuth2Consumer {
                 };
                 // Try to exchange the refresh token for fresh access and refresh tokens
                 let refresh_token = oauth2::RefreshToken::new(refresh_token);
-                let refresh_token_response = match oauth2_client
-                    .exchange_refresh_token(&refresh_token)
-                    .request(oauth2::curl::http_client)
-                {
+                let refresh_token_response = crate::ASYNC_RUNTIME.block_on(
+                    oauth2_client
+                        .exchange_refresh_token(&refresh_token)
+                        .request_async(oauth2::reqwest::async_http_client)
+                        .compat(),
+                );
+                let refresh_token_response = match refresh_token_response {
                     Ok(refresh_token_response) => refresh_token_response,
                     Err(err) => {
                         eprintln!(

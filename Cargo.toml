@@ -2,7 +2,6 @@
 
 members = [
     "bot",
-    "url1",
 ]
 
 [profile.release]
