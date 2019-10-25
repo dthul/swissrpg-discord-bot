@@ -16,8 +16,7 @@ use futures::future;
 use futures_util::stream::StreamExt;
 use lazy_static::lazy_static;
 use redis::Commands;
-use std::pin::Pin;
-use std::{env, sync::Arc};
+use std::{env, pin::Pin, sync::Arc};
 use tokio;
 
 type Result<T> = std::result::Result<T, BoxedError>;
@@ -118,10 +117,8 @@ fn main() {
     let mut task_scheduler_guard = ASYNC_RUNTIME.block_on(task_scheduler.lock());
     task_scheduler_guard.add_task_datetime(
         next_refresh_time,
-        meetup_oauth2_consumer.token_refresh_task(
-            redis_client
-                .get_connection()
-                .expect("Could not connect to Redis"),
+        meetup_oauth2_consumer.organizer_token_refresh_task(
+            redis_client.clone(),
             meetup_client.clone(),
             async_meetup_client.clone(),
         ),

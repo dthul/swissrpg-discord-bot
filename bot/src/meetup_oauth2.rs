@@ -12,7 +12,7 @@ use oauth2::{
     ClientSecret, CsrfToken, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use rand::Rng;
-use redis::{Commands, PipelineCommands, RedisResult};
+use redis::PipelineCommands;
 use simple_error::SimpleError;
 use std::{borrow::Cow, future::Future, sync::Arc};
 use url::Url;
@@ -751,9 +751,9 @@ impl OAuth2Consumer {
     }
 
     // Refreshes the authorization token
-    pub fn token_refresh_task(
+    pub fn organizer_token_refresh_task(
         &self,
-        mut redis_connection: redis::Connection,
+        redis_client: redis::Client,
         meetup_client: Arc<Mutex<Option<meetup_api::Client>>>,
         async_meetup_client: Arc<Mutex<Option<meetup_api::AsyncClient>>>,
     ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static
@@ -761,67 +761,21 @@ impl OAuth2Consumer {
         let oauth2_client = self.authorization_client.clone();
         let refresh_meetup_access_token_task =
             move |_context: &mut white_rabbit::Context| -> white_rabbit::DateResult {
-                // Try to get the refresh token from Redis
-                let refresh_token: String = match redis_connection.get("meetup_refresh_token") {
-                    Ok(refresh_token_option) => match refresh_token_option {
-                        Some(refresh_token) => refresh_token,
-                        None => {
-                            eprintln!(
-                                "Could not refresh the Meetup access token since there is no \
-                                 refresh token available"
-                            );
-                            // Try to refresh again in an hour
-                            return white_rabbit::DateResult::Repeat(
-                                white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
-                            );
-                        }
-                    },
+                // Try to refresh the organizer oauth tokens
+                let refresh_result = crate::ASYNC_RUNTIME.block_on(async {
+                    let redis_connection = redis_client.get_async_connection().compat().await?;
+                    refresh_oauth_tokens(&TokenType::Organizer, &oauth2_client, redis_connection)
+                        .await
+                });
+                let (redis_connection, new_access_token) = match refresh_result {
                     Err(err) => {
-                        eprintln!(
-                            "Could not refresh the Meetup access token. Redis error: {}",
-                            err
-                        );
+                        eprintln!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
                         // Try to refresh again in an hour
                         return white_rabbit::DateResult::Repeat(
                             white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
                         );
                     }
-                };
-                // Try to exchange the refresh token for fresh access and refresh tokens
-                let refresh_token = oauth2::RefreshToken::new(refresh_token);
-                let refresh_token_response = crate::ASYNC_RUNTIME.block_on(
-                    oauth2_client
-                        .exchange_refresh_token(&refresh_token)
-                        .request_async(oauth2::reqwest::async_http_client)
-                        .compat(),
-                );
-                let refresh_token_response = match refresh_token_response {
-                    Ok(refresh_token_response) => refresh_token_response,
-                    Err(err) => {
-                        eprintln!(
-                            "Could not refresh the Meetup access token. OAuth2 error: {}",
-                            err
-                        );
-                        // Try to refresh again in an hour
-                        return white_rabbit::DateResult::Repeat(
-                            white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
-                        );
-                    }
-                };
-                let (new_access_token, new_refresh_token) = match refresh_token_response
-                    .refresh_token()
-                {
-                    Some(refresh_token) => (refresh_token_response.access_token(), refresh_token),
-                    None => {
-                        eprintln!(
-                            "Error during Meetup access token refresh. Meetup did not return a \
-                             new refresh token"
-                        );
-                        // Try to refresh again in an hour
-                        return white_rabbit::DateResult::Repeat(
-                            white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
-                        );
-                    }
+                    Ok(res) => res,
                 };
                 let (mut meetup_guard, mut async_meetup_guard) =
                     crate::ASYNC_RUNTIME.block_on(async {
@@ -831,24 +785,85 @@ impl OAuth2Consumer {
                 *async_meetup_guard = Some(meetup_api::AsyncClient::new(new_access_token.secret()));
                 drop(meetup_guard);
                 drop(async_meetup_guard);
-                // Store the new tokens in Redis
-                let res: RedisResult<()> = redis_connection.set_multiple(&[
-                    ("meetup_access_token", new_access_token.secret()),
-                    ("meetup_refresh_token", new_refresh_token.secret()),
-                ]);
-                if let Err(err) = res {
-                    eprintln!("Error storing new Meetup tokens in Redis: {}", err);
-                }
                 // Refresh the access token in two days from now
                 let next_refresh = white_rabbit::Utc::now() + white_rabbit::Duration::days(2);
+                println!(
+                    "Refreshed the organizer's Meetup OAuth token. Next refresh @ {}",
+                    next_refresh.to_rfc3339()
+                );
                 // Store refresh date in Redis, ignore failures
-                let _: redis::RedisResult<()> = redis_connection.set(
-                    "meetup_access_token_refresh_time",
-                    next_refresh.to_rfc3339(),
+                let _: redis::RedisResult<(_, ())> = crate::ASYNC_RUNTIME.block_on(
+                    redis::cmd("SET")
+                        .arg("meetup_access_token_refresh_time")
+                        .arg(next_refresh.to_rfc3339())
+                        .query_async(redis_connection)
+                        .compat(),
                 );
                 // Re-schedule this task
                 white_rabbit::DateResult::Repeat(next_refresh)
             };
         refresh_meetup_access_token_task
     }
+}
+
+pub enum TokenType {
+    User(u64),
+    Organizer,
+}
+
+pub async fn refresh_oauth_tokens(
+    token_type: &TokenType,
+    oauth2_client: &BasicClient,
+    redis_connection: redis::aio::Connection,
+) -> crate::Result<(redis::aio::Connection, oauth2::AccessToken)> {
+    // Try to get the refresh token from Redis
+    let (redis_connection, refresh_token): (_, Option<String>) = match token_type {
+        TokenType::Organizer => {
+            redis::cmd("GET")
+                .arg("meetup_refresh_token")
+                .query_async(redis_connection)
+                .compat()
+                .await?
+        }
+        TokenType::User(meetup_user_id) => {
+            let redis_user_token_key = format!("meetup_user:{}:oauth2_tokens", meetup_user_id);
+            redis::cmd("HGET")
+                .arg(&redis_user_token_key)
+                .arg("refresh_token")
+                .query_async(redis_connection)
+                .compat()
+                .await?
+        }
+    };
+    let refresh_token: String = match refresh_token {
+        Some(refresh_token) => refresh_token,
+        None => {
+            return Err(SimpleError::new(
+                "Could not refresh the Meetup access token since there is no refresh token \
+                 available",
+            )
+            .into())
+        }
+    };
+    // Try to exchange the refresh token for fresh access and refresh tokens
+    let refresh_token = oauth2::RefreshToken::new(refresh_token);
+    let refresh_token_response = oauth2_client
+        .exchange_refresh_token(&refresh_token)
+        .request_async(oauth2::reqwest::async_http_client)
+        .compat()
+        .await?;
+    // Store the new tokens in Redis
+    let mut pipe = redis::pipe();
+    pipe.set(
+        "meetup_access_token",
+        refresh_token_response.access_token().secret(),
+    );
+    if let Some(new_refresh_token) = refresh_token_response.refresh_token() {
+        pipe.set("meetup_refresh_token", new_refresh_token.secret());
+    }
+    let (redis_connection, _): (_, ()) = pipe.query_async(redis_connection).compat().await?;
+    Ok((
+        redis_connection,
+        refresh_token_response.access_token().clone(),
+    ))
 }
