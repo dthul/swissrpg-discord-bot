@@ -13,7 +13,7 @@ pub mod vacuum;
 
 use error::BoxedError;
 use futures::future;
-use futures_util::stream::StreamExt;
+use futures_util::{future::FutureExt, stream::StreamExt};
 use lazy_static::lazy_static;
 use redis::Commands;
 use std::{env, pin::Pin, sync::Arc};
@@ -167,14 +167,14 @@ fn main() {
         task_scheduler.clone(),
     );
 
-    ASYNC_RUNTIME.block_on(async {
+    ASYNC_RUNTIME.spawn(
         future::join3(
             meetup_oauth2_server,
             spawn_other_futures_future,
             syncing_task,
         )
-        .await
-    });
+        .map(move |_| ()),
+    );
 
     // Finally, start the Discord bot
     if let Err(why) = bot.start() {
