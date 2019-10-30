@@ -30,7 +30,7 @@ NOTE: call `systemctl daemon-reload` after modifying service files
 
 # Where to find logs (stdout, stderr)
 
-`$ journalctl -u bot`
+`$ journalctl -e -u bot`
 
 # Nginx
 

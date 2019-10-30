@@ -614,6 +614,7 @@ async fn meetup_http_handler(
     }
 }
 
+#[derive(Clone)]
 pub struct OAuth2Consumer {
     authorization_client: Arc<BasicClient>,
     link_client: Arc<BasicClient>,
@@ -764,8 +765,12 @@ impl OAuth2Consumer {
                 // Try to refresh the organizer oauth tokens
                 let refresh_result = crate::ASYNC_RUNTIME.block_on(async {
                     let redis_connection = redis_client.get_async_connection().compat().await?;
-                    refresh_oauth_tokens(&TokenType::Organizer, &oauth2_client, redis_connection)
-                        .await
+                    refresh_oauth_tokens(
+                        TokenType::Organizer,
+                        oauth2_client.clone(),
+                        redis_connection,
+                    )
+                    .await
                 });
                 let (redis_connection, new_access_token) = match refresh_result {
                     Err(err) => {
@@ -804,6 +809,20 @@ impl OAuth2Consumer {
             };
         refresh_meetup_access_token_task
     }
+
+    pub async fn refresh_oauth_tokens(
+        &self,
+        token_type: TokenType,
+        redis_client: redis::Client,
+    ) -> crate::Result<(redis::aio::Connection, oauth2::AccessToken)> {
+        let redis_connection = redis_client.get_async_connection().compat().await?;
+        refresh_oauth_tokens(
+            token_type,
+            self.authorization_client.clone(),
+            redis_connection,
+        )
+        .await
+    }
 }
 
 pub enum TokenType {
@@ -812,8 +831,8 @@ pub enum TokenType {
 }
 
 pub async fn refresh_oauth_tokens(
-    token_type: &TokenType,
-    oauth2_client: &BasicClient,
+    token_type: TokenType,
+    oauth2_client: Arc<BasicClient>,
     redis_connection: redis::aio::Connection,
 ) -> crate::Result<(redis::aio::Connection, oauth2::AccessToken)> {
     // Try to get the refresh token from Redis
@@ -854,13 +873,28 @@ pub async fn refresh_oauth_tokens(
         .await?;
     // Store the new tokens in Redis
     let mut pipe = redis::pipe();
-    pipe.set(
-        "meetup_access_token",
-        refresh_token_response.access_token().secret(),
-    );
-    if let Some(new_refresh_token) = refresh_token_response.refresh_token() {
-        pipe.set("meetup_refresh_token", new_refresh_token.secret());
-    }
+    match token_type {
+        TokenType::Organizer => {
+            pipe.set(
+                "meetup_access_token",
+                refresh_token_response.access_token().secret(),
+            );
+            if let Some(new_refresh_token) = refresh_token_response.refresh_token() {
+                pipe.set("meetup_refresh_token", new_refresh_token.secret());
+            }
+        }
+        TokenType::User(meetup_user_id) => {
+            let mut hash = vec![(
+                "access_token",
+                refresh_token_response.access_token().secret(),
+            )];
+            if let Some(new_refresh_token) = refresh_token_response.refresh_token() {
+                hash.push(("refresh_token", new_refresh_token.secret()));
+            }
+            let redis_user_token_key = format!("meetup_user:{}:oauth2_tokens", meetup_user_id);
+            pipe.hset_multiple(&redis_user_token_key, &hash);
+        }
+    };
     let (redis_connection, _): (_, ()) = pipe.query_async(redis_connection).compat().await?;
     Ok((
         redis_connection,

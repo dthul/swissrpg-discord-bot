@@ -20,6 +20,7 @@ pub fn create_discord_client(
     async_meetup_client: Arc<AsyncMutex<Option<crate::meetup_api::AsyncClient>>>,
     task_scheduler: Arc<AsyncMutex<white_rabbit::Scheduler>>,
     futures_spawner: futures_channel::mpsc::Sender<crate::meetup_sync::BoxedFuture<()>>,
+    oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
 ) -> crate::Result<Client> {
     let redis_connection = redis_client.get_connection()?;
 
@@ -50,6 +51,7 @@ pub fn create_discord_client(
         data.insert::<RedisClientKey>(redis_client);
         data.insert::<TaskSchedulerKey>(task_scheduler);
         data.insert::<FuturesSpawnerKey>(futures_spawner);
+        data.insert::<OAuth2ConsumerKey>(oauth2_consumer);
     }
 
     Ok(client)
@@ -98,6 +100,11 @@ impl TypeMapKey for TaskSchedulerKey {
 pub struct FuturesSpawnerKey;
 impl TypeMapKey for FuturesSpawnerKey {
     type Value = futures_channel::mpsc::Sender<crate::meetup_sync::BoxedFuture<()>>;
+}
+
+pub struct OAuth2ConsumerKey;
+impl TypeMapKey for OAuth2ConsumerKey {
+    type Value = Arc<crate::meetup_oauth2::OAuth2Consumer>;
 }
 
 #[derive(Clone)]
@@ -570,6 +577,51 @@ impl EventHandler for Handler {
                 Self::send_welcome_message(&ctx, &user.read());
                 println!("Sent welcome message!");
             }
+        } else if let Some(captures) = regexes.refresh_user_token_admin_dm.captures(&msg.content) {
+            // This is only for bot_admins
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::GUILD_ID,
+                    crate::discord_sync::BOT_ADMIN_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return;
+            }
+            // Get the mentioned Discord ID
+            let discord_id = captures.name("mention_id").unwrap().as_str();
+            // Try to convert the specified ID to an integer
+            let discord_id = match discord_id.parse::<u64>() {
+                Ok(id) => id,
+                _ => {
+                    // let _ = msg
+                    //     .channel_id
+                    //     .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
+                    // TODO
+                    return;
+                }
+            };
+            let (redis_client, oauth2_consumer) = {
+                let data = ctx.data.read();
+                (
+                    data.get::<RedisClientKey>()
+                        .expect("Redis client was not set")
+                        .clone(),
+                    data.get::<OAuth2ConsumerKey>()
+                        .expect("OAuth2 consumer was not set")
+                        .clone(),
+                )
+            };
+            Self::refresh_meetup_token(
+                &ctx,
+                &msg,
+                UserId(discord_id),
+                redis_client,
+                oauth2_consumer,
+            );
         } else {
             let _ = msg
                 .channel_id

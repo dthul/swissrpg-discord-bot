@@ -60,8 +60,10 @@ fn main() {
     };
 
     // Create a Meetup OAuth2 consumer
-    let meetup_oauth2_consumer =
-        meetup_oauth2::OAuth2Consumer::new(meetup_client_id, meetup_client_secret);
+    let meetup_oauth2_consumer = Arc::new(meetup_oauth2::OAuth2Consumer::new(
+        meetup_client_id,
+        meetup_client_secret,
+    ));
 
     // Create a task scheduler and schedule the refresh token task
     let task_scheduler = Arc::new(futures_util::lock::Mutex::new(
@@ -82,6 +84,7 @@ fn main() {
         async_meetup_client.clone(),
         task_scheduler.clone(),
         tx,
+        meetup_oauth2_consumer.clone(),
     )
     .expect("Could not create the Discord bot");
 

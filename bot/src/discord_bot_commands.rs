@@ -7,7 +7,7 @@ use serenity::{
     prelude::*,
 };
 use simple_error::SimpleError;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 const MENTION_PATTERN: &'static str = r"<@!?(?P<mention_id>[0-9]+)>";
 
@@ -33,6 +33,7 @@ pub struct Regexes {
     pub end_adventure_host_mention: Regex,
     pub help_dm: Regex,
     pub help_mention: Regex,
+    pub refresh_user_token_admin_dm: Regex,
 }
 
 impl Regexes {
@@ -166,6 +167,11 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
     );
     let help_dm = r"^(?i)help\s*$";
     let help_mention = format!(r"^{bot_mention}\s+(?i)help\s*$", bot_mention = bot_mention);
+    let refresh_user_token_admin_dm = format!(
+        r"^{bot_mention}\s+(?i)refresh\s+meetup(-|\s*)token\s+{mention_pattern}\s*$",
+        bot_mention = bot_mention,
+        mention_pattern = MENTION_PATTERN
+    );
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -192,6 +198,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         end_adventure_host_mention: Regex::new(end_adventure_host_mention.as_str()).unwrap(),
         help_dm: Regex::new(help_dm).unwrap(),
         help_mention: Regex::new(help_mention.as_str()).unwrap(),
+        refresh_user_token_admin_dm: Regex::new(refresh_user_token_admin_dm.as_str()).unwrap(),
     }
 }
 
@@ -753,6 +760,58 @@ impl crate::discord_bot::Handler {
             eprintln!("Could not send help message as a DM: {}", err);
         }
         let _ = msg.react(ctx, "\u{2705}");
+    }
+
+    pub fn refresh_meetup_token(
+        ctx: &Context,
+        msg: &Message,
+        user_id: UserId,
+        redis_client: redis::Client,
+        oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
+    ) {
+        // Look up the Meetup ID for this user
+        let mut redis_connection = match redis_client.get_connection() {
+            Ok(redis_connection) => redis_connection,
+            Err(err) => {
+                eprintln!("Redis error when obtaining a redis connection: {}", err);
+                // TODO reply
+                return;
+            }
+        };
+        let redis_discord_user_meetup_user_key = format!("discord_user:{}:meetup_user", user_id);
+        let res: redis::RedisResult<Option<u64>> =
+            redis_connection.get(&redis_discord_user_meetup_user_key);
+        let meetup_id = match res {
+            Ok(Some(meetup_id)) => meetup_id,
+            Ok(None) => {
+                // TODO reply
+                return;
+            }
+            Err(err) => {
+                eprintln!("Redis error when obtaining a redis conneciton: {}", err);
+                // TODO reply
+                return;
+            }
+        };
+        let res = crate::ASYNC_RUNTIME.block_on(oauth2_consumer.refresh_oauth_tokens(
+            crate::meetup_oauth2::TokenType::User(meetup_id),
+            redis_client,
+        ));
+        match res {
+            Ok(_) => {
+                let _ = msg.react(ctx, "\u{2705}");
+            }
+            Err(err) => {
+                eprintln!(
+                    "An error occured when trying to refresh a user's Meetup OAuth2 tokens:\n{}\n",
+                    err
+                );
+                let _ = msg.channel_id.send_message(ctx, |message_builder| {
+                    message_builder
+                        .content("An error occured when trying to refresh the OAuth2 token")
+                });
+            }
+        };
     }
 }
 
