@@ -11,20 +11,31 @@ use serenity::{
 use simple_error::SimpleError;
 use white_rabbit;
 
-// Test server:
-// pub const GUILD_ID: GuildId = GuildId(601070848446824509);
-// pub const BOT_ADMIN_ID: RoleId = RoleId(606829075226689536);
-// pub const PUBLISHER_ID: RoleId = RoleId(613769364990066699);
-// pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
-// pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561808429056042));
-// pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561949651402772));
-// SwissRPG:
-pub const GUILD_ID: GuildId = GuildId(401856510709202945);
-pub const BOT_ADMIN_ID: RoleId = RoleId(610541498852966436);
-pub const PUBLISHER_ID: RoleId = RoleId(611290948395073585);
-pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
-pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(562607292176924694));
-pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(414074722259828736));
+#[cfg(feature = "bottest")]
+pub mod ids {
+    use super::*;
+    // Test server:
+    pub const GUILD_ID: GuildId = GuildId(601070848446824509);
+    pub const BOT_ADMIN_ID: RoleId = RoleId(606829075226689536);
+    pub const PUBLISHER_ID: RoleId = RoleId(613769364990066699);
+    pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
+    pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561808429056042));
+    pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561949651402772));
+}
+
+#[cfg(not(feature = "bottest"))]
+pub mod ids {
+    use super::*;
+    // SwissRPG server:
+    pub const GUILD_ID: GuildId = GuildId(401856510709202945);
+    pub const BOT_ADMIN_ID: RoleId = RoleId(610541498852966436);
+    pub const PUBLISHER_ID: RoleId = RoleId(611290948395073585);
+    pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
+    pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(562607292176924694));
+    pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(414074722259828736));
+}
+
+use ids::*;
 
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =

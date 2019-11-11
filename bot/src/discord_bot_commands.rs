@@ -511,13 +511,13 @@ impl crate::discord_bot::Handler {
             .author
             .has_role(
                 ctx,
-                crate::discord_sync::GUILD_ID,
-                crate::discord_sync::BOT_ADMIN_ID,
+                crate::discord_sync::ids::GUILD_ID,
+                crate::discord_sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
         let is_host = msg
             .author
-            .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
+            .has_role(ctx, crate::discord_sync::ids::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
         if !is_bot_admin && !is_host {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
@@ -592,13 +592,13 @@ impl crate::discord_bot::Handler {
             .author
             .has_role(
                 ctx,
-                crate::discord_sync::GUILD_ID,
-                crate::discord_sync::BOT_ADMIN_ID,
+                crate::discord_sync::ids::GUILD_ID,
+                crate::discord_sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
         let is_host = msg
             .author
-            .has_role(ctx, crate::discord_sync::GUILD_ID, channel_roles.host)
+            .has_role(ctx, crate::discord_sync::ids::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
         // Only bot admins and channel hosts can add/remove users
         if !is_bot_admin && !is_host {
@@ -618,7 +618,7 @@ impl crate::discord_bot::Handler {
         if add {
             // Try to add the user to the channel
             match ctx.http.add_member_role(
-                crate::discord_sync::GUILD_ID.0,
+                crate::discord_sync::ids::GUILD_ID.0,
                 discord_id,
                 channel_roles.user,
             ) {
@@ -636,7 +636,7 @@ impl crate::discord_bot::Handler {
             }
             if as_host {
                 match ctx.http.add_member_role(
-                    crate::discord_sync::GUILD_ID.0,
+                    crate::discord_sync::ids::GUILD_ID.0,
                     discord_id,
                     channel_roles.host,
                 ) {
@@ -657,7 +657,7 @@ impl crate::discord_bot::Handler {
         } else {
             // Try to remove the user from the channel
             match ctx.http.remove_member_role(
-                crate::discord_sync::GUILD_ID.0,
+                crate::discord_sync::ids::GUILD_ID.0,
                 discord_id,
                 channel_roles.host,
             ) {
@@ -673,7 +673,7 @@ impl crate::discord_bot::Handler {
             }
             if !as_host {
                 match ctx.http.remove_member_role(
-                    crate::discord_sync::GUILD_ID.0,
+                    crate::discord_sync::ids::GUILD_ID.0,
                     discord_id,
                     channel_roles.user,
                 ) {
@@ -718,8 +718,8 @@ impl crate::discord_bot::Handler {
             .author
             .has_role(
                 ctx,
-                crate::discord_sync::GUILD_ID,
-                crate::discord_sync::BOT_ADMIN_ID,
+                crate::discord_sync::ids::GUILD_ID,
+                crate::discord_sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
         let mut dm_result = msg

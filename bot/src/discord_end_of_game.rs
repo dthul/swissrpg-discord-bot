@@ -346,7 +346,7 @@ fn delete_role(
     discord_api: &crate::discord_bot::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
     // Try to delete the role
-    if let Err(err) = crate::discord_sync::GUILD_ID.delete_role(&discord_api.http, role_id) {
+    if let Err(err) = crate::discord_sync::ids::GUILD_ID.delete_role(&discord_api.http, role_id) {
         // If something went wrong, check whether we should record this role as orphaned
         let role_is_orphaned = if let serenity::Error::Http(http_err) = &err {
             if let serenity::http::HttpError::UnsuccessfulRequest(response) = http_err.as_ref() {

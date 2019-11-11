@@ -5,6 +5,11 @@ authors = ["Daniel Thul <daniel.thul@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+# bottest feature not enabled by default
+default = []
+
+bottest = []
 
 [dependencies]
 askama = "0.8"

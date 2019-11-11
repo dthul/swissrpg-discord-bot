@@ -156,7 +156,7 @@ impl EventHandler for Handler {
         // Ignore all messages that might have come from another guild
         // (shouldn't happen) but who knows
         if let Some(guild_id) = msg.guild_id {
-            if guild_id != crate::discord_sync::GUILD_ID {
+            if guild_id != crate::discord_sync::ids::GUILD_ID {
                 return;
             }
         }
@@ -186,8 +186,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::BOT_ADMIN_ID,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -214,8 +214,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::BOT_ADMIN_ID,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -287,8 +287,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::BOT_ADMIN_ID,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -347,8 +347,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::BOT_ADMIN_ID,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -395,8 +395,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::BOT_ADMIN_ID,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -583,8 +583,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::GUILD_ID,
-                    crate::discord_sync::BOT_ADMIN_ID,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -640,7 +640,7 @@ impl EventHandler for Handler {
     }
 
     fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
-        if guild_id != crate::discord_sync::GUILD_ID {
+        if guild_id != crate::discord_sync::ids::GUILD_ID {
             return;
         }
         Self::send_welcome_message(&ctx, &new_member.user.read());
