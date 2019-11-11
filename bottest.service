@@ -1,0 +1,16 @@
+[Unit]
+Description=SwissRPG Test Bot
+Requires=redis.service
+After=network.target redis.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=bottest
+WorkingDirectory=/home/bottest
+ExecStart=/home/bottest/runtest.sh
+
+[Install]
+WantedBy=multi-user.target
