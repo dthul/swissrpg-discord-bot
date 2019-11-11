@@ -34,8 +34,12 @@ fn main() {
     let discord_token = env::var("DISCORD_TOKEN").expect("Found no DISCORD_TOKEN in environment");
 
     // Connect to the local Redis server
-    let redis_client =
-        redis::Client::open("redis://127.0.0.1/").expect("Could not create a Redis client");
+    let redis_url = if cfg!(feature = "bottest") {
+        "redis://127.0.0.1/1"
+    } else {
+        "redis://127.0.0.1/0"
+    };
+    let redis_client = redis::Client::open(redis_url).expect("Could not create a Redis client");
     let mut redis_connection = redis_client
         .get_connection()
         .expect("Could not connect to Redis");
