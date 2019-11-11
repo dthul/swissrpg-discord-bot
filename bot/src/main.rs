@@ -93,8 +93,13 @@ fn main() {
     .expect("Could not create the Discord bot");
 
     // Start a server to handle Meetup OAuth2 logins
+    let port = if cfg!(feature = "bottest") {
+        3001
+    } else {
+        3000
+    };
     let meetup_oauth2_server = meetup_oauth2_consumer.create_auth_server(
-        ([127, 0, 0, 1], 3000).into(),
+        ([127, 0, 0, 1], port).into(),
         redis_client.clone(),
         bot.cache_and_http.clone(),
         meetup_client.clone(),
