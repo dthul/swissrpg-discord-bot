@@ -1,10 +1,12 @@
 use lazy_static::lazy_static;
-use redis;
-use redis::{Commands, PipelineCommands};
-use serenity::http::CacheHttp;
-use serenity::model::{
-    channel::PermissionOverwrite, channel::PermissionOverwriteType, id::ChannelId, id::GuildId,
-    id::RoleId, id::UserId, permissions::Permissions,
+use redis::{self, Commands, PipelineCommands};
+use serenity::{
+    http::CacheHttp,
+    model::{
+        channel::{PermissionOverwrite, PermissionOverwriteType},
+        id::{ChannelId, GuildId, RoleId, UserId},
+        permissions::Permissions,
+    },
 };
 use simple_error::SimpleError;
 use white_rabbit;
@@ -161,7 +163,8 @@ fn sync_event_series(
         Some(event) => event,
         None => {
             println!(
-                "Event series \"{}\" seems to have no upcoming events associated with it, not syncing to Discord",
+                "Event series \"{}\" seems to have no upcoming events associated with it, not \
+                 syncing to Discord",
                 series_id
             );
             return Ok(());
@@ -852,14 +855,24 @@ fn sync_game_master_role(
                 Ok(user) => match user.has_role(discord_api, GUILD_ID, game_master_role) {
                     Ok(has_role) => {
                         if !has_role {
-                            match discord_api.http().add_member_role(GUILD_ID.0, host_id, game_master_role.0) {
-                                Ok(_) => println!("Assigned user {} to the game master role", host_id),
-                                Err(err) => eprintln!("Could not assign user {} to the game master role: {}", host_id, err),
+                            match discord_api.http().add_member_role(
+                                GUILD_ID.0,
+                                host_id,
+                                game_master_role.0,
+                            ) {
+                                Ok(_) => {
+                                    println!("Assigned user {} to the game master role", host_id)
+                                }
+                                Err(err) => eprintln!(
+                                    "Could not assign user {} to the game master role: {}",
+                                    host_id, err
+                                ),
                             }
                         }
                     }
                     Err(err) => eprintln!(
-                        "Could not figure out whether the user {} already has the game master role: {}",
+                        "Could not figure out whether the user {} already has the game master \
+                         role: {}",
                         user.id, err
                     ),
                 },

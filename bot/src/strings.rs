@@ -12,9 +12,8 @@ pub const UNSPECIFIED_ERROR: &'static str =
 #[allow(non_snake_case)]
 pub fn INVALID_COMMAND(bot_id: u64) -> String {
     format!(
-        "Sorry, but I did not get that. I only speak Halfling, Draconic, \
-         Abyssal, and Command (not Common).\n\
-         If you also want to learn Command, type _<@{bot_id}> help_.",
+        "Sorry, but I did not get that. I only speak Halfling, Draconic, Abyssal, and Command \
+         (not Common).\nIf you also want to learn Command, type _<@{bot_id}> help_.",
         bot_id = bot_id
     )
 }
@@ -22,12 +21,10 @@ pub fn INVALID_COMMAND(bot_id: u64) -> String {
 #[allow(non_snake_case)]
 pub fn HELP_MESSAGE_INTRO(bot_id: u64) -> String {
     format!(
-        "Of course, I'm happy to serve (because I've been programmed to). \
-         Here are the commands I understand.\n\
-         \n\
-         ***Note:*** *Unless specified, you can type all these commands in this private chat. \
-         Any commands you type in a channel should start with the mention of my name \
-         <@{bot_id}>, but be mindful not to spam the public channels please.*",
+        "Of course, I'm happy to serve (because I've been programmed to). Here are the commands I \
+         understand.\n\n***Note:*** *Unless specified, you can type all these commands in this \
+         private chat. Any commands you type in a channel should start with the mention of my \
+         name <@{bot_id}>, but be mindful not to spam the public channels please.*",
         bot_id = bot_id
     )
 }
@@ -37,16 +34,13 @@ pub const HELP_MESSAGE_ADMIN_EMBED_TITLE: &'static str = "**Admin commands**";
 #[allow(non_snake_case)]
 pub fn HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id: u64) -> String {
     format!(
-        ":white_small_square: **link meetup `@some-user` `meetup-ID`** - \
-         link another user's Meetup and Discord profile.\n\
-         :white_small_square: **link meetup `@some-user`** - \
-         unlink another user's Meetup and Discord profile.\n\
-         :white_small_square: **<@{bot_id}> add host `@some-user`** - \
-         _(in game channel)_ makes a user an additional Host. _(Desktop only)_\n\
-         :white_small_square: **<@{bot_id}> remove host `@some-user`** - \
-         _(in game channel)_ makes a user no longer a Host.\n\
-         :white_small_square: **<@{bot_id}> add `@some-user`** - \
-         _(in game channel)_ adds a user to the channel. _(Desktop only)_",
+        ":white_small_square: **link meetup `@some-user` `meetup-ID`** - link another user's \
+         Meetup and Discord profile.\n:white_small_square: **link meetup `@some-user`** - unlink \
+         another user's Meetup and Discord profile.\n:white_small_square: **<@{bot_id}> add host \
+         `@some-user`** - _(in game channel)_ makes a user an additional Host. _(Desktop \
+         only)_\n:white_small_square: **<@{bot_id}> remove host `@some-user`** - _(in game \
+         channel)_ makes a user no longer a Host.\n:white_small_square: **<@{bot_id}> add \
+         `@some-user`** - _(in game channel)_ adds a user to the channel. _(Desktop only)_",
         bot_id = bot_id
     )
 }
@@ -57,11 +51,10 @@ pub const HELP_MESSAGE_GM_EMBED_TITLE: &'static str =
 #[allow(non_snake_case)]
 pub fn HELP_MESSAGE_GM_EMBED_CONTENT(bot_id: u64) -> String {
     format!(
-        ":white_small_square: **<@{bot_id}> remove `@some-user`** - \
-         removes a user from the channel.\n\
-         :white_small_square: **<@{bot_id}> end adventure** - \
-         sets the channel for closure at the end of an adventure. The channel \
-         won't be deleted immediately but within 24 hours.",
+        ":white_small_square: **<@{bot_id}> remove `@some-user`** - removes a user from the \
+         channel.\n:white_small_square: **<@{bot_id}> end adventure** - sets the channel for \
+         closure at the end of an adventure. The channel won't be deleted immediately but within \
+         24 hours.",
         bot_id = bot_id
     )
 }
@@ -69,50 +62,46 @@ pub fn HELP_MESSAGE_GM_EMBED_CONTENT(bot_id: u64) -> String {
 pub const HELP_MESSAGE_PLAYER_EMBED_TITLE: &'static str = "**Player commands**";
 
 pub const HELP_MESSAGE_PLAYER_EMBED_CONTENT: &'static str =
-    ":white_small_square: **help** - \
-     do I really need to explain this one?\n\
-     :white_small_square: **link meetup** - \
-     starts the process to link your Meetup and Discord profiles. \
-     If you haven't yet, you should really do that now.\n\
-     :white_small_square: **unlink meetup** - \
+    ":white_small_square: **help** - do I really need to explain this one?\n:white_small_square: \
+     **link meetup** - starts the process to link your Meetup and Discord profiles. If you \
+     haven't yet, you should really do that now.\n:white_small_square: **unlink meetup** - \
      unlinks your Meetup and Discord profiles.";
 
 // ** Welcome messages **
 
 pub const WELCOME_MESSAGE_PART1: &'static str =
-    "Welcome to **SwissRPG**! We hope you'll enjoy rolling dice with us. \
-Here is some basic info to get you started.
+    "Welcome to **SwissRPG**! We hope you'll enjoy rolling dice with us. Here is some basic info \
+     to get you started.
 
 **Got a question about SwissRPG?**
-Ask at the #tavern and someone will help you out. If you need help from an \
-organiser, just hit them up with the \\@Organiser tag.
+Ask at the #tavern and someone will help you out. If you need help from an organiser, just hit \
+     them up with the \\@Organiser tag.
 
 **Are you a Game Master or aspire to be one?**
-- If you would like be a GM for our community, please get in touch with \\@Alp#5068. \
-We offer great resources to our GMs like access to public venues, most D&D books \
-and PDF adventures.
-- If you're interested in being a GM but don't feel ready, let us know. \
-We've provided support to many beginner GMs to get them started.
+- If you would like be a GM for our community, please get in touch with \\@Alp#5068. We offer \
+     great resources to our GMs like access to public venues, most D&D books and PDF adventures.
+- If you're interested in being a GM but don't feel ready, let us know. We've provided support to \
+     many beginner GMs to get them started.
 
 **Support our group**
-SwissRPG aims to enable people to play role playing games. If you find value \
-in what we do, please consider supporting us here (https://rebi.me/swissrpg) \
-with a donation. Every donation makes a big difference. Thank you for your support.
+SwissRPG aims to enable people to play role playing games. If you find value in what we do, please \
+     consider supporting us here (https://rebi.me/swissrpg) with a donation. Every donation makes \
+     a big difference. Thank you for your support.
 
 **Basic rules of our community**
-**1.** If you would like to mention or link to an event, another tabletop group, \
-a discord server etc. please ask an \\@Organiser first.
+**1.** If you would like to mention or link to an event, another tabletop group, a discord server \
+     etc. please ask an \\@Organiser first.
 **2.** Be inclusive and respectful of others and their differences.
 **3.** Stay positive and love each other. Life is good.
 
-**_Don’t forget to introduce yourself to our community in the #tavern channel. \
-Don't be shy, we're all very nice._**";
+**_Don’t forget to introduce yourself to our community in the #tavern channel. Don't be shy, we're \
+     all very nice._**";
 
 pub const WELCOME_MESSAGE_PART2_EMBED_TITLE: &'static str = "**Get access to a game's channel**";
 pub const WELCOME_MESSAGE_PART2_EMBED_CONTENT: &'static str =
-    "If you've signed up for a game, or plan to do so soon, you'll need access to \
-the adventure's channel. To do that, please link your Meetup profile to your \
-Discord profile. Let’s try this now shall we?
+    "If you've signed up for a game, or plan to do so soon, you'll need access to the adventure's \
+     channel. To do that, please link your Meetup profile to your Discord profile. Let’s try this \
+     now shall we?
 Reply with ***link meetup*** here to get the process started.";
 
 // ** End of one-shot **
@@ -124,9 +113,10 @@ pub fn END_OF_ADVENTURE_MESSAGE(bot_id: u64) -> String {
 Now that your adventure is over, it's time to close this channel.
 Can the GM please confirm this by typing here:
 ***<@{bot_id}> end adventure***
-This will set the channel for closure in the next 24 hours, which should be just enough time to say thanks and goodbye.
-If you are not quite done with this adventure, please contact an @Organiser to schedule another session \
-on Meetup and I will extend the lifetime of this channel.",
+This will set the channel for closure in the next 24 hours, which should be just enough time to \
+         say thanks and goodbye.
+If you are not quite done with this adventure, please contact an @Organiser to schedule another \
+         session on Meetup and I will extend the lifetime of this channel.",
         bot_id = bot_id
     )
 }
@@ -137,9 +127,9 @@ on Meetup and I will extend the lifetime of this channel.",
 pub fn END_OF_CAMPAIGN_MESSAGE(bot_id: u64) -> String {
     format!(
         "I hope everyone @here had fun at the last session!
-It's time to book your next session. As soon as you have it scheduled, \
-please write the date in this channel and tag `@publisher (campaigns)`. \
-I'll remind you in a few days until your new session is published.
+It's time to book your next session. As soon as you have it scheduled, please write the date in \
+         this channel and tag `@publisher (campaigns)`. I'll remind you in a few days until your \
+         new session is published.
 
 If your adventure is over, the Game Master can inform me of this by typing here:
 ***<@{bot_id}> end adventure***
@@ -153,15 +143,11 @@ This will set the channel for closure in the next 24 hours, just enough to say t
 #[allow(non_snake_case)]
 pub fn MEETUP_LINKING_MESSAGE(linking_url: &str) -> String {
     format!(
-        "Let's get you hooked up :thumbsup:\n\
-         \n\
-         ***Important note:*** If you are on mobile, please copy and paste the link \
-         into your browser rather than clicking it here.\n\
-         \n\
-         Use this link to connect your Meetup profile:\n\
-         {}\n\
-         ***This is a private, ephemeral, one-time use link and meant just for you.***\n\
-         Don't share it with anyone or bad things can happen (to you, I'll be fine).",
+        "Let's get you hooked up :thumbsup:\n\n***Important note:*** If you are on mobile, please \
+         copy and paste the link into your browser rather than clicking it here.\n\nUse this link \
+         to connect your Meetup profile:\n{}\n***This is a private, ephemeral, one-time use link \
+         and meant just for you.***\nDon't share it with anyone or bad things can happen (to you, \
+         I'll be fine).",
         linking_url
     )
 }
@@ -169,10 +155,8 @@ pub fn MEETUP_LINKING_MESSAGE(linking_url: &str) -> String {
 #[allow(non_snake_case)]
 pub fn DISCORD_ALREADY_LINKED_MESSAGE1(meetup_name: &str, bot_id: u64) -> String {
     format!(
-        "It seems you are already linked to {}'s Meetup profile. \
-         If you would like to change this, please unlink your profile \
-         first by typing:\n\
-         <@{}> unlink meetup",
+        "It seems you are already linked to {}'s Meetup profile. If you would like to change \
+         this, please unlink your profile first by typing:\n<@{}> unlink meetup",
         meetup_name, bot_id
     )
 }
@@ -180,10 +164,8 @@ pub fn DISCORD_ALREADY_LINKED_MESSAGE1(meetup_name: &str, bot_id: u64) -> String
 #[allow(non_snake_case)]
 pub fn DISCORD_ALREADY_LINKED_MESSAGE2(bot_id: u64) -> String {
     format!(
-        "It seems you are already linked to a Meetup profile. \
-         If you would like to change this, please unlink your profile \
-         first by typing:\n\
-         <@{}> unlink meetup",
+        "It seems you are already linked to a Meetup profile. If you would like to change this, \
+         please unlink your profile first by typing:\n<@{}> unlink meetup",
         bot_id
     )
 }
@@ -191,10 +173,8 @@ pub fn DISCORD_ALREADY_LINKED_MESSAGE2(bot_id: u64) -> String {
 #[allow(non_snake_case)]
 pub fn NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id: u64) -> String {
     format!(
-        "You are linked to a seemingly non-existent Meetup account. \
-         If you want to change this, unlink the currently \
-         linked meetup account by writing:\n\
-         <@{}> unlink meetup",
+        "You are linked to a seemingly non-existent Meetup account. If you want to change this, \
+         unlink the currently linked meetup account by writing:\n<@{}> unlink meetup",
         bot_id
     )
 }
@@ -202,9 +182,8 @@ pub fn NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id: u64) -> String {
 #[allow(non_snake_case)]
 pub fn MEETUP_UNLINK_SUCCESS(bot_id: u64) -> String {
     format!(
-        "Your Meetup profile is now unlinked from your Discord profile. \
-         If you want to link it again, please type:\n\
-         <@{bot_id}> link meetup.",
+        "Your Meetup profile is now unlinked from your Discord profile. If you want to link it \
+         again, please type:\n<@{bot_id}> link meetup.",
         bot_id = bot_id
     )
 }
@@ -220,11 +199,13 @@ pub const NOT_A_CHANNEL_ADMIN: &'static str =
 pub const CHANNEL_NOT_BOT_CONTROLLED: &'static str =
     "This channel does not seem to be under my control. But one day... one day :smiling_imp:";
 
-pub const CHANNEL_NOT_YET_CLOSEABLE: &'static str = "Too soon mate. Please wait for my request for deletion first. This is to avoid accidental deletion of channels :grimacing:";
+pub const CHANNEL_NOT_YET_CLOSEABLE: &'static str = "Too soon mate. Please wait for my request \
+                                                     for deletion first. This is to avoid \
+                                                     accidental deletion of channels :grimacing:";
 
 pub const CHANNEL_MARKED_FOR_CLOSING: &'static str =
-    "Roger that. I've marked this channel to be closed in the next 24 hours.\n\
-     Thanks for playing and hope to see you at another game soon.";
+    "Roger that. I've marked this channel to be closed in the next 24 hours.\nThanks for playing \
+     and hope to see you at another game soon.";
 
 pub const CHANNEL_ALREADY_MARKED_FOR_CLOSING: &'static str =
     "Deja vu! This channel is already marked for closing. The black hole is on its way. Patience.";
@@ -240,7 +221,11 @@ pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[u64]) -> String {
         discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
         ", ",
     );
-    format!("Welcome {}! Please check this channel's pinned messages (if any) for basic information about the adventure.", mentions)
+    format!(
+        "Welcome {}! Please check this channel's pinned messages (if any) for basic information \
+         about the adventure.",
+        mentions
+    )
 }
 
 #[allow(non_snake_case)]
@@ -264,7 +249,11 @@ pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[u64]) -> String {
 
 #[allow(non_snake_case)]
 pub fn CHANNEL_ADDED_NEW_HOST(discord_id: u64) -> String {
-    format!("<@{}> is now a Game Master for this channel. With great power comes great responsibility :spider:", discord_id)
+    format!(
+        "<@{}> is now a Game Master for this channel. With great power comes great responsibility \
+         :spider:",
+        discord_id
+    )
 }
 
 pub const CHANNEL_ADD_USER_INVALID_DISCORD: &'static str =
@@ -277,11 +266,10 @@ pub const CHANNEL_ADD_USER_INVALID_DISCORD: &'static str =
 #[allow(non_snake_case)]
 pub fn OAUTH2_AUTHORISATION_DENIED(linking_url: &str) -> String {
     format!(
-        "Looks like you declined the authorisation. If you want to \
-         start over, click the button below to give it another go. \
-         If you are still having issues, please contact an organiser \
-         by email (organisers@swissrpg.ch) or on Discord (@Organiser).<br>\
-         <a href=\"{linking_url}\" class=\"button\" style=\"margin-top: 1em;\">Start Over</a>",
+        "Looks like you declined the authorisation. If you want to start over, click the button \
+         below to give it another go. If you are still having issues, please contact an organiser \
+         by email (organisers@swissrpg.ch) or on Discord (@Organiser).<br><a \
+         href=\"{linking_url}\" class=\"button\" style=\"margin-top: 1em;\">Start Over</a>",
         linking_url = linking_url
     )
 }
@@ -294,8 +282,7 @@ pub const OAUTH2_LINKING_SUCCESS_TITLE: &'static str = "Linking Success!";
 #[allow(non_snake_case)]
 pub fn OAUTH2_LINKING_SUCCESS_CONTENT(name: &str) -> String {
     format!(
-        "You are now linked to {}'s Meetup profile. \
-         Enjoy rolling dice with us!",
+        "You are now linked to {}'s Meetup profile. Enjoy rolling dice with us!",
         name
     )
 }
@@ -308,10 +295,8 @@ pub const OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_TITLE: &'static str = "Linking F
 #[allow(non_snake_case)]
 pub fn OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_CONTENT(bot_name: &str) -> String {
     format!(
-        "It seems you are already linked to a different Meetup profile. \
-         If you would like to change this, please unlink your profile \
-         first by typing:\n\
-         @{} unlink meetup",
+        "It seems you are already linked to a different Meetup profile. If you would like to \
+         change this, please unlink your profile first by typing:\n@{} unlink meetup",
         bot_name
     )
 }
@@ -320,12 +305,12 @@ pub const OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_TITLE: &'static str = "Linking Fa
 #[allow(non_snake_case)]
 pub fn OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_CONTENT(bot_name: &str) -> String {
     format!(
-        "Deja vu! This Meetup profile is already linked to a different Discord user. \
-         Did you link it to another Discord profile in the past? If so, \
-         you should first unlink this Meetup profile from the other Discord profile \
-         by writing \"@{} unlink meetup\". Make sure you do this with the other Discord account. \
-         After that you can link this Meetup account again. \
-         If you did not link this Meetup account before, please contact an @Organiser on Discord.",
+        "Deja vu! This Meetup profile is already linked to a different Discord user. Did you link \
+         it to another Discord profile in the past? If so, you should first unlink this Meetup \
+         profile from the other Discord profile by writing \"@{} unlink meetup\". Make sure you \
+         do this with the other Discord account. After that you can link this Meetup account \
+         again. If you did not link this Meetup account before, please contact an @Organiser on \
+         Discord.",
         bot_name
     )
 }

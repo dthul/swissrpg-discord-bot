@@ -213,10 +213,10 @@ async fn sync_event(
                         if let Some(channel_series) = indicated_channel_series {
                             if channel_series != existing_series_id {
                                 eprintln!(
-                                "Event \"{}\" wants to be associated with a certain channel but \
-                                 that channel already belongs to a different event series",
-                                event.name
-                            );
+                                    "Event \"{}\" wants to be associated with a certain channel \
+                                     but that channel already belongs to a different event series",
+                                    event.name
+                                );
                                 return pipe.query_async(con).compat().await;
                             }
                         }
@@ -224,10 +224,10 @@ async fn sync_event(
                         if let Some(indicated_event_series_id) = indicated_event_series_id {
                             if &existing_series_id != indicated_event_series_id {
                                 eprintln!(
-                                "Warning: Event \"{}\" indicates event series {} but is already \
-                                 associated with event series {}.",
-                                event.name, indicated_event_series_id, existing_series_id
-                            );
+                                    "Warning: Event \"{}\" indicates event series {} but is \
+                                     already associated with event series {}.",
+                                    event.name, indicated_event_series_id, existing_series_id
+                                );
                                 return pipe.query_async(con).compat().await;
                             }
                         }
@@ -245,10 +245,11 @@ async fn sync_event(
                                 // has an event series ID, something is fishy
                                 if indicated_channel_series.is_some() {
                                     eprintln!(
-                                    "Event \"{}\" wants to be associated with a certain channel \
-                                     but that channel already belongs to a different event series",
-                                    event.name
-                                );
+                                        "Event \"{}\" wants to be associated with a certain \
+                                         channel but that channel already belongs to a different \
+                                         event series",
+                                        event.name
+                                    );
                                     return pipe.query_async(con).compat().await;
                                 } else {
                                     // The event wants to be associated with a channel and that channel is not

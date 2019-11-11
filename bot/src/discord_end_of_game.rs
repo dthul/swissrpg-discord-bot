@@ -290,8 +290,8 @@ fn delete_marked_channel(
     if let Some(expiration_time) = expiration_time {
         if expiration_time > deletion_time {
             eprintln!(
-                "Channel {} has an expiration time that is later than the \
-                 scheduled deletion time. Not deleting...",
+                "Channel {} has an expiration time that is later than the scheduled deletion \
+                 time. Not deleting...",
                 channel_id
             );
             return Ok(DeletionStatus::NotDeleted);
