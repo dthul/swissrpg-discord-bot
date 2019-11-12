@@ -34,28 +34,28 @@ impl std::fmt::Display for BoxedError {
         match &self.inner {
             ErrorVariant::Other(err) => write!(
                 f,
-                "Encountered the following error:\n{}\nBacktrace:\n{:?}",
+                "Encountered the following error:\n{:#?}\nBacktrace:\n{:?}",
                 err, self.backtrace
             ),
             ErrorVariant::OAuth2RequestTokenError(err) => match &**err {
                 oauth2::RequestTokenError::Other(string) => write!(
                     f,
-                    "OAuth2::RequestTokenError::Other:\n{}\nBacktrace:\n{:?}",
+                    "OAuth2::RequestTokenError::Other:\n{:#?}\nBacktrace:\n{:?}",
                     string, self.backtrace
                 ),
                 oauth2::RequestTokenError::Parse(serde_err, bytes) => write!(
                     f,
-                    "OAuth2::RequestTokenError::Parse:\n{}\nBytes:\n{:?}\nBacktrace:\n{:?}",
+                    "OAuth2::RequestTokenError::Parse:\n{:#?}\nBytes:\n{:?}\nBacktrace:\n{:?}",
                     serde_err, bytes, self.backtrace
                 ),
                 oauth2::RequestTokenError::Request(req_err) => write!(
                     f,
-                    "OAuth2::RequestTokenError::Request:\n{}\nBacktrace:\n{:?}",
+                    "OAuth2::RequestTokenError::Request:\n{:#?}\nBacktrace:\n{:?}",
                     req_err, self.backtrace
                 ),
                 oauth2::RequestTokenError::ServerResponse(err) => write!(
                     f,
-                    "OAuth2::RequestTokenError::ServerResponse:\n{}\nBacktrace:\n{:?}",
+                    "OAuth2::RequestTokenError::ServerResponse:\n{:#?}\nBacktrace:\n{:?}",
                     err, self.backtrace
                 ),
             },
