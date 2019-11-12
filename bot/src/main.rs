@@ -27,6 +27,19 @@ lazy_static! {
 }
 
 fn main() {
+    let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
+    let is_test_environment = match environment.as_str() {
+        "prod" => false,
+        "test" => true,
+        _ => panic!("BOT_ENV needs to be one of \"prod\" or \"test\""),
+    };
+    if cfg!(feature = "bottest") != is_test_environment {
+        panic!(
+            "The bot was compiled with bottest = {} but started with BOT_ENV = {}",
+            cfg!(feature = "bottest"),
+            environment
+        );
+    }
     let meetup_client_id =
         env::var("MEETUP_CLIENT_ID").expect("Found no MEETUP_CLIENT_ID in environment");
     let meetup_client_secret =
