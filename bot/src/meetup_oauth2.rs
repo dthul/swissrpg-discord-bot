@@ -8,16 +8,29 @@ use hyper::{
 };
 use lazy_static::lazy_static;
 use oauth2::{
-    basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
-    ClientSecret, CsrfToken, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl,
+    Scope, TokenResponse, TokenUrl,
 };
 use rand::Rng;
 use redis::PipelineCommands;
 use simple_error::SimpleError;
-use std::{borrow::Cow, future::Future, sync::Arc};
+use std::{
+    borrow::Cow,
+    future::Future,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 use url::Url;
 
+#[cfg(feature = "bottest")]
+const DOMAIN: &'static str = "bottest.swissrpg.ch";
+#[cfg(feature = "bottest")]
+const BASE_URL: &'static str = "https://bottest.swissrpg.ch";
+#[cfg(not(feature = "bottest"))]
 const DOMAIN: &'static str = "bot.swissrpg.ch";
+#[cfg(not(feature = "bottest"))]
 const BASE_URL: &'static str = "https://bot.swissrpg.ch";
 lazy_static! {
     static ref LINK_URL_REGEX: regex::Regex =
@@ -273,7 +286,7 @@ async fn meetup_http_handler(
         let async_meetup_client = async_meetup_client.clone();
         let token_res = oauth2_authorization_client
             .exchange_code(code)
-            .request_async(async_http_client)
+            .request_async(crate::oauth2_async_http_client::async_http_client)
             .compat()
             .await?;
         // Check that this token belongs to an organizer of all our Meetup groups
@@ -470,7 +483,7 @@ async fn meetup_http_handler(
             .clone()
             .set_redirect_url(redirect_url)
             .exchange_code(code)
-            .request_async(async_http_client)
+            .request_async(crate::oauth2_async_http_client::async_http_client)
             .compat()
             .await?;
         // Get the user's Meetup ID
@@ -526,7 +539,7 @@ async fn meetup_http_handler(
             _ => (),
         }
         // Create the link between the Discord and the Meetup ID
-        let mut successful = false;
+        let successful = AtomicBool::new(false);
         let (_redis_connection, _): (_, ()) = {
             let mut redis_connection = redis_connection;
             // If the "rsvp" scope is part of the token result, store the tokens as well
@@ -549,6 +562,7 @@ async fn meetup_http_handler(
                 let redis_key_d2m = &redis_key_d2m;
                 let redis_key_m2d = &redis_key_m2d;
                 let meetup_user_id = meetup_user.id;
+                let successful = &successful;
                 move |con: redis::aio::Connection, mut pipe: redis::Pipeline| {
                     async move {
                         let (con, linked_meetup_id): (_, Option<u64>) = redis::cmd("GET")
@@ -563,7 +577,7 @@ async fn meetup_http_handler(
                             .await?;
                         if linked_meetup_id.is_some() || linked_discord_id.is_some() {
                             // The meetup id was linked in the meantime, abort
-                            successful = false;
+                            successful.store(false, Ordering::Release);
                             // Execute empty transaction just to get out of the closure
                             pipe.query_async(con).compat().await
                         } else {
@@ -571,7 +585,7 @@ async fn meetup_http_handler(
                                 .sadd("discord_users", discord_id)
                                 .set(redis_key_d2m, meetup_user_id)
                                 .set(redis_key_m2d, discord_id);
-                            successful = true;
+                            successful.store(true, Ordering::Release);
                             pipe.query_async(con).compat().await
                         }
                     }
@@ -585,7 +599,7 @@ async fn meetup_http_handler(
             )
             .await?
         };
-        if !successful {
+        if !successful.load(Ordering::Acquire) {
             return Ok((
                 "Linking Failure",
                 "Could not assign meetup id (timing error)",
@@ -868,7 +882,7 @@ pub async fn refresh_oauth_tokens(
     let refresh_token = oauth2::RefreshToken::new(refresh_token);
     let refresh_token_response = oauth2_client
         .exchange_refresh_token(&refresh_token)
-        .request_async(oauth2::reqwest::async_http_client)
+        .request_async(crate::oauth2_async_http_client::async_http_client)
         .compat()
         .await?;
     // Store the new tokens in Redis

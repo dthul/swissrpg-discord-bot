@@ -281,8 +281,21 @@ impl AsyncClient {
             ),
         };
         let res = self.client.get(&url).send().await?;
-        let user = Self::try_deserialize(res).await?;
-        Ok(Some(user))
+        let user_res = Self::try_deserialize(res).await;
+        match user_res {
+            Ok(user) => Ok(Some(user)),
+            Err(err) => {
+                // Dirty hack: instead of properly parsing the errors returned
+                // by the Meetup API to figure out whether it is just a "404",
+                // just look at the error text instead
+                if let Error::Serde { input, .. } = &err {
+                    if input.contains("member_error") {
+                        return Ok(None);
+                    }
+                }
+                Err(err)
+            }
+        }
     }
 
     // Gets the user with the specified ID
@@ -299,8 +312,21 @@ impl AsyncClient {
             ),
         };
         let res = self.client.get(&url).send().await?;
-        let user = Self::try_deserialize(res).await?;
-        Ok(Some(user))
+        let user_res = Self::try_deserialize(res).await;
+        match user_res {
+            Ok(user) => Ok(Some(user)),
+            Err(err) => {
+                // Dirty hack: instead of properly parsing the errors returned
+                // by the Meetup API to figure out whether it is just a "404",
+                // just look at the error text instead
+                if let Error::Serde { input, .. } = &err {
+                    if input.contains("member_error") {
+                        return Ok(None);
+                    }
+                }
+                Err(err)
+            }
+        }
     }
 
     // Doesn't implement pagination. But since Meetup returns 200 elements per page,
