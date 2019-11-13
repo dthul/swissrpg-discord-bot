@@ -1,5 +1,5 @@
 use crate::{error::BoxedError, strings};
-use futures_util::compat::Future01CompatExt;
+use futures_util::{compat::Future01CompatExt, lock::Mutex as AsyncMutex};
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
 use serenity::{
@@ -35,6 +35,7 @@ pub struct Regexes {
     pub help_mention: Regex,
     pub refresh_user_token_admin_dm: Regex,
     pub rsvp_user_admin_mention: Regex,
+    pub clone_event_admin_mention: Regex,
 }
 
 impl Regexes {
@@ -178,6 +179,10 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN,
     );
+    let clone_event_admin_mention = format!(
+        r"^{bot_mention}\s+(?i)clone\s+event\s+(?P<meetup_event_id>[^\s]+)\s*$",
+        bot_mention = bot_mention,
+    );
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -206,6 +211,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         help_mention: Regex::new(help_mention.as_str()).unwrap(),
         refresh_user_token_admin_dm: Regex::new(refresh_user_token_admin_dm.as_str()).unwrap(),
         rsvp_user_admin_mention: Regex::new(rsvp_user_admin_mention.as_str()).unwrap(),
+        clone_event_admin_mention: Regex::new(clone_event_admin_mention.as_str()).unwrap(),
     }
 }
 
@@ -821,6 +827,40 @@ impl crate::discord_bot::Handler {
                 });
             }
         };
+    }
+
+    pub fn clone_event(
+        ctx: &Context,
+        msg: &Message,
+        urlname: &str,
+        meetup_event_id: &str,
+        async_meetup_client: Arc<AsyncMutex<Option<crate::meetup_api::AsyncClient>>>,
+    ) {
+        let future = async {
+            let guard = async_meetup_client.lock().await;
+            let client = guard.clone();
+            drop(guard);
+            let client = client.ok_or(simple_error::SimpleError::new(
+                "Async Meetup client not set",
+            ))?;
+            crate::meetup_util::clone_event(urlname, meetup_event_id, client).await
+        };
+        match crate::ASYNC_RUNTIME.block_on(future) {
+            Ok(new_event) => {
+                let _ = msg.react(ctx, "\u{2705}");
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    format!("Created new Meetup event: {}", new_event.link),
+                );
+            }
+            Err(err) => {
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                eprintln!(
+                    "Could not clone Meetup event {}. Error:\n{:#?}",
+                    meetup_event_id, err
+                );
+            }
+        }
     }
 
     pub fn rsvp_user_to_event(

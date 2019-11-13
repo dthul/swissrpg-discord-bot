@@ -94,3 +94,40 @@ pub async fn rsvp_user_to_event(
     };
     try_with_token_refresh(rsvp_fun, user_id, redis_client, oauth2_consumer).await
 }
+
+pub async fn clone_event(
+    urlname: &str,
+    event_id: &str,
+    meetup_client: crate::meetup_api::AsyncClient,
+) -> crate::Result<crate::meetup_api::Event> {
+    let event = meetup_client.get_event(urlname, event_id).await?;
+    let event = match event {
+        Some(event) => event,
+        None => {
+            return Err(simple_error::SimpleError::new(format!(
+                "Specified event ({}/{}) was not found",
+                urlname, event_id
+            ))
+            .into())
+        }
+    };
+    let new_event = crate::meetup_api::NewEvent {
+        description: event.simple_html_description.unwrap_or(event.description),
+        duration_ms: event.duration_ms,
+        featured_photo_id: event.featured_photo.map(|p| p.id),
+        hosts: event.event_hosts.iter().map(|host| host.id).collect(),
+        how_to_find_us: event.how_to_find_us,
+        name: event.name,
+        rsvp_limit: event.rsvp_limit,
+        guest_limit: event.rsvp_rules.map(|r| r.guest_limit),
+        time: event.time,
+        venue_id: event
+            .venue
+            .map(|v| v.id)
+            .ok_or(simple_error::SimpleError::new(
+                "Cannot clone an event that doesn't have a venue",
+            ))?,
+    };
+    let new_event = meetup_client.create_event(urlname, new_event).await?;
+    return Ok(new_event);
+}

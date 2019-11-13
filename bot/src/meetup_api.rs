@@ -24,6 +24,7 @@ pub struct AsyncClient {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Photo {
+    pub id: u64,
     pub thumb_link: String,
 }
 
@@ -69,10 +70,44 @@ pub struct Event {
     pub name: String,
     #[serde(with = "ts_milliseconds")]
     pub time: chrono::DateTime<chrono::Utc>,
+    #[serde(rename = "duration")]
+    pub duration_ms: Option<u64>,
     pub event_hosts: Vec<User>,
+    pub featured_photo: Option<Photo>,
     pub link: String,
     pub group: Group,
     pub description: String,
+    pub rsvp_limit: Option<u16>,
+    pub simple_html_description: Option<String>,
+    pub how_to_find_us: Option<String>,
+    pub venue: Option<Venue>,
+    pub rsvp_rules: Option<RSVPRules>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Venue {
+    pub id: u64,
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub address_1: Option<String>,
+    pub address_2: Option<String>,
+    pub address_3: Option<String>,
+    pub city: String,
+}
+
+pub struct NewEvent {
+    pub description: String,
+    pub duration_ms: Option<u64>,
+    pub featured_photo_id: Option<u64>,
+    pub hosts: Vec<u64>,
+    pub how_to_find_us: Option<String>,
+    // lat / long?
+    pub name: String,
+    pub rsvp_limit: Option<u16>,
+    pub time: chrono::DateTime<chrono::Utc>,
+    pub venue_id: u64,
+    pub guest_limit: Option<u16>,
 }
 
 impl<'de> Deserialize<'de> for UserStatus {
@@ -153,6 +188,11 @@ impl<'de> Deserialize<'de> for RSVPResponse {
     }
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct RSVPRules {
+    pub guest_limit: u16,
+}
+
 impl Client {
     pub fn new(access_token: &str) -> Client {
         let mut headers = HeaderMap::new();
@@ -213,6 +253,7 @@ impl Client {
 
 #[derive(Debug)]
 pub enum Error {
+    AuthenticationFailure,
     Reqwest(reqwest::Error),
     Serde {
         error: serde_json::Error,
@@ -223,6 +264,9 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Error::AuthenticationFailure => {
+                write!(f, "Meetup Client Error (Authentication Failure)")
+            }
             Error::Reqwest(error) => write!(f, "Meetup Client Error (Reqwest Error):\n{:?}", error),
             Error::Serde { error, input } => write!(
                 f,
@@ -236,6 +280,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Error::AuthenticationFailure => None,
             Error::Reqwest(err) => Some(err),
             Error::Serde { error: err, .. } => Some(err),
         }
@@ -357,6 +402,29 @@ impl AsyncClient {
         stream::iter(streams).flatten()
     }
 
+    pub async fn get_event(&self, urlname: &str, event_id: &str) -> Result<Option<Event>, Error> {
+        let url = format!(
+            "{}/{}/events/{}?&fields=simple_html_description,featured_photo,event_hosts",
+            BASE_URL, urlname, event_id
+        );
+        let res = self.client.get(&url).send().await?;
+        let event_res = Self::try_deserialize(res).await;
+        match event_res {
+            Ok(event) => Ok(Some(event)),
+            Err(err) => {
+                // Dirty hack: instead of properly parsing the errors returned
+                // by the Meetup API to figure out whether it is just a "404",
+                // just look at the error text instead
+                if let Error::Serde { input, .. } = &err {
+                    if input.contains("event_error") {
+                        return Ok(None);
+                    }
+                }
+                Err(err)
+            }
+        }
+    }
+
     // Get members that RSVP'd yes
     pub async fn get_rsvps(&self, urlname: &str, event_id: &str) -> Result<Vec<RSVP>, Error> {
         let url = format!(
@@ -385,6 +453,50 @@ impl AsyncClient {
             .query(&[("response", if attending { "yes" } else { "no" })])
             .send()
             .await?;
+        let rsvp_res = Self::try_deserialize(res).await;
+        match rsvp_res {
+            Ok(rsvp) => Ok(rsvp),
+            Err(err) => {
+                // Dirty hack: instead of properly parsing the errors returned
+                // by the Meetup API to figure out whether it is a credentials
+                // error by just looking at the error text instead
+                if let Error::Serde { input, .. } = &err {
+                    if input.contains("auth_fail") {
+                        return Err(Error::AuthenticationFailure);
+                    }
+                }
+                Err(err)
+            }
+        }
+    }
+
+    pub async fn create_event(&self, urlname: &str, event: NewEvent) -> Result<Event, Error> {
+        let url = format!(
+            "{}/{}/events?&fields=simple_html_description,featured_photo,event_hosts",
+            BASE_URL, urlname
+        );
+        let host_ids = itertools::join(&event.hosts, ",");
+        let mut query = vec![
+            ("description", event.description),
+            ("event_hosts", host_ids),
+            ("name", event.name),
+            ("rsvp_limit", event.rsvp_limit.unwrap_or(0).to_string()),
+            ("guest_limit", event.guest_limit.unwrap_or(0).to_string()),
+            ("self_rsvp", "false".into()),
+            ("time", event.time.timestamp_millis().to_string()),
+            ("venue_id", event.venue_id.to_string()),
+            ("publish_status", "draft".to_string()),
+        ];
+        if let Some(duration_ms) = event.duration_ms {
+            query.push(("duration", duration_ms.to_string()));
+        }
+        if let Some(featured_photo_id) = event.featured_photo_id {
+            query.push(("featured_photo_id", featured_photo_id.to_string()));
+        }
+        if let Some(how_to_find_us) = event.how_to_find_us {
+            query.push(("how_to_find_us", how_to_find_us));
+        }
+        let res = self.client.post(&url).query(&query).send().await?;
         Self::try_deserialize(res).await
     }
 

@@ -672,6 +672,36 @@ impl EventHandler for Handler {
                 redis_client,
                 oauth2_consumer,
             )
+        } else if let Some(captures) = regexes.clone_event_admin_mention.captures(&msg.content) {
+            // This is only for bot_admins
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return;
+            }
+            let async_meetup_client = {
+                let data = ctx.data.read();
+                data.get::<AsyncMeetupClientKey>()
+                    .expect("Async Meetup client was not set")
+                    .clone()
+            };
+            // Get the mentioned Meetup event
+            let meetup_event_id = captures.name("meetup_event_id").unwrap().as_str();
+            // Try to RSVP the user
+            Self::clone_event(
+                &ctx,
+                &msg,
+                "SwissRPG-Zurich",
+                meetup_event_id,
+                async_meetup_client,
+            )
         } else {
             let _ = msg
                 .channel_id
