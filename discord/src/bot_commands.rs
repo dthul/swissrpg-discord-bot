@@ -858,6 +858,47 @@ impl crate::discord_bot::Handler {
         };
     }
 
+    fn new_event_hook(
+        mut new_event: crate::meetup_api::NewEvent,
+        old_event_id: &str,
+    ) -> crate::Result<crate::meetup_api::NewEvent> {
+        // Remove unnecessary shortcodes from follow-up sessions
+        let description = new_event.description;
+        let description = crate::meetup_sync::NEW_ADVENTURE_REGEX.replace_all(&description, "");
+        let description = crate::meetup_sync::NEW_CAMPAIGN_REGEX.replace_all(&description, "");
+        let mut description = crate::meetup_sync::CHANNEL_REGEX
+            .replace_all(&description, "")
+            .into_owned();
+        // Add an event series shortcode if there is none yet
+        if !crate::meetup_sync::EVENT_SERIES_REGEX.is_match(&description) {
+            description.push_str(&format!("\n[campaign {}]", old_event_id));
+        }
+        // Increase the Session number
+        let mut name = new_event.name.clone();
+        let title_captures = crate::meetup_sync::SESSION_REGEX.captures_iter(&new_event.name);
+        // Match the rightmost occurence of "Session X" in the title
+        if let Some(capture) = title_captures.last() {
+            // If there is a match, increase the number
+            // Extract the current number from the title
+            let session_number = capture.name("number").unwrap().as_str();
+            // Try to parse the session number
+            let session_number = session_number.parse::<i32>()?;
+            // Find the range of the "Session X" match
+            let session_x_match = capture.get(0).unwrap();
+            // Replace the text "Session X" by "Session X+1"
+            name.replace_range(
+                session_x_match.start()..session_x_match.end(),
+                &format!("Session {}", session_number + 1),
+            );
+        } else {
+            // If there is no match, append a Session number
+            name.push_str(&format!(" Session 2"));
+        }
+        new_event.name = name;
+        new_event.description = description;
+        Ok(new_event)
+    }
+
     pub fn clone_event(
         ctx: &Context,
         msg: &Message,
@@ -868,6 +909,7 @@ impl crate::discord_bot::Handler {
         oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
     ) {
         let future = async {
+            // Clone the async meetup client
             let guard = async_meetup_client.lock().await;
             let client = guard.clone();
             drop(guard);
@@ -879,8 +921,15 @@ impl crate::discord_bot::Handler {
                 }
                 Some(client) => client,
             };
-            let new_event =
-                crate::meetup_util::clone_event(urlname, meetup_event_id, client.clone()).await?;
+            let new_event_hook =
+                Box::new(|new_event| Self::new_event_hook(new_event, meetup_event_id));
+            let new_event = crate::meetup_util::clone_event(
+                urlname,
+                meetup_event_id,
+                client.clone(),
+                Some(new_event_hook),
+            )
+            .await?;
             // Try to transfer the RSVPs to the new event
             if let Err(_) = crate::meetup_util::clone_rsvps(
                 urlname,

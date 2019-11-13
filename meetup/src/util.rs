@@ -95,10 +95,16 @@ pub async fn rsvp_user_to_event(
     try_with_token_refresh(rsvp_fun, user_id, redis_client, oauth2_consumer).await
 }
 
-pub async fn clone_event(
-    urlname: &str,
-    event_id: &str,
+pub async fn clone_event<'a>(
+    urlname: &'a str,
+    event_id: &'a str,
     meetup_client: crate::meetup_api::AsyncClient,
+    hook: Option<
+        Box<
+            dyn (FnOnce(crate::meetup_api::NewEvent) -> crate::Result<crate::meetup_api::NewEvent>)
+                + 'a,
+        >,
+    >,
 ) -> crate::Result<crate::meetup_api::Event> {
     let event = meetup_client.get_event(urlname, event_id).await?;
     let event = match event {
@@ -128,6 +134,13 @@ pub async fn clone_event(
                 "Cannot clone an event that doesn't have a venue",
             ))?,
     };
+    // If there is a hook specified, let it modify the new event before
+    // publishing it to Meetup
+    let new_event = match hook {
+        Some(hook) => hook(new_event)?,
+        None => new_event,
+    };
+    // Post the event on Meetup
     let new_event = meetup_client.create_event(urlname, new_event).await?;
     return Ok(new_event);
 }
@@ -140,8 +153,13 @@ pub async fn clone_rsvps(
     meetup_client: crate::meetup_api::AsyncClient,
     oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
 ) -> crate::Result<()> {
-    // First, query the source event's RSVPs
-    let rsvps = meetup_client.get_rsvps(urlname, src_event_id).await?;
+    // First, query the source event's RSVPs and filter them by "yes" responses
+    let rsvps: Vec<_> = meetup_client
+        .get_rsvps(urlname, src_event_id)
+        .await?
+        .into_iter()
+        .filter(|rsvp| rsvp.response == crate::meetup_api::RSVPResponse::Yes)
+        .collect();
     // Now, try to RSVP each user to the destination event
     let mut last_err = None;
     let mut num_success: u16 = 0;

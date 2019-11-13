@@ -6,18 +6,22 @@ use simple_error::SimpleError;
 use std::sync::Arc;
 use tokio::{self, prelude::*};
 
-const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*adventure\s*[\]\)]";
-const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*campaign\s*[\]\)]";
-const EVENT_SERIES_PATTERN: &'static str =
+pub const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*adventure\s*[\]\)]";
+pub const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*campaign\s*[\]\)]";
+pub const EVENT_SERIES_PATTERN: &'static str =
     r"(?i)[\[\(]\s*campaign\s*(?P<event_id>[a-zA-Z0-9]+)\s*[\]\)]";
-const CHANNEL_PATTERN: &'static str = r"(?i)[\[\(]\s*channel\s*(?P<channel_id>[0-9]+)\s*[\]\)]";
+pub const CHANNEL_PATTERN: &'static str = r"(?i)[\[\(]\s*channel\s*(?P<channel_id>[0-9]+)\s*[\]\)]";
+pub const SESSION_PATTERN: &'static str = r"(?i)session\s*(?P<number>[0-9]+)";
 
 lazy_static! {
-    static ref NEW_ADVENTURE_REGEX: regex::Regex =
+    pub static ref NEW_ADVENTURE_REGEX: regex::Regex =
         regex::Regex::new(NEW_ADVENTURE_PATTERN).unwrap();
-    static ref NEW_CAMPAIGN_REGEX: regex::Regex = regex::Regex::new(NEW_CAMPAIGN_PATTERN).unwrap();
-    static ref EVENT_SERIES_REGEX: regex::Regex = regex::Regex::new(EVENT_SERIES_PATTERN).unwrap();
-    static ref CHANNEL_REGEX: regex::Regex = regex::Regex::new(CHANNEL_PATTERN).unwrap();
+    pub static ref NEW_CAMPAIGN_REGEX: regex::Regex =
+        regex::Regex::new(NEW_CAMPAIGN_PATTERN).unwrap();
+    pub static ref EVENT_SERIES_REGEX: regex::Regex =
+        regex::Regex::new(EVENT_SERIES_PATTERN).unwrap();
+    pub static ref CHANNEL_REGEX: regex::Regex = regex::Regex::new(CHANNEL_PATTERN).unwrap();
+    pub static ref SESSION_REGEX: regex::Regex = regex::Regex::new(SESSION_PATTERN).unwrap();
 }
 
 pub type BoxedFallibleFuture<T, E = crate::BoxedError> =
