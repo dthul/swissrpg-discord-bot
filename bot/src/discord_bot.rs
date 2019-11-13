@@ -622,6 +622,50 @@ impl EventHandler for Handler {
                 redis_client,
                 oauth2_consumer,
             );
+        } else if let Some(captures) = regexes.rsvp_user_admin_mention.captures(&msg.content) {
+            // This is only for bot_admins
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return;
+            }
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            // Get the mentioned Discord ID
+            let discord_id = captures.name("mention_id").unwrap().as_str();
+            // Try to convert the specified ID to an integer
+            let discord_id = match discord_id.parse::<u64>() {
+                Ok(id) => id,
+                _ => {
+                    // let _ = msg
+                    //     .channel_id
+                    //     .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
+                    // TODO
+                    return;
+                }
+            };
+            // Get the mentioned Meetup event
+            let meetup_event_id = captures.name("meetup_event_id").unwrap().as_str();
+            // Try to RSVP the user
+            Self::rsvp_user_to_event(
+                &ctx,
+                &msg,
+                UserId(discord_id),
+                "SwissRPG-Zurich",
+                meetup_event_id,
+                redis_client,
+            )
         } else {
             let _ = msg
                 .channel_id

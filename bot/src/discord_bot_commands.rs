@@ -34,6 +34,7 @@ pub struct Regexes {
     pub help_dm: Regex,
     pub help_mention: Regex,
     pub refresh_user_token_admin_dm: Regex,
+    pub rsvp_user_admin_mention: Regex,
 }
 
 impl Regexes {
@@ -172,6 +173,11 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         bot_mention = bot_mention,
         mention_pattern = MENTION_PATTERN
     );
+    let rsvp_user_admin_mention = format!(
+        r"^{bot_mention}\s+(?i)rsvp\s+{mention_pattern}\s+(?P<meetup_event_id>[^\s]+)\s*$",
+        bot_mention = bot_mention,
+        mention_pattern = MENTION_PATTERN,
+    );
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -199,6 +205,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         help_dm: Regex::new(help_dm).unwrap(),
         help_mention: Regex::new(help_mention.as_str()).unwrap(),
         refresh_user_token_admin_dm: Regex::new(refresh_user_token_admin_dm.as_str()).unwrap(),
+        rsvp_user_admin_mention: Regex::new(rsvp_user_admin_mention.as_str()).unwrap(),
     }
 }
 
@@ -623,6 +630,7 @@ impl crate::discord_bot::Handler {
                 channel_roles.user,
             ) {
                 Ok(()) => {
+                    let _ = msg.react(ctx, "\u{2705}");
                     let _ = msg
                         .channel_id
                         .say(&ctx.http, format!("Welcome <@{}>!", discord_id));
@@ -641,6 +649,7 @@ impl crate::discord_bot::Handler {
                     channel_roles.host,
                 ) {
                     Ok(()) => {
+                        let _ = msg.react(ctx, "\u{2705}");
                         let _ = msg
                             .channel_id
                             .say(&ctx.http, strings::CHANNEL_ADDED_NEW_HOST(discord_id));
@@ -788,7 +797,7 @@ impl crate::discord_bot::Handler {
                 return;
             }
             Err(err) => {
-                eprintln!("Redis error when obtaining a redis conneciton: {}", err);
+                eprintln!("Redis error when obtaining a redis connection: {}", err);
                 // TODO reply
                 return;
             }
@@ -812,6 +821,79 @@ impl crate::discord_bot::Handler {
                 });
             }
         };
+    }
+
+    pub fn rsvp_user_to_event(
+        ctx: &Context,
+        msg: &Message,
+        user_id: UserId,
+        urlname: &str,
+        meetup_event_id: &str,
+        redis_client: redis::Client,
+        // oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
+    ) {
+        // Look up the Meetup ID for this user
+        let mut redis_connection = match redis_client.get_connection() {
+            Ok(redis_connection) => redis_connection,
+            Err(err) => {
+                eprintln!("Redis error when obtaining a redis connection: {}", err);
+                // TODO reply
+                return;
+            }
+        };
+        let redis_discord_user_meetup_user_key = format!("discord_user:{}:meetup_user", user_id);
+        let res: redis::RedisResult<Option<u64>> =
+            redis_connection.get(&redis_discord_user_meetup_user_key);
+        let meetup_id = match res {
+            Ok(Some(meetup_id)) => meetup_id,
+            Ok(None) => {
+                // TODO reply
+                return;
+            }
+            Err(err) => {
+                eprintln!("Redis error when looking up the user's meetup ID: {}", err);
+                // TODO reply
+                return;
+            }
+        };
+        // Look up the Meetup access token for this user
+        let redis_meetup_user_oauth_tokens_key = format!("meetup_user:{}:oauth2_tokens", meetup_id);
+        let res: redis::RedisResult<Option<String>> =
+            redis_connection.hget(&redis_meetup_user_oauth_tokens_key, "access_token");
+        let access_token = match res {
+            Ok(Some(access_token)) => access_token,
+            Ok(None) => {
+                return;
+            }
+            Err(err) => {
+                eprintln!(
+                    "Redis error when looking up the user's oauth access token: {}",
+                    err
+                );
+                return;
+            }
+        };
+        let meetup_api_user_client = crate::meetup_api::AsyncClient::new(&access_token);
+        match crate::ASYNC_RUNTIME.block_on(meetup_api_user_client.rsvp(
+            urlname,
+            meetup_event_id,
+            true,
+        )) {
+            Ok(rsvp) => {
+                let _ = msg.react(ctx, "\u{2705}");
+                println!(
+                    "RSVP'd Meetup user {} to Meetup event {}. RSVP:\n{:#?}",
+                    meetup_id, meetup_event_id, rsvp
+                );
+            }
+            Err(err) => {
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                eprintln!(
+                    "Could not RSVP Meetup user {} to Meetup event {}. Error:\n{:#?}",
+                    meetup_id, meetup_event_id, err
+                );
+            }
+        }
     }
 }
 

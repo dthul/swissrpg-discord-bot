@@ -123,6 +123,7 @@ pub struct UserInfo {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum RSVPResponse {
     Yes,
+    YesPendingPayment,
     No,
     Waitlist,
 }
@@ -143,9 +144,10 @@ impl<'de> Deserialize<'de> for RSVPResponse {
             "yes" => Ok(RSVPResponse::Yes),
             "no" => Ok(RSVPResponse::No),
             "waitlist" => Ok(RSVPResponse::Waitlist),
+            "yes_pending_payment" => Ok(RSVPResponse::YesPendingPayment),
             _ => Err(D::Error::invalid_value(
                 serde::de::Unexpected::Enum,
-                &"one of [yes, no, waitlist]",
+                &"one of [yes, yes_pending_payment, no, waitlist]",
             )),
         }
     }
@@ -363,6 +365,26 @@ impl AsyncClient {
             BASE_URL, urlname, event_id
         );
         let res = self.client.get(&url).send().await?;
+        Self::try_deserialize(res).await
+    }
+
+    pub async fn rsvp(
+        &self,
+        urlname: &str,
+        event_id: &str,
+        attending: bool,
+    ) -> Result<RSVP, Error> {
+        let url = format!(
+            "{}/{}/events/{}/rsvps?&sign=true&photo-host=public&page=200&only=response,member&\
+             omit=member.photo,member.event_context",
+            BASE_URL, urlname, event_id
+        );
+        let res = self
+            .client
+            .post(&url)
+            .query(&[("response", if attending { "yes" } else { "no" })])
+            .send()
+            .await?;
         Self::try_deserialize(res).await
     }
 
