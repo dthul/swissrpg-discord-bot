@@ -1,5 +1,9 @@
 use futures_util::compat::Future01CompatExt;
-use std::{future::Future, sync::Arc};
+use std::{
+    future::Future,
+    io::{self, Write},
+    sync::Arc,
+};
 
 async fn try_with_token_refresh<
     T,
@@ -13,6 +17,8 @@ async fn try_with_token_refresh<
 ) -> crate::Result<T> {
     let redis_connection = redis_client.get_async_connection().compat().await?;
     // Look up the Meetup access token for this user
+    println!("Looking up the oauth access token");
+    io::stdout().flush().unwrap();
     let redis_meetup_user_oauth_tokens_key = format!("meetup_user:{}:oauth2_tokens", user_id);
     let (_redis_connection, access_token): (_, Option<String>) = redis::cmd("HGET")
         .arg(&redis_meetup_user_oauth_tokens_key)
@@ -24,27 +30,55 @@ async fn try_with_token_refresh<
         Some(access_token) => access_token,
         None => {
             // There is no access token: try to obtain a new one
+            println!("No access token, calling oauth2_consumer.refresh_oauth_tokens");
+            io::stdout().flush().unwrap();
             let (_, access_token) = oauth2_consumer
-                .refresh_oauth_tokens(crate::meetup_oauth2::TokenType::User(user_id), redis_client)
+                .refresh_oauth_tokens(
+                    crate::meetup_oauth2::TokenType::User(user_id),
+                    redis_client.clone(),
+                )
                 .await?;
+            println!("Got an access token!");
+            io::stdout().flush().unwrap();
             access_token.secret().clone()
         }
     };
     // Run the provided function
     let meetup_api_user_client = crate::meetup_api::AsyncClient::new(&access_token);
+    println!("Running the provided funtion");
+    io::stdout().flush().unwrap();
     match f(meetup_api_user_client).await {
         Err(err) => {
-            // TODO: figure out whether it was an error due to invalid credentials
-            let error_due_to_token = false;
-            if error_due_to_token {
-                // TODO: try to obtain a new access token and re-run the provided function
-                unimplemented!()
+            println!("Got an error");
+            io::stdout().flush().unwrap();
+            if let crate::meetup_api::Error::AuthenticationFailure = err {
+                // The request seems to have failed due to invalid credentials.
+                // Try to obtain a new access token and re-run the provided function.
+                println!("Calling oauth2_consumer.refresh_oauth_tokens");
+                io::stdout().flush().unwrap();
+                let (_, access_token) = oauth2_consumer
+                    .refresh_oauth_tokens(
+                        crate::meetup_oauth2::TokenType::User(user_id),
+                        redis_client,
+                    )
+                    .await?;
+                println!("Got an access token!");
+                io::stdout().flush().unwrap();
+                // Re-run the provided function one more time
+                let meetup_api_user_client =
+                    crate::meetup_api::AsyncClient::new(access_token.secret());
+                f(meetup_api_user_client).await.map_err(Into::into)
             } else {
                 eprintln!("Meetup API error: {:#?}", err);
+                io::stdout().flush().unwrap();
                 return Err(err.into());
             }
         }
-        Ok(t) => Ok(t),
+        Ok(t) => {
+            println!("Everything is fine!");
+            io::stdout().flush().unwrap();
+            Ok(t)
+        }
     }
 }
 
