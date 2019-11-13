@@ -131,3 +131,47 @@ pub async fn clone_event(
     let new_event = meetup_client.create_event(urlname, new_event).await?;
     return Ok(new_event);
 }
+
+pub async fn clone_rsvps(
+    urlname: &str,
+    src_event_id: &str,
+    dst_event_id: &str,
+    redis_client: redis::Client,
+    meetup_client: crate::meetup_api::AsyncClient,
+    oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
+) -> crate::Result<()> {
+    // First, query the source event's RSVPs
+    let rsvps = meetup_client.get_rsvps(urlname, src_event_id).await?;
+    // Now, try to RSVP each user to the destination event
+    let mut last_err = None;
+    let mut num_success: u16 = 0;
+    for rsvp in &rsvps {
+        if let Err(err) = rsvp_user_to_event(
+            rsvp.member.id,
+            urlname,
+            dst_event_id,
+            redis_client.clone(),
+            oauth2_consumer.clone(),
+        )
+        .await
+        {
+            eprintln!(
+                "Could not RSVP user {} to event {}:\n{:#?}",
+                rsvp.member.id, dst_event_id, err
+            );
+            last_err = Some(err);
+        } else {
+            num_success += 1;
+        }
+    }
+    if let Some(err) = last_err {
+        return Err(simple_error::SimpleError::new(format!(
+            "Could not RSVP all users. {} out of {} were successfully RSVPd. Last error:\n{:#?}",
+            num_success,
+            rsvps.len(),
+            err,
+        ))
+        .into());
+    }
+    Ok(())
+}

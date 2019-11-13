@@ -863,16 +863,40 @@ impl crate::discord_bot::Handler {
         msg: &Message,
         urlname: &str,
         meetup_event_id: &str,
+        redis_client: redis::Client,
         async_meetup_client: Arc<AsyncMutex<Option<crate::meetup_api::AsyncClient>>>,
+        oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
     ) {
         let future = async {
             let guard = async_meetup_client.lock().await;
             let client = guard.clone();
             drop(guard);
-            let client = client.ok_or(simple_error::SimpleError::new(
-                "Async Meetup client not set",
-            ))?;
-            crate::meetup_util::clone_event(urlname, meetup_event_id, client).await
+            let client = match client {
+                None => {
+                    return Err(crate::BoxedError::from(simple_error::SimpleError::new(
+                        "Async Meetup client not set",
+                    )))
+                }
+                Some(client) => client,
+            };
+            let new_event =
+                crate::meetup_util::clone_event(urlname, meetup_event_id, client.clone()).await?;
+            // Try to transfer the RSVPs to the new event
+            if let Err(_) = crate::meetup_util::clone_rsvps(
+                urlname,
+                meetup_event_id,
+                &new_event.id,
+                redis_client,
+                client,
+                oauth2_consumer,
+            )
+            .await
+            {
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, "Could not transfer all RSVPs to the new event");
+            }
+            Ok(new_event)
         };
         match crate::ASYNC_RUNTIME.block_on(future) {
             Ok(new_event) => {

@@ -687,11 +687,19 @@ impl EventHandler for Handler {
                 let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
-            let async_meetup_client = {
+            let (redis_client, async_meetup_client, oauth2_consumer) = {
                 let data = ctx.data.read();
-                data.get::<AsyncMeetupClientKey>()
-                    .expect("Async Meetup client was not set")
-                    .clone()
+                (
+                    data.get::<RedisClientKey>()
+                        .expect("Redis client was not set")
+                        .clone(),
+                    data.get::<AsyncMeetupClientKey>()
+                        .expect("Async Meetup client was not set")
+                        .clone(),
+                    data.get::<OAuth2ConsumerKey>()
+                        .expect("OAuth2 consumer was not set")
+                        .clone(),
+                )
             };
             // Get the mentioned Meetup event
             let meetup_event_id = captures.name("meetup_event_id").unwrap().as_str();
@@ -701,7 +709,9 @@ impl EventHandler for Handler {
                 &msg,
                 "SwissRPG-Zurich",
                 meetup_event_id,
+                redis_client,
                 async_meetup_client,
+                oauth2_consumer,
             )
         } else if let Some(captures) = regexes.whois_bot_admin(is_dm).captures(&msg.content) {
             // This is only for bot_admins
