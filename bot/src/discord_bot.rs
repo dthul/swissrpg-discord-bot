@@ -636,11 +636,16 @@ impl EventHandler for Handler {
                 let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
-            let redis_client = {
+            let (redis_client, oauth2_consumer) = {
                 let data = ctx.data.read();
-                data.get::<RedisClientKey>()
-                    .expect("Redis client was not set")
-                    .clone()
+                (
+                    data.get::<RedisClientKey>()
+                        .expect("Redis client was not set")
+                        .clone(),
+                    data.get::<OAuth2ConsumerKey>()
+                        .expect("OAuth2 consumer was not set")
+                        .clone(),
+                )
             };
             // Get the mentioned Discord ID
             let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -665,6 +670,7 @@ impl EventHandler for Handler {
                 "SwissRPG-Zurich",
                 meetup_event_id,
                 redis_client,
+                oauth2_consumer,
             )
         } else {
             let _ = msg

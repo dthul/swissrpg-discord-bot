@@ -830,7 +830,7 @@ impl crate::discord_bot::Handler {
         urlname: &str,
         meetup_event_id: &str,
         redis_client: redis::Client,
-        // oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
+        oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
     ) {
         // Look up the Meetup ID for this user
         let mut redis_connection = match redis_client.get_connection() {
@@ -856,28 +856,13 @@ impl crate::discord_bot::Handler {
                 return;
             }
         };
-        // Look up the Meetup access token for this user
-        let redis_meetup_user_oauth_tokens_key = format!("meetup_user:{}:oauth2_tokens", meetup_id);
-        let res: redis::RedisResult<Option<String>> =
-            redis_connection.hget(&redis_meetup_user_oauth_tokens_key, "access_token");
-        let access_token = match res {
-            Ok(Some(access_token)) => access_token,
-            Ok(None) => {
-                return;
-            }
-            Err(err) => {
-                eprintln!(
-                    "Redis error when looking up the user's oauth access token: {}",
-                    err
-                );
-                return;
-            }
-        };
-        let meetup_api_user_client = crate::meetup_api::AsyncClient::new(&access_token);
-        match crate::ASYNC_RUNTIME.block_on(meetup_api_user_client.rsvp(
+        // Try to RSVP the user
+        match crate::ASYNC_RUNTIME.block_on(crate::meetup_util::rsvp_user_to_event(
+            meetup_id,
             urlname,
             meetup_event_id,
-            true,
+            redis_client,
+            oauth2_consumer,
         )) {
             Ok(rsvp) => {
                 let _ = msg.react(ctx, "\u{2705}");
