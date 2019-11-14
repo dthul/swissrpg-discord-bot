@@ -12,6 +12,7 @@ use serenity::{
 };
 use std::{sync::Arc, time::Duration};
 use tokio::prelude::*;
+use redis::Commands;
 
 pub fn create_discord_client(
     discord_token: &str,
@@ -702,6 +703,57 @@ impl EventHandler for Handler {
                 meetup_event_id,
                 async_meetup_client,
             )
+        } else if let Some(captures) = regexes.whois_bot_admin(is_dm).captures(&msg.content) {
+            // This is only for bot_admins
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    crate::discord_sync::ids::GUILD_ID,
+                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return;
+            }
+            let mut redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            if let Some(capture) = captures.name("mention_id") {
+                // Look up by Discord ID
+                let discord_id = capture.as_str();
+                let redis_discord_meetup_key = format!("discord_user:{}:meetup_user", discord_id);
+                let res: redis::RedisResult<Option<String>> = redis_client.get(&redis_discord_meetup_key);
+                match res {
+                    Ok(Some(meetup_id)) => {
+                        let _ = msg.channel_id.say(&ctx.http, format!("<@{}> is linked to https://www.meetup.com/members/{}/", discord_id, meetup_id));
+                    },
+                    Ok(None) => {
+                        let _ = msg.channel_id.say(&ctx.http, format!("<@{}> does not seem to be linked to a Meetup account", discord_id));
+                    },
+                    Err(err) => {
+                        eprintln!("Error when trying to look up a Meetup user in Redis:\n{:#?}", err);
+                        let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                    }
+                }
+            }
+            else if let Some(capture) = captures.name("discord_username_tag") {
+                let username_tag = capture.as_str();
+                // Look up by Discord username and tag
+                if let Some(guild) = msg.guild(&ctx) {
+                    let discord_id = guild.read().member_named(username_tag).map(|m| m.user.read().id);
+                    match guild.read().member_named(username_tag) {
+
+                    }
+                }
+            }
+            else if let Some(capture) = captures.name("meetup_user_id") {
+                // Look up by Meetup ID
+            }
         } else {
             let _ = msg
                 .channel_id

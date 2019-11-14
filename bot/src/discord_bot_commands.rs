@@ -9,7 +9,9 @@ use serenity::{
 use simple_error::SimpleError;
 use std::{borrow::Cow, sync::Arc};
 
-const MENTION_PATTERN: &'static str = r"<@!?(?P<mention_id>[0-9]+)>";
+const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
+const USERNAME_TAG_PATTERN: &'static str = r"(?P<discord_username_tag>[^@#:]{2,32}#[0-9]+)";
+const MEETUP_ID_PATTERN: &'static str = r"(?P<meetup_user_id>[0-9]+)";
 
 pub struct Regexes {
     pub bot_mention: String,
@@ -36,6 +38,8 @@ pub struct Regexes {
     pub refresh_user_token_admin_dm: Regex,
     pub rsvp_user_admin_mention: Regex,
     pub clone_event_admin_mention: Regex,
+    pub whois_bot_admin_dm: Regex,
+    pub whois_bot_admin_mention: Regex,
 }
 
 impl Regexes {
@@ -76,6 +80,14 @@ impl Regexes {
             &self.stop_bot_admin_dm
         } else {
             &self.stop_bot_admin_mention
+        }
+    }
+
+    pub fn whois_bot_admin(&self, is_dm: bool) -> &Regex {
+        if is_dm {
+            &self.whois_bot_admin_dm
+        } else {
+            &self.whois_bot_admin_mention
         }
     }
 
@@ -183,6 +195,21 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         r"^{bot_mention}\s+(?i)clone\s+event\s+(?P<meetup_event_id>[^\s]+)\s*$",
         bot_mention = bot_mention,
     );
+    let whois_bot_admin = format!(
+        r"(?i)whois\s+{mention_pattern}|{username_tag_pattern}|{meetup_id_pattern}",
+        mention_pattern = MENTION_PATTERN,
+        username_tag_pattern = USERNAME_TAG_PATTERN,
+        meetup_id_pattern = MEETUP_ID_PATTERN,
+    );
+    let whois_bot_admin_dm = format!(
+        r"^{whois_bot_admin}\s*$",
+        whois_bot_admin = whois_bot_admin
+    );
+    let whois_bot_admin_mention = format!(
+        r"^{bot_mention}\s+{whois_bot_admin}\s*$",
+        bot_mention = bot_mention,
+        whois_bot_admin = whois_bot_admin
+    );
     Regexes {
         bot_mention: bot_mention,
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -212,6 +239,8 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         refresh_user_token_admin_dm: Regex::new(refresh_user_token_admin_dm.as_str()).unwrap(),
         rsvp_user_admin_mention: Regex::new(rsvp_user_admin_mention.as_str()).unwrap(),
         clone_event_admin_mention: Regex::new(clone_event_admin_mention.as_str()).unwrap(),
+        whois_bot_admin_dm: Regex::new(whois_bot_admin_dm.as_str()).unwrap(),
+        whois_bot_admin_mention: Regex::new(whois_bot_admin_mention.as_str()).unwrap(),
     }
 }
 
