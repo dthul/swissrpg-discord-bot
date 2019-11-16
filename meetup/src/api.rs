@@ -8,11 +8,6 @@ const BASE_URL: &'static str = "https://api.meetup.com";
 pub const URLNAMES: [&'static str; 3] =
     ["SwissRPG-Zurich", "SwissRPG-Central", "SwissRPG-Romandie"];
 
-// #[derive(Debug, Clone)]
-// pub struct Client {
-//     client: reqwest::blocking::Client,
-// }
-
 #[derive(Debug, Clone)]
 pub struct AsyncClient {
     client: reqwest::Client,
@@ -188,64 +183,6 @@ impl<'de> Deserialize<'de> for RSVPResponse {
 pub struct RSVPRules {
     pub guest_limit: u16,
 }
-
-// impl Client {
-//     pub fn new(access_token: &str) -> Client {
-//         let mut headers = HeaderMap::new();
-//         headers.insert(
-//             AUTHORIZATION,
-//             format!("Bearer {}", access_token).parse().unwrap(),
-//         );
-//         Client {
-//             client: reqwest::blocking::Client::builder()
-//                 .default_headers(headers)
-//                 .build()
-//                 .expect("Could not initialize the reqwest client"),
-//         }
-//     }
-
-//     pub fn get_group_profile(&self, id: Option<u64>, urlname: &str) -> Result<Option<User>, Error> {
-//         let url = match id {
-//             Some(id) => format!(
-//                 "{}/{}/members/{}?&sign=true&photo-host=public&only=id,name,photo,group_profile&\
-//                  omit=group_profile.group,group_profile.answers",
-//                 BASE_URL, urlname, id
-//             ),
-//             _ => format!(
-//                 "{}/{}/members/self?&sign=true&photo-host=public&only=id,name,photo,group_profile&\
-//                  omit=group_profile.group,group_profile.answers",
-//                 BASE_URL, urlname
-//             ),
-//         };
-//         let url = url.parse()?;
-//         let response = self.client.execute(Request::new(Method::GET, url))?;
-//         if let Ok(user) = response.json::<User>() {
-//             return Ok(Some(user));
-//         } else {
-//             return Ok(None);
-//         }
-//     }
-
-//     pub fn get_member_profile(&self, id: Option<u64>) -> Result<Option<User>, Error> {
-//         let url = match id {
-//             Some(id) => format!(
-//                 "{}/members/{}?&sign=true&photo-host=public&only=id,name,photo",
-//                 BASE_URL, id
-//             ),
-//             _ => format!(
-//                 "{}/members/self?&sign=true&photo-host=public&only=id,name,photo",
-//                 BASE_URL
-//             ),
-//         };
-//         let url = url.parse()?;
-//         let response = self.client.execute(Request::new(Method::GET, url))?;
-//         if let Ok(user) = response.json::<User>() {
-//             return Ok(Some(user));
-//         } else {
-//             return Ok(None);
-//         }
-//     }
-// }
 
 #[derive(Debug)]
 pub enum Error {
