@@ -201,10 +201,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         username_tag_pattern = USERNAME_TAG_PATTERN,
         meetup_id_pattern = MEETUP_ID_PATTERN,
     );
-    let whois_bot_admin_dm = format!(
-        r"^{whois_bot_admin}\s*$",
-        whois_bot_admin = whois_bot_admin
-    );
+    let whois_bot_admin_dm = format!(r"^{whois_bot_admin}\s*$", whois_bot_admin = whois_bot_admin);
     let whois_bot_admin_mention = format!(
         r"^{bot_mention}\s+{whois_bot_admin}\s*$",
         bot_mention = bot_mention,
@@ -1019,6 +1016,113 @@ impl crate::discord_bot::Handler {
                     "Could not RSVP Meetup user {} to Meetup event {}. Error:\n{:#?}",
                     meetup_id, meetup_event_id, err
                 );
+            }
+        }
+    }
+
+    pub fn whois_by_discord_id(
+        ctx: &Context,
+        msg: &Message,
+        user_id: UserId,
+        mut redis_client: redis::Client,
+    ) {
+        let redis_discord_meetup_key = format!("discord_user:{}:meetup_user", user_id.0);
+        let res: redis::RedisResult<Option<String>> = redis_client.get(&redis_discord_meetup_key);
+        match res {
+            Ok(Some(meetup_id)) => {
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    format!(
+                        "<@{}> is linked to https://www.meetup.com/members/{}/",
+                        user_id.0, meetup_id
+                    ),
+                );
+            }
+            Ok(None) => {
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    format!(
+                        "<@{}> does not seem to be linked to a Meetup account",
+                        user_id.0
+                    ),
+                );
+            }
+            Err(err) => {
+                eprintln!(
+                    "Error when trying to look up a Meetup user in Redis:\n{:#?}",
+                    err
+                );
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
+        }
+    }
+
+    pub fn whois_by_discord_username_tag(
+        ctx: &Context,
+        msg: &Message,
+        username_tag: &str,
+        redis_client: redis::Client,
+    ) {
+        if let Some(guild) = ctx
+            .cache
+            .read()
+            .guilds
+            .get(&crate::discord_sync::ids::GUILD_ID)
+            .cloned()
+        {
+            let discord_id = guild
+                .read()
+                .member_named(username_tag)
+                .map(|m| m.user.read().id);
+            if let Some(discord_id) = discord_id {
+                // Look up by Discord ID
+                Self::whois_by_discord_id(ctx, msg, discord_id, redis_client);
+            } else {
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, format!("{} is not a Discord user", username_tag));
+            }
+        } else {
+            let _ = msg
+                .channel_id
+                .say(&ctx.http, "Something went wrong (guild not found)");
+        }
+    }
+
+    pub fn whois_by_meetup_id(
+        ctx: &Context,
+        msg: &Message,
+        meetup_id: u64,
+        mut redis_client: redis::Client,
+    ) {
+        let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
+        let res: redis::RedisResult<Option<String>> = redis_client.get(&redis_meetup_discord_key);
+        match res {
+            Ok(Some(discord_id)) => {
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    format!(
+                        "https://www.meetup.com/members/{}/ is linked to <@{}>",
+                        meetup_id, discord_id
+                    ),
+                );
+            }
+            Ok(None) => {
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    format!(
+                        "https://www.meetup.com/members/{}/ does not seem to be linked to a \
+                         Discord user",
+                        meetup_id
+                    ),
+                );
+            }
+            Err(err) => {
+                eprintln!(
+                    "Error when trying to look up a Discord user in Redis:\n{:#?}",
+                    err
+                );
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
             }
         }
     }

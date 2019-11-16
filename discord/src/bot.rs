@@ -12,7 +12,6 @@ use serenity::{
 };
 use std::{sync::Arc, time::Duration};
 use tokio::prelude::*;
-use redis::Commands;
 
 pub fn create_discord_client(
     discord_token: &str,
@@ -727,7 +726,7 @@ impl EventHandler for Handler {
                 let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
-            let mut redis_client = {
+            let redis_client = {
                 let data = ctx.data.read();
                 data.get::<RedisClientKey>()
                     .expect("Redis client was not set")
@@ -736,33 +735,37 @@ impl EventHandler for Handler {
             if let Some(capture) = captures.name("mention_id") {
                 // Look up by Discord ID
                 let discord_id = capture.as_str();
-                let redis_discord_meetup_key = format!("discord_user:{}:meetup_user", discord_id);
-                let res: redis::RedisResult<Option<String>> = redis_client.get(&redis_discord_meetup_key);
-                match res {
-                    Ok(Some(meetup_id)) => {
-                        let _ = msg.channel_id.say(&ctx.http, format!("<@{}> is linked to https://www.meetup.com/members/{}/", discord_id, meetup_id));
-                    },
-                    Ok(None) => {
-                        let _ = msg.channel_id.say(&ctx.http, format!("<@{}> does not seem to be linked to a Meetup account", discord_id));
-                    },
-                    Err(err) => {
-                        eprintln!("Error when trying to look up a Meetup user in Redis:\n{:#?}", err);
-                        let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+                // Try to convert the specified ID to an integer
+                let discord_id = match discord_id.parse::<u64>() {
+                    Ok(id) => id,
+                    _ => {
+                        // let _ = msg
+                        //     .channel_id
+                        //     .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
+                        // TODO
+                        return;
                     }
-                }
-            }
-            else if let Some(capture) = captures.name("discord_username_tag") {
+                };
+                Self::whois_by_discord_id(&ctx, &msg, UserId(discord_id), redis_client);
+            } else if let Some(capture) = captures.name("discord_username_tag") {
                 let username_tag = capture.as_str();
                 // Look up by Discord username and tag
-                if let Some(guild) = msg.guild(&ctx) {
-                    let discord_id = guild.read().member_named(username_tag).map(|m| m.user.read().id);
-                    match guild.read().member_named(username_tag) {
-
-                    }
-                }
-            }
-            else if let Some(capture) = captures.name("meetup_user_id") {
+                Self::whois_by_discord_username_tag(&ctx, &msg, &username_tag, redis_client);
+            } else if let Some(capture) = captures.name("meetup_user_id") {
                 // Look up by Meetup ID
+                let meetup_id = capture.as_str();
+                // Try to convert the specified ID to an integer
+                let meetup_id = match meetup_id.parse::<u64>() {
+                    Ok(id) => id,
+                    _ => {
+                        // let _ = msg
+                        //     .channel_id
+                        //     .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
+                        // TODO
+                        return;
+                    }
+                };
+                Self::whois_by_meetup_id(&ctx, &msg, meetup_id, redis_client)
             }
         } else {
             let _ = msg
