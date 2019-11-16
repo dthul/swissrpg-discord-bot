@@ -1,5 +1,11 @@
 pub mod error;
+pub mod redis;
 pub mod strings;
-pub mod vacuum;
 
-pub use error::Error;
+pub use error::BoxedError;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub static ref ASYNC_RUNTIME: tokio::runtime::Runtime =
+        tokio::runtime::Runtime::new().expect("Could not create tokio runtime");
+}
