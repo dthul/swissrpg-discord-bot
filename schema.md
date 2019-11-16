@@ -56,8 +56,15 @@ See `meetup_event:{}:event_series` for the inverse relationship.
 1:1 relationship between an event series and its bot controlled channel.\
 See `discord_channel:{}:event_series` for the inverse relationship.
 
+`event_series:{}:discord_voice_channel`: u64\
+1:1 relationship between an event series and its bot controlled voice channel.\
+See `discord_voice_channel:{}:event_series` for the inverse relationship.
+
 `event_series:{}:type`: string\
-'campaign' or 'adventure'
+'campaign' or 'adventure'. Should probably be part of the `event_series:{}` hash instead
+
+`event_series:{}`: hash\
+* `is_online`: bool. `true` for online campaigns, non-existent or "falsy" otherwise
 
 ## Discord Channels
 
@@ -84,6 +91,20 @@ Set of users (Discord ID) that have been manually removed from this channel. The
 
 `orphaned_discord_channels`: set of u64\
 Set of Discord channels that were created by the bot but could not be successfully deleted in the past
+
+## Discord Voice Channels
+
+A voice channel uses the same roles as the event series' associated text channel.
+
+`discord_voice_channels`: set of u64\
+Set of all bot controlled Discord voice channels
+
+`discord_voice_channel:{}:event_series`: string\
+1:1 relationship between a Discord voice channel and the event series it belongs to.\
+See `event_series:{}:discord_voice_channel` for the inverse relationship.
+
+`orphaned_discord_voice_channels`: set of u64\
+Set of Discord voice channels that were created by the bot but could not be successfully deleted in the past
 
 ## Discord Roles
 

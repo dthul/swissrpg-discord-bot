@@ -12,6 +12,7 @@ pub const EVENT_SERIES_PATTERN: &'static str =
     r"(?i)[\[\(]\s*campaign\s*(?P<event_id>[a-zA-Z0-9]+)\s*[\]\)]";
 pub const CHANNEL_PATTERN: &'static str = r"(?i)[\[\(]\s*channel\s*(?P<channel_id>[0-9]+)\s*[\]\)]";
 pub const SESSION_PATTERN: &'static str = r"(?i)session\s*(?P<number>[0-9]+)";
+pub const ONLINE_PATTERN: &'static str = r"(?i)[\[\(]\s*online\s*[\]\)]";
 
 lazy_static! {
     pub static ref NEW_ADVENTURE_REGEX: regex::Regex =
@@ -22,6 +23,7 @@ lazy_static! {
         regex::Regex::new(EVENT_SERIES_PATTERN).unwrap();
     pub static ref CHANNEL_REGEX: regex::Regex = regex::Regex::new(CHANNEL_PATTERN).unwrap();
     pub static ref SESSION_REGEX: regex::Regex = regex::Regex::new(SESSION_PATTERN).unwrap();
+    pub static ref ONLINE_REGEX: regex::Regex = regex::Regex::new(ONLINE_PATTERN).unwrap();
 }
 
 pub type BoxedFallibleFuture<T, E = crate::BoxedError> =
@@ -77,6 +79,7 @@ async fn sync_event(
 ) -> Result<(), crate::BoxedError> {
     let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(&event.description);
     let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(&event.description);
+    let is_online = ONLINE_REGEX.is_match(&event.description);
     let event_series_captures = EVENT_SERIES_REGEX.captures(&event.description);
     let channel_captures = CHANNEL_REGEX.captures(&event.description);
     let indicated_channel_id = match channel_captures {
@@ -97,9 +100,8 @@ async fn sync_event(
         ))
         .into());
     }
-    // Either: new adventure or campaign, Or: event series
+    // Either: new adventure, new campaign, or continuation (event series)
     if !(is_new_adventure || is_new_campaign || event_series_captures.is_some()) {
-        // TODO: implement event series
         println!("Syncing task: Ignoring event \"{}\"", event.name);
         return Ok(());
     } else {
@@ -282,6 +284,12 @@ async fn sync_event(
                         }
                     }
                 };
+                // If the [online] shortcode has been set (even if this is not
+                // the first event in the series), mark the series as online
+                if is_online {
+                    let redis_series_online_key = format!("event_series:{}:is_online", &series_id);
+                    pipe.set(&redis_series_online_key, true);
+                }
                 let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
                 let host_user_ids: Vec<_> = event.event_hosts.iter().map(|user| user.id).collect();
                 let event_time = event.time.to_rfc3339();
