@@ -1,4 +1,4 @@
-use crate::{error::BoxedError, strings};
+use common::strings;
 use futures_util::{compat::Future01CompatExt, lock::Mutex as AsyncMutex};
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
@@ -241,22 +241,22 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
     }
 }
 
-impl crate::discord_bot::Handler {
-    pub fn link_meetup(ctx: &Context, msg: &Message, user_id: u64) -> crate::Result<()> {
+impl crate::bot::Handler {
+    pub fn link_meetup(ctx: &Context, msg: &Message, user_id: u64) -> Result<(), crate::Error> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
         let (redis_client, redis_connection_mutex, meetup_client_mutex, bot_id) = {
             let data = ctx.data.read();
             (
-                data.get::<crate::discord_bot::RedisClientKey>()
+                data.get::<crate::bot::RedisClientKey>()
                     .ok_or_else(|| SimpleError::new("Redis client was not set"))?
                     .clone(),
-                data.get::<crate::discord_bot::RedisConnectionKey>()
+                data.get::<crate::bot::RedisConnectionKey>()
                     .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
                     .clone(),
-                data.get::<crate::discord_bot::MeetupClientKey>()
+                data.get::<crate::bot::AsyncMeetupClientKey>()
                     .ok_or_else(|| SimpleError::new("Meetup client was not set"))?
                     .clone(),
-                data.get::<crate::discord_bot::BotIdKey>()
+                data.get::<crate::bot::BotIdKey>()
                     .ok_or_else(|| SimpleError::new("Bot ID was not set"))?
                     .clone(),
             )
@@ -268,27 +268,41 @@ impl crate::discord_bot::Handler {
             redis_connection.get(&redis_key_d2m)?
         };
         if let Some(linked_meetup_id) = linked_meetup_id {
-            let meetup_client_guard = crate::ASYNC_RUNTIME.block_on(meetup_client_mutex.lock());
-            match *meetup_client_guard {
-                Some(ref meetup_client) => {
-                    match meetup_client.get_member_profile(Some(linked_meetup_id))? {
-                        Some(user) => {
-                            let _ = msg.author.direct_message(ctx, |message| {
-                                message.content(strings::DISCORD_ALREADY_LINKED_MESSAGE1(
-                                    &user.name, bot_id.0,
-                                ))
-                            });
-                            let _ = msg.react(ctx, "\u{2705}");
-                        }
-                        _ => {
-                            let _ = msg.author.direct_message(ctx, |message| {
-                                message
-                                    .content(strings::NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id.0))
-                            });
-                            let _ = msg.react(ctx, "\u{2705}");
-                        }
-                    }
+            // Return value of the async block:
+            // None = Meetup API unavailable
+            // Some(None) = Meetup API available but no user found
+            // Some(Some(user)) = User found
+            let meetup_user = common::ASYNC_RUNTIME.block_on(async {
+                let meetup_client = meetup_client_mutex.lock().await.clone();
+                match meetup_client {
+                    None => Ok::<_, crate::Error>(None),
+                    Some(meetup_client) => match meetup_client
+                        .get_member_profile(Some(linked_meetup_id))
+                        .await?
+                    {
+                        None => Ok(Some(None)),
+                        Some(user) => Ok(Some(Some(user))),
+                    },
                 }
+            })?;
+            match meetup_user {
+                Some(meetup_user) => match meetup_user {
+                    Some(meetup_user) => {
+                        let _ = msg.author.direct_message(ctx, |message| {
+                            message.content(strings::DISCORD_ALREADY_LINKED_MESSAGE1(
+                                &meetup_user.name,
+                                bot_id.0,
+                            ))
+                        });
+                        let _ = msg.react(ctx, "\u{2705}");
+                    }
+                    _ => {
+                        let _ = msg.author.direct_message(ctx, |message| {
+                            message.content(strings::NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id.0))
+                        });
+                        let _ = msg.react(ctx, "\u{2705}");
+                    }
+                },
                 _ => {
                     let _ = msg.author.direct_message(ctx, |message| {
                         message.content(strings::DISCORD_ALREADY_LINKED_MESSAGE2(bot_id.0))
@@ -299,9 +313,9 @@ impl crate::discord_bot::Handler {
             return Ok(());
         }
         // TODO: creates a new Redis connection. Not optimal...
-        let (_, url) = crate::ASYNC_RUNTIME.block_on(async {
+        let (_, url) = common::ASYNC_RUNTIME.block_on(async {
             let redis_connection = redis_client.get_async_connection().compat().await?;
-            crate::meetup_oauth2::generate_meetup_linking_link(redis_connection, user_id).await
+            meetup::oauth2::generate_meetup_linking_link(redis_connection, user_id).await
         })?;
         let dm = msg.author.direct_message(ctx, |message| {
             message.content(strings::MEETUP_LINKING_MESSAGE(&url))
@@ -324,16 +338,16 @@ impl crate::discord_bot::Handler {
         regexes: &Regexes,
         user_id: u64,
         meetup_id: u64,
-    ) -> crate::Result<()> {
+    ) -> Result<(), crate::Error> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
         let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
         let (redis_connection_mutex, meetup_client_mutex) = {
             let data = ctx.data.read();
             (
-                data.get::<crate::discord_bot::RedisConnectionKey>()
+                data.get::<crate::bot::RedisConnectionKey>()
                     .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
                     .clone(),
-                data.get::<crate::discord_bot::MeetupClientKey>()
+                data.get::<crate::bot::AsyncMeetupClientKey>()
                     .ok_or_else(|| SimpleError::new("Meetup client was not set"))?
                     .clone(),
             )
@@ -389,12 +403,20 @@ impl crate::discord_bot::Handler {
         }
         // The user has not yet linked their meetup account.
         // Test whether the specified Meetup user actually exists.
-        let meetup_client_guard = crate::ASYNC_RUNTIME.block_on(meetup_client_mutex.lock());
-        let meetup_user = meetup_client_guard
-            .as_ref()
-            .ok_or_else(|| SimpleError::new("Meetup API unavailable"))?
-            .get_member_profile(Some(meetup_id))?;
-        drop(meetup_client_guard);
+        let meetup_user = common::ASYNC_RUNTIME.block_on(async {
+            let meetup_client = meetup_client_mutex.lock().await.clone();
+            match meetup_client {
+                None => {
+                    return Err(crate::Error::from(SimpleError::new(
+                        "Meetup API unavailable",
+                    )))
+                }
+                Some(meetup_client) => meetup_client
+                    .get_member_profile(Some(meetup_id))
+                    .await
+                    .map_err(Into::into),
+            }
+        })?;
         match meetup_user {
             None => {
                 let _ = msg.channel_id.say(
@@ -463,12 +485,12 @@ impl crate::discord_bot::Handler {
         is_bot_admin_command: bool,
         user_id: u64,
         bot_id: u64,
-    ) -> crate::Result<()> {
+    ) -> Result<(), crate::Error> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
         let redis_connection_mutex = {
             ctx.data
                 .read()
-                .get::<crate::discord_bot::RedisConnectionKey>()
+                .get::<crate::bot::RedisConnectionKey>()
                 .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
                 .clone()
         };
@@ -504,7 +526,7 @@ impl crate::discord_bot::Handler {
     fn get_channel_roles(
         channel_id: u64,
         redis_connection: &mut redis::Connection,
-    ) -> Result<Option<ChannelRoles>, BoxedError> {
+    ) -> Result<Option<ChannelRoles>, crate::Error> {
         // Check that this message came from a bot controlled channel
         let redis_channel_role_key = format!("discord_channel:{}:discord_role", channel_id);
         let redis_channel_host_role_key =
@@ -532,7 +554,7 @@ impl crate::discord_bot::Handler {
         ctx: &Context,
         msg: &Message,
         redis_client: redis::Client,
-    ) -> Result<(), BoxedError> {
+    ) -> Result<(), crate::Error> {
         let mut redis_connection = redis_client.get_connection()?;
         // Check whether this is a bot controlled channel
         let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
@@ -550,13 +572,13 @@ impl crate::discord_bot::Handler {
             .author
             .has_role(
                 ctx,
-                crate::discord_sync::ids::GUILD_ID,
-                crate::discord_sync::ids::BOT_ADMIN_ID,
+                crate::sync::ids::GUILD_ID,
+                crate::sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
         let is_host = msg
             .author
-            .has_role(ctx, crate::discord_sync::ids::GUILD_ID, channel_roles.host)
+            .has_role(ctx, crate::sync::ids::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
         if !is_bot_admin && !is_host {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
@@ -613,7 +635,7 @@ impl crate::discord_bot::Handler {
         add: bool,
         as_host: bool,
         redis_client: redis::Client,
-    ) -> Result<(), BoxedError> {
+    ) -> Result<(), crate::Error> {
         let mut redis_connection = redis_client.get_connection()?;
         // Check whether this is a bot controlled channel
         let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
@@ -631,13 +653,13 @@ impl crate::discord_bot::Handler {
             .author
             .has_role(
                 ctx,
-                crate::discord_sync::ids::GUILD_ID,
-                crate::discord_sync::ids::BOT_ADMIN_ID,
+                crate::sync::ids::GUILD_ID,
+                crate::sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
         let is_host = msg
             .author
-            .has_role(ctx, crate::discord_sync::ids::GUILD_ID, channel_roles.host)
+            .has_role(ctx, crate::sync::ids::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
         // Only bot admins and channel hosts can add/remove users
         if !is_bot_admin && !is_host {
@@ -657,7 +679,7 @@ impl crate::discord_bot::Handler {
         if add {
             // Try to add the user to the channel
             match ctx.http.add_member_role(
-                crate::discord_sync::ids::GUILD_ID.0,
+                crate::sync::ids::GUILD_ID.0,
                 discord_id,
                 channel_roles.user,
             ) {
@@ -676,7 +698,7 @@ impl crate::discord_bot::Handler {
             }
             if as_host {
                 match ctx.http.add_member_role(
-                    crate::discord_sync::ids::GUILD_ID.0,
+                    crate::sync::ids::GUILD_ID.0,
                     discord_id,
                     channel_roles.host,
                 ) {
@@ -698,7 +720,7 @@ impl crate::discord_bot::Handler {
         } else {
             // Try to remove the user from the channel
             match ctx.http.remove_member_role(
-                crate::discord_sync::ids::GUILD_ID.0,
+                crate::sync::ids::GUILD_ID.0,
                 discord_id,
                 channel_roles.host,
             ) {
@@ -714,7 +736,7 @@ impl crate::discord_bot::Handler {
             }
             if !as_host {
                 match ctx.http.remove_member_role(
-                    crate::discord_sync::ids::GUILD_ID.0,
+                    crate::sync::ids::GUILD_ID.0,
                     discord_id,
                     channel_roles.user,
                 ) {
@@ -744,12 +766,12 @@ impl crate::discord_bot::Handler {
     pub fn send_welcome_message(ctx: &Context, user: &User) {
         let _ = user.direct_message(ctx, |message_builder| {
             message_builder
-                .content(crate::strings::WELCOME_MESSAGE_PART1)
+                .content(strings::WELCOME_MESSAGE_PART1)
                 .embed(|embed_builder| {
                     embed_builder
                         .colour(serenity::utils::Colour::new(0xFF1744))
-                        .title(crate::strings::WELCOME_MESSAGE_PART2_EMBED_TITLE)
-                        .description(crate::strings::WELCOME_MESSAGE_PART2_EMBED_CONTENT)
+                        .title(strings::WELCOME_MESSAGE_PART2_EMBED_TITLE)
+                        .description(strings::WELCOME_MESSAGE_PART2_EMBED_CONTENT)
                 })
         });
     }
@@ -759,20 +781,20 @@ impl crate::discord_bot::Handler {
             .author
             .has_role(
                 ctx,
-                crate::discord_sync::ids::GUILD_ID,
-                crate::discord_sync::ids::BOT_ADMIN_ID,
+                crate::sync::ids::GUILD_ID,
+                crate::sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
         let mut dm_result = msg
             .author
             .direct_message(ctx, |message_builder| {
                 message_builder
-                    .content(crate::strings::HELP_MESSAGE_INTRO(bot_id.0))
+                    .content(strings::HELP_MESSAGE_INTRO(bot_id.0))
                     .embed(|embed_builder| {
                         embed_builder
                             .colour(serenity::utils::Colour::BLUE)
-                            .title(crate::strings::HELP_MESSAGE_PLAYER_EMBED_TITLE)
-                            .description(crate::strings::HELP_MESSAGE_PLAYER_EMBED_CONTENT)
+                            .title(strings::HELP_MESSAGE_PLAYER_EMBED_TITLE)
+                            .description(strings::HELP_MESSAGE_PLAYER_EMBED_CONTENT)
                     })
             })
             .and_then(|_| {
@@ -780,8 +802,8 @@ impl crate::discord_bot::Handler {
                     message_builder.embed(|embed_builder| {
                         embed_builder
                             .colour(serenity::utils::Colour::DARK_GREEN)
-                            .title(crate::strings::HELP_MESSAGE_GM_EMBED_TITLE)
-                            .description(crate::strings::HELP_MESSAGE_GM_EMBED_CONTENT(bot_id.0))
+                            .title(strings::HELP_MESSAGE_GM_EMBED_TITLE)
+                            .description(strings::HELP_MESSAGE_GM_EMBED_CONTENT(bot_id.0))
                     })
                 })
             });
@@ -791,8 +813,8 @@ impl crate::discord_bot::Handler {
                     message_builder.embed(|embed_builder| {
                         embed_builder
                             .colour(serenity::utils::Colour::from_rgb(255, 23, 68))
-                            .title(crate::strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
-                            .description(crate::strings::HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id.0))
+                            .title(strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
+                            .description(strings::HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id.0))
                     })
                 })
             });
@@ -808,7 +830,7 @@ impl crate::discord_bot::Handler {
         msg: &Message,
         user_id: UserId,
         redis_client: redis::Client,
-        oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
+        oauth2_consumer: Arc<meetup::oauth2::OAuth2Consumer>,
     ) {
         // Look up the Meetup ID for this user
         let mut redis_connection = match redis_client.get_connection() {
@@ -834,10 +856,10 @@ impl crate::discord_bot::Handler {
                 return;
             }
         };
-        let res = crate::ASYNC_RUNTIME.block_on(oauth2_consumer.refresh_oauth_tokens(
-            crate::meetup_oauth2::TokenType::User(meetup_id),
-            redis_client,
-        ));
+        let res = common::ASYNC_RUNTIME.block_on(
+            oauth2_consumer
+                .refresh_oauth_tokens(meetup::oauth2::TokenType::User(meetup_id), redis_client),
+        );
         match res {
             Ok(_) => {
                 let _ = msg.react(ctx, "\u{2705}");
@@ -856,23 +878,23 @@ impl crate::discord_bot::Handler {
     }
 
     fn new_event_hook(
-        mut new_event: crate::meetup_api::NewEvent,
+        mut new_event: meetup::api::NewEvent,
         old_event_id: &str,
-    ) -> crate::Result<crate::meetup_api::NewEvent> {
+    ) -> Result<meetup::api::NewEvent, crate::Error> {
         // Remove unnecessary shortcodes from follow-up sessions
         let description = new_event.description;
-        let description = crate::meetup_sync::NEW_ADVENTURE_REGEX.replace_all(&description, "");
-        let description = crate::meetup_sync::NEW_CAMPAIGN_REGEX.replace_all(&description, "");
-        let mut description = crate::meetup_sync::CHANNEL_REGEX
+        let description = meetup::sync::NEW_ADVENTURE_REGEX.replace_all(&description, "");
+        let description = meetup::sync::NEW_CAMPAIGN_REGEX.replace_all(&description, "");
+        let mut description = meetup::sync::CHANNEL_REGEX
             .replace_all(&description, "")
             .into_owned();
         // Add an event series shortcode if there is none yet
-        if !crate::meetup_sync::EVENT_SERIES_REGEX.is_match(&description) {
+        if !meetup::sync::EVENT_SERIES_REGEX.is_match(&description) {
             description.push_str(&format!("\n[campaign {}]", old_event_id));
         }
         // Increase the Session number
         let mut name = new_event.name.clone();
-        let title_captures = crate::meetup_sync::SESSION_REGEX.captures_iter(&new_event.name);
+        let title_captures = meetup::sync::SESSION_REGEX.captures_iter(&new_event.name);
         // Match the rightmost occurence of "Session X" in the title
         if let Some(capture) = title_captures.last() {
             // If there is a match, increase the number
@@ -902,8 +924,8 @@ impl crate::discord_bot::Handler {
         urlname: &str,
         meetup_event_id: &str,
         redis_client: redis::Client,
-        async_meetup_client: Arc<AsyncMutex<Option<crate::meetup_api::AsyncClient>>>,
-        oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
+        async_meetup_client: Arc<AsyncMutex<Option<Arc<meetup::api::AsyncClient>>>>,
+        oauth2_consumer: Arc<meetup::oauth2::OAuth2Consumer>,
     ) {
         let future = async {
             // Clone the async meetup client
@@ -912,7 +934,7 @@ impl crate::discord_bot::Handler {
             drop(guard);
             let client = match client {
                 None => {
-                    return Err(crate::BoxedError::from(simple_error::SimpleError::new(
+                    return Err(crate::Error::from(simple_error::SimpleError::new(
                         "Async Meetup client not set",
                     )))
                 }
@@ -920,20 +942,20 @@ impl crate::discord_bot::Handler {
             };
             let new_event_hook =
                 Box::new(|new_event| Self::new_event_hook(new_event, meetup_event_id));
-            let new_event = crate::meetup_util::clone_event(
+            let new_event = meetup::util::clone_event(
                 urlname,
                 meetup_event_id,
-                client.clone(),
+                client.as_ref(),
                 Some(new_event_hook),
             )
             .await?;
             // Try to transfer the RSVPs to the new event
-            if let Err(_) = crate::meetup_util::clone_rsvps(
+            if let Err(_) = meetup::util::clone_rsvps(
                 urlname,
                 meetup_event_id,
                 &new_event.id,
                 redis_client,
-                client,
+                client.as_ref(),
                 oauth2_consumer,
             )
             .await
@@ -944,7 +966,7 @@ impl crate::discord_bot::Handler {
             }
             Ok(new_event)
         };
-        match crate::ASYNC_RUNTIME.block_on(future) {
+        match common::ASYNC_RUNTIME.block_on(future) {
             Ok(new_event) => {
                 let _ = msg.react(ctx, "\u{2705}");
                 let _ = msg.channel_id.say(
@@ -969,7 +991,7 @@ impl crate::discord_bot::Handler {
         urlname: &str,
         meetup_event_id: &str,
         redis_client: redis::Client,
-        oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
+        oauth2_consumer: Arc<meetup::oauth2::OAuth2Consumer>,
     ) {
         // Look up the Meetup ID for this user
         let mut redis_connection = match redis_client.get_connection() {
@@ -996,7 +1018,7 @@ impl crate::discord_bot::Handler {
             }
         };
         // Try to RSVP the user
-        match crate::ASYNC_RUNTIME.block_on(crate::meetup_util::rsvp_user_to_event(
+        match common::ASYNC_RUNTIME.block_on(meetup::util::rsvp_user_to_event(
             meetup_id,
             urlname,
             meetup_event_id,
@@ -1067,7 +1089,7 @@ impl crate::discord_bot::Handler {
             .cache
             .read()
             .guilds
-            .get(&crate::discord_sync::ids::GUILD_ID)
+            .get(&crate::sync::ids::GUILD_ID)
             .cloned()
         {
             let discord_id = guild

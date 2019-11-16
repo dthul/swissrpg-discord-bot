@@ -1,4 +1,4 @@
-use crate::strings;
+use common::strings;
 use futures::future::TryFutureExt;
 use futures_util::lock::Mutex as AsyncMutex;
 use serenity::{
@@ -16,12 +16,11 @@ use tokio::prelude::*;
 pub fn create_discord_client(
     discord_token: &str,
     redis_client: redis::Client,
-    meetup_client: Arc<AsyncMutex<Option<crate::meetup_api::Client>>>,
-    async_meetup_client: Arc<AsyncMutex<Option<crate::meetup_api::AsyncClient>>>,
+    async_meetup_client: Arc<AsyncMutex<Option<Arc<meetup::api::AsyncClient>>>>,
     task_scheduler: Arc<AsyncMutex<white_rabbit::Scheduler>>,
-    futures_spawner: futures_channel::mpsc::Sender<crate::meetup_sync::BoxedFuture<()>>,
-    oauth2_consumer: Arc<crate::meetup_oauth2::OAuth2Consumer>,
-) -> crate::Result<Client> {
+    futures_spawner: futures_channel::mpsc::Sender<common::BoxedFuture<()>>,
+    oauth2_consumer: Arc<meetup::oauth2::OAuth2Consumer>,
+) -> Result<Client, crate::Error> {
     let redis_connection = redis_client.get_connection()?;
 
     // Create a new instance of the Client, logging in as a bot. This will
@@ -37,7 +36,7 @@ pub fn create_discord_client(
         .map(|info| (info.id, info.name))?;
 
     // pre-compile the regexes
-    let regexes = crate::discord_bot_commands::compile_regexes(bot_id.0);
+    let regexes = crate::bot_commands::compile_regexes(bot_id.0);
 
     // Store the bot's id in the client for easy access
     {
@@ -46,7 +45,6 @@ pub fn create_discord_client(
         data.insert::<BotNameKey>(bot_name);
         data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(redis_connection)));
         data.insert::<RegexesKey>(Arc::new(regexes));
-        data.insert::<MeetupClientKey>(meetup_client);
         data.insert::<AsyncMeetupClientKey>(async_meetup_client);
         data.insert::<RedisClientKey>(redis_client);
         data.insert::<TaskSchedulerKey>(task_scheduler);
@@ -74,17 +72,12 @@ impl TypeMapKey for RedisConnectionKey {
 
 pub struct RegexesKey;
 impl TypeMapKey for RegexesKey {
-    type Value = Arc<crate::discord_bot_commands::Regexes>;
-}
-
-pub struct MeetupClientKey;
-impl TypeMapKey for MeetupClientKey {
-    type Value = Arc<AsyncMutex<Option<crate::meetup_api::Client>>>;
+    type Value = Arc<crate::bot_commands::Regexes>;
 }
 
 pub struct AsyncMeetupClientKey;
 impl TypeMapKey for AsyncMeetupClientKey {
-    type Value = Arc<AsyncMutex<Option<crate::meetup_api::AsyncClient>>>;
+    type Value = Arc<AsyncMutex<Option<Arc<meetup::api::AsyncClient>>>>;
 }
 
 pub struct RedisClientKey;
@@ -99,12 +92,12 @@ impl TypeMapKey for TaskSchedulerKey {
 
 pub struct FuturesSpawnerKey;
 impl TypeMapKey for FuturesSpawnerKey {
-    type Value = futures_channel::mpsc::Sender<crate::meetup_sync::BoxedFuture<()>>;
+    type Value = futures_channel::mpsc::Sender<common::BoxedFuture<()>>;
 }
 
 pub struct OAuth2ConsumerKey;
 impl TypeMapKey for OAuth2ConsumerKey {
-    type Value = Arc<crate::meetup_oauth2::OAuth2Consumer>;
+    type Value = Arc<meetup::oauth2::OAuth2Consumer>;
 }
 
 #[derive(Clone)]
@@ -156,7 +149,7 @@ impl EventHandler for Handler {
         // Ignore all messages that might have come from another guild
         // (shouldn't happen) but who knows
         if let Some(guild_id) = msg.guild_id {
-            if guild_id != crate::discord_sync::ids::GUILD_ID {
+            if guild_id != crate::sync::ids::GUILD_ID {
                 return;
             }
         }
@@ -186,8 +179,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -214,8 +207,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -287,8 +280,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -312,7 +305,7 @@ impl EventHandler for Handler {
                 (async_meetup_client, redis_client, future_spawner)
             };
             let sync_task = Box::new(
-                crate::meetup_sync::sync_task(async_meetup_client, redis_client)
+                meetup::sync::sync_task(async_meetup_client, redis_client)
                     .unwrap_or_else(|err| {
                         eprintln!("Syncing task failed: {}", err);
                     })
@@ -347,8 +340,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -369,10 +362,10 @@ impl EventHandler for Handler {
                 (redis_client, bot_id, task_scheduler)
             };
             // Send the syncing task to the scheduler
-            let mut task_scheduler_guard = crate::ASYNC_RUNTIME.block_on(task_scheduler.lock());
+            let mut task_scheduler_guard = common::ASYNC_RUNTIME.block_on(task_scheduler.lock());
             task_scheduler_guard.add_task_datetime(
                 white_rabbit::Utc::now(),
-                crate::discord_sync::create_sync_discord_task(
+                crate::sync::create_sync_discord_task(
                     redis_client,
                     CacheAndHttp {
                         cache: ctx.cache.clone(),
@@ -395,8 +388,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -417,10 +410,10 @@ impl EventHandler for Handler {
                 (redis_client, bot_id, task_scheduler)
             };
             // Send the syncing task to the scheduler
-            let mut task_scheduler_guard = crate::ASYNC_RUNTIME.block_on(task_scheduler.lock());
+            let mut task_scheduler_guard = common::ASYNC_RUNTIME.block_on(task_scheduler.lock());
             task_scheduler_guard.add_task_datetime(
                 white_rabbit::Utc::now(),
-                crate::discord_end_of_game::create_end_of_game_task(
+                crate::end_of_game::create_end_of_game_task(
                     redis_client,
                     CacheAndHttp {
                         cache: ctx.cache.clone(),
@@ -583,8 +576,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -628,8 +621,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -678,8 +671,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -718,8 +711,8 @@ impl EventHandler for Handler {
                 .author
                 .has_role(
                     &ctx,
-                    crate::discord_sync::ids::GUILD_ID,
-                    crate::discord_sync::ids::BOT_ADMIN_ID,
+                    crate::sync::ids::GUILD_ID,
+                    crate::sync::ids::BOT_ADMIN_ID,
                 )
                 .unwrap_or(false)
             {
@@ -785,7 +778,7 @@ impl EventHandler for Handler {
     }
 
     fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
-        if guild_id != crate::discord_sync::ids::GUILD_ID {
+        if guild_id != crate::sync::ids::GUILD_ID {
             return;
         }
         Self::send_welcome_message(&ctx, &new_member.user.read());

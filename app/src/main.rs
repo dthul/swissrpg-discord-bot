@@ -1,32 +1,12 @@
-#![recursion_limit = "256"]
-pub mod discord_bot;
-pub mod discord_bot_commands;
-pub mod discord_end_of_game;
-pub mod discord_sync;
-pub mod error;
-pub mod meetup_api;
-pub mod meetup_oauth2;
-pub mod meetup_sync;
-pub mod meetup_util;
-pub mod oauth2_async_http_client;
-pub mod strings;
-pub mod sync;
-pub mod vacuum;
+mod sync_task;
 
-use error::BoxedError;
 use futures::future;
 use futures_util::{future::FutureExt, stream::StreamExt};
-use lazy_static::lazy_static;
 use redis::Commands;
 use std::{env, pin::Pin, sync::Arc};
 use tokio;
 
 type Result<T> = std::result::Result<T, BoxedError>;
-
-lazy_static! {
-    pub(crate) static ref ASYNC_RUNTIME: tokio::runtime::Runtime =
-        tokio::runtime::Runtime::new().expect("Could not create tokio runtime");
-}
 
 fn main() {
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");

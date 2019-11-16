@@ -30,17 +30,18 @@ lazy_static! {
 // methods as MeetupClient (so we don't need to match on the Option
 // every time we want to use the client)
 pub async fn sync_task(
-    meetup_client: Arc<Mutex<Option<crate::api::AsyncClient>>>,
+    meetup_client: Arc<Mutex<Option<Arc<crate::api::AsyncClient>>>>,
     mut redis_client: redis::Client,
 ) -> Result<(), crate::Error> {
-    let upcoming_events = {
+    let meetup_client = {
         let guard = meetup_client.lock().await;
         match *guard {
-            Some(ref meetup_client) => meetup_client.get_upcoming_events_all_groups(),
+            Some(ref meetup_client) => meetup_client.clone(),
             None => return Err(SimpleError::new("Meetup API unavailable").into()),
         }
         // The Mutex guard will be dropped here
     };
+    let upcoming_events = meetup_client.get_upcoming_events_all_groups();
     futures::pin_mut!(upcoming_events);
     // Sync events
     // For loops for streams not supported (yet?)
@@ -56,7 +57,7 @@ pub async fn sync_task(
     // Sync event series
     let event_series: Vec<String> = redis_client.smembers("event_series")?;
     for series_id in event_series {
-        match sync_event_series(series_id, &meetup_client, &mut redis_client).await {
+        match sync_event_series(series_id, meetup_client.as_ref(), &mut redis_client).await {
             Err(err) => eprintln!("Series sync failed: {}", err),
             _ => (),
         };
@@ -327,7 +328,7 @@ async fn sync_event(
 
 async fn sync_event_series(
     series_id: String,
-    meetup_client: &Arc<Mutex<Option<crate::api::AsyncClient>>>,
+    meetup_client: &crate::api::AsyncClient,
     redis_client: &mut redis::Client,
 ) -> Result<(), crate::Error> {
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
@@ -374,18 +375,9 @@ async fn sync_event_series(
             next_event_name
         );
         // Query the RSVPs for that event
-        let rsvps = {
-            let guard = meetup_client.lock().await;
-            match *guard {
-                Some(ref meetup_client) => {
-                    meetup_client
-                        .get_rsvps(group_urlname, &next_event_id)
-                        .await?
-                }
-                None => return Err(SimpleError::new("Meetup API unavailable").into()),
-            }
-            // Mutex guard will be dropped here
-        };
+        let rsvps = meetup_client
+            .get_rsvps(group_urlname, &next_event_id)
+            .await?;
         // Sync the RSVPs
         println!("Syncing task: Found {} RSVPs", rsvps.len());
         sync_rsvps(&next_event_id, rsvps, redis_client).await

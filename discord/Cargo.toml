@@ -12,6 +12,7 @@ default = []
 bottest = ["meetup/bottest"]
 
 [dependencies]
+common = { path = "../common", package = "swissrpg-common" }
 meetup = { path = "../meetup", package = "swissrpg-meetup" }
 askama = "0.8"
 backtrace = "0.3"

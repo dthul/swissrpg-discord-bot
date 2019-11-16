@@ -1,4 +1,4 @@
-use crate::strings;
+use common::strings;
 use redis::Commands;
 use serenity::model::id::{ChannelId, RoleId, UserId};
 use simple_error::SimpleError;
@@ -6,7 +6,7 @@ use simple_error::SimpleError;
 // Sends channel deletion reminders to expired Discord channels
 pub fn create_end_of_game_task(
     redis_client: redis::Client,
-    mut discord_api: crate::discord_bot::CacheAndHttp,
+    mut discord_api: crate::bot::CacheAndHttp,
     bot_id: UserId,
     recurring: bool,
 ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static {
@@ -34,9 +34,9 @@ pub fn create_end_of_game_task(
 
 fn end_of_game_task(
     redis_client: &redis::Client,
-    discord_api: &mut crate::discord_bot::CacheAndHttp,
+    discord_api: &mut crate::bot::CacheAndHttp,
     bot_id: u64,
-) -> Result<(), crate::BoxedError> {
+) -> Result<(), crate::Error> {
     let redis_series_key = "event_series";
     let mut con = redis_client.get_connection()?;
     let event_series: Vec<String> = con.smembers(redis_series_key)?;
@@ -80,7 +80,7 @@ fn end_of_game_task(
 fn update_series_channel_expiration(
     series_id: &str,
     con: &mut redis::Connection,
-) -> Result<(), crate::BoxedError> {
+) -> Result<(), crate::Error> {
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     let redis_series_channel_key = format!("event_series:{}:discord_channel", &series_id);
     // Check if this event series has a channel
@@ -187,9 +187,9 @@ fn update_series_channel_expiration(
 fn send_channel_expiration_reminder(
     channel_id: u64,
     con: &mut redis::Connection,
-    discord_api: &mut crate::discord_bot::CacheAndHttp,
+    discord_api: &mut crate::bot::CacheAndHttp,
     bot_id: u64,
-) -> Result<(), crate::BoxedError> {
+) -> Result<(), crate::Error> {
     let redis_channel_expiration_key = format!("discord_channel:{}:expiration_time", channel_id);
     let redis_channel_reminder_time = format!(
         "discord_channel:{}:last_expiration_reminder_time",
@@ -262,8 +262,8 @@ enum DeletionStatus {
 fn delete_marked_channel(
     channel_id: u64,
     con: &mut redis::Connection,
-    discord_api: &crate::discord_bot::CacheAndHttp,
-) -> Result<DeletionStatus, crate::BoxedError> {
+    discord_api: &crate::bot::CacheAndHttp,
+) -> Result<DeletionStatus, crate::Error> {
     // Check if there is an expiration time in the future
     // -> don't delete channel and remove deletion marker
     let redis_channel_deletion_key = format!("discord_channel:{}:deletion_time", channel_id);
@@ -343,10 +343,10 @@ fn delete_marked_channel(
 fn delete_role(
     role_id: RoleId,
     con: &mut redis::Connection,
-    discord_api: &crate::discord_bot::CacheAndHttp,
-) -> Result<(), crate::BoxedError> {
+    discord_api: &crate::bot::CacheAndHttp,
+) -> Result<(), crate::Error> {
     // Try to delete the role
-    if let Err(err) = crate::discord_sync::ids::GUILD_ID.delete_role(&discord_api.http, role_id) {
+    if let Err(err) = crate::sync::ids::GUILD_ID.delete_role(&discord_api.http, role_id) {
         // If something went wrong, check whether we should record this role as orphaned
         let role_is_orphaned = if let serenity::Error::Http(http_err) = &err {
             if let serenity::http::HttpError::UnsuccessfulRequest(response) = http_err.as_ref() {

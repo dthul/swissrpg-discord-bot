@@ -94,7 +94,7 @@ pub async fn rsvp_user_to_event(
 pub async fn clone_event<'a>(
     urlname: &'a str,
     event_id: &'a str,
-    meetup_client: crate::api::AsyncClient,
+    meetup_client: &'a crate::api::AsyncClient,
     hook: Option<
         Box<dyn (FnOnce(crate::api::NewEvent) -> Result<crate::api::NewEvent, crate::Error>) + 'a>,
     >,
@@ -143,7 +143,7 @@ pub async fn clone_rsvps(
     src_event_id: &str,
     dst_event_id: &str,
     redis_client: redis::Client,
-    meetup_client: crate::api::AsyncClient,
+    meetup_client: &crate::api::AsyncClient,
     oauth2_consumer: Arc<crate::oauth2::OAuth2Consumer>,
 ) -> Result<(), crate::Error> {
     // First, query the source event's RSVPs and filter them by "yes" responses
