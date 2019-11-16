@@ -1,4 +1,3 @@
-use crate::meetup_api;
 use futures_util::{compat::Future01CompatExt, lock::Mutex};
 use lazy_static::lazy_static;
 use redis::{self, Commands, PipelineCommands};
@@ -26,18 +25,14 @@ lazy_static! {
     pub static ref ONLINE_REGEX: regex::Regex = regex::Regex::new(ONLINE_PATTERN).unwrap();
 }
 
-pub type BoxedFallibleFuture<T, E = crate::BoxedError> =
-    Box<dyn Future<Output = Result<T, E>> + Send>;
-pub type BoxedFuture<T> = Box<dyn Future<Output = T> + Send>;
-
 // TODO: Introduce a type like "Meetup connection" that contains
 // an Arc<Mutex<Option<MeetupClient>>> internally and has the same
 // methods as MeetupClient (so we don't need to match on the Option
 // every time we want to use the client)
 pub async fn sync_task(
-    meetup_client: Arc<Mutex<Option<meetup_api::AsyncClient>>>,
+    meetup_client: Arc<Mutex<Option<crate::api::AsyncClient>>>,
     mut redis_client: redis::Client,
-) -> Result<(), crate::BoxedError> {
+) -> Result<(), crate::Error> {
     let upcoming_events = {
         let guard = meetup_client.lock().await;
         match *guard {
@@ -74,9 +69,9 @@ pub async fn sync_task(
 // This function is supposed to be idempotent, so calling it with the same
 // event is fine.
 async fn sync_event(
-    event: meetup_api::Event,
+    event: crate::api::Event,
     redis_client: &mut redis::Client,
-) -> Result<(), crate::BoxedError> {
+) -> Result<(), crate::Error> {
     let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(&event.description);
     let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(&event.description);
     let is_online = ONLINE_REGEX.is_match(&event.description);
@@ -245,7 +240,7 @@ async fn sync_event(
                         if (is_new_adventure || is_new_campaign)
                             && indicated_event_series_id.is_none()
                         {
-                            let new_series_id = crate::meetup_oauth2::new_random_id(16);
+                            let new_series_id = crate::oauth2::new_random_id(16);
                             if let Some(channel_id) = indicated_channel_id {
                                 // If this event wants to be associated with a channel but that channel already
                                 // has an event series ID, something is fishy
@@ -324,16 +319,17 @@ async fn sync_event(
         &redis_event_key,
         &redis_channel_series_key,
     ];
-    async_redis_transaction::<_, (), _, _>(con, transaction_keys, transaction_fn).await?;
+    common::redis::async_redis_transaction::<_, (), _, _>(con, transaction_keys, transaction_fn)
+        .await?;
     println!("Event syncing task: Synced event \"{}\"", event_name);
     Ok(())
 }
 
 async fn sync_event_series(
     series_id: String,
-    meetup_client: &Arc<Mutex<Option<meetup_api::AsyncClient>>>,
+    meetup_client: &Arc<Mutex<Option<crate::api::AsyncClient>>>,
     redis_client: &mut redis::Client,
-) -> Result<(), crate::BoxedError> {
+) -> Result<(), crate::Error> {
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     // Get all events belonging to this event series
     let event_ids: Vec<String> = redis_client.smembers(&redis_series_events_key)?;
@@ -400,13 +396,13 @@ async fn sync_event_series(
 
 async fn sync_rsvps(
     event_id: &str,
-    rsvps: Vec<meetup_api::RSVP>,
+    rsvps: Vec<crate::api::RSVP>,
     redis_client: &mut redis::Client,
-) -> Result<(), crate::BoxedError> {
+) -> Result<(), crate::Error> {
     let rsvp_yes_user_ids: Vec<_> = rsvps
         .iter()
         .filter_map(|rsvp| {
-            if rsvp.response == meetup_api::RSVPResponse::Yes {
+            if rsvp.response == crate::api::RSVPResponse::Yes {
                 Some(rsvp.member.id)
             } else {
                 None
@@ -419,38 +415,4 @@ async fn sync_rsvps(
     pipe.sadd(redis_event_users_key, rsvp_yes_user_ids);
     let _: (_, ()) = pipe.query_async(con).compat().await?;
     Ok(())
-}
-
-// A direct translation of redis::transaction for the async case
-pub(crate) async fn async_redis_transaction<
-    K: redis::ToRedisArgs,
-    T: redis::FromRedisValue + Send + 'static,
-    R: Future<Output = Result<(redis::aio::Connection, Option<T>), redis::RedisError>>,
-    F: FnMut(redis::aio::Connection, redis::Pipeline) -> R,
->(
-    mut con: redis::aio::Connection,
-    keys: &[K],
-    mut func: F,
-) -> Result<(redis::aio::Connection, T), crate::BoxedError> {
-    loop {
-        let (newcon, ()) = redis::cmd("WATCH")
-            .arg(keys)
-            .query_async(con)
-            .compat()
-            .await?;
-        con = newcon;
-        let mut p = redis::pipe();
-        p.atomic();
-        let (newcon, response): (_, Option<T>) = func(con, p).await?;
-        con = newcon;
-        match response {
-            None => continue,
-            Some(response) => {
-                // make sure no watch is left in the connection, even if
-                // someone forgot to use the pipeline.
-                let (con, ()) = redis::cmd("UNWATCH").query_async(con).compat().await?;
-                return Ok((con, response));
-            }
-        }
-    }
 }
