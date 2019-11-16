@@ -224,7 +224,7 @@ async fn meetup_http_handler(
     oauth2_authorization_client: &BasicClient,
     oauth2_link_client: &BasicClient,
     _discord_http: &serenity::CacheAndHttp,
-    async_meetup_client: &Arc<Mutex<Option<crate::api::AsyncClient>>>,
+    async_meetup_client: &Arc<Mutex<Option<Arc<crate::api::AsyncClient>>>>,
     req: Request<Body>,
     bot_name: String,
 ) -> Result<HandlerResponse, crate::Error> {
@@ -338,7 +338,7 @@ async fn meetup_http_handler(
         )
         .await?;
         // Replace the meetup client
-        *async_meetup_client.lock().await = Some(new_async_meetup_client);
+        *async_meetup_client.lock().await = Some(Arc::new(new_async_meetup_client));
         Ok(("Thanks for logging in :)", "").into())
     } else if let (&Method::GET, Some(captures)) = (method, LINK_URL_REGEX.captures(path)) {
         // The linking ID was stored in Redis when the linking link was created.
@@ -668,7 +668,7 @@ impl OAuth2Consumer {
         addr: std::net::SocketAddr,
         redis_client: redis::Client,
         discord_http: Arc<serenity::CacheAndHttp>,
-        async_meetup_client: Arc<Mutex<Option<crate::api::AsyncClient>>>,
+        async_meetup_client: Arc<Mutex<Option<Arc<crate::api::AsyncClient>>>>,
         bot_name: String,
     ) -> impl Future<Output = ()> + Send + 'static {
         // And a MakeService to handle each connection...
@@ -761,7 +761,7 @@ impl OAuth2Consumer {
     pub fn organizer_token_refresh_task(
         &self,
         redis_client: redis::Client,
-        async_meetup_client: Arc<Mutex<Option<crate::api::AsyncClient>>>,
+        async_meetup_client: Arc<Mutex<Option<Arc<crate::api::AsyncClient>>>>,
     ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static
     {
         let oauth2_client = self.authorization_client.clone();
@@ -789,7 +789,9 @@ impl OAuth2Consumer {
                 };
                 let mut async_meetup_guard =
                     common::ASYNC_RUNTIME.block_on(async { async_meetup_client.lock().await });
-                *async_meetup_guard = Some(crate::api::AsyncClient::new(new_access_token.secret()));
+                *async_meetup_guard = Some(Arc::new(crate::api::AsyncClient::new(
+                    new_access_token.secret(),
+                )));
                 drop(async_meetup_guard);
                 // Refresh the access token in two days from now
                 let next_refresh = white_rabbit::Utc::now() + white_rabbit::Duration::days(2);

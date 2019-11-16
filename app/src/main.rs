@@ -4,9 +4,6 @@ use futures::future;
 use futures_util::{future::FutureExt, stream::StreamExt};
 use redis::Commands;
 use std::{env, pin::Pin, sync::Arc};
-use tokio;
-
-type Result<T> = std::result::Result<T, BoxedError>;
 
 fn main() {
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
@@ -43,23 +40,15 @@ fn main() {
     let meetup_access_token: Option<String> = redis_connection
         .get("meetup_access_token")
         .expect("Meetup access token could not be loaded from Redis");
-    let (meetup_client, async_meetup_client) = match meetup_access_token {
-        Some(meetup_access_token) => (
-            Arc::new(futures_util::lock::Mutex::new(Some(
-                meetup_api::Client::new(&meetup_access_token),
-            ))),
-            Arc::new(futures_util::lock::Mutex::new(Some(
-                meetup_api::AsyncClient::new(&meetup_access_token),
-            ))),
-        ),
-        None => (
-            Arc::new(futures_util::lock::Mutex::new(None)),
-            Arc::new(futures_util::lock::Mutex::new(None)),
-        ),
+    let async_meetup_client = match meetup_access_token {
+        Some(meetup_access_token) => Arc::new(futures_util::lock::Mutex::new(Some(Arc::new(
+            meetup::api::AsyncClient::new(&meetup_access_token),
+        )))),
+        None => Arc::new(futures_util::lock::Mutex::new(None)),
     };
 
     // Create a Meetup OAuth2 consumer
-    let meetup_oauth2_consumer = Arc::new(meetup_oauth2::OAuth2Consumer::new(
+    let meetup_oauth2_consumer = Arc::new(meetup::oauth2::OAuth2Consumer::new(
         meetup_client_id,
         meetup_client_secret,
     ));
@@ -69,17 +58,16 @@ fn main() {
         white_rabbit::Scheduler::new(/*thread_count*/ 1),
     ));
 
-    let (tx, rx) = futures_channel::mpsc::channel::<crate::meetup_sync::BoxedFuture<()>>(1);
+    let (tx, rx) = futures_channel::mpsc::channel::<common::BoxedFuture<()>>(1);
     let spawn_other_futures_future = rx.for_each(|fut| {
         let pinned_fut: Pin<Box<_>> = fut.into();
-        crate::ASYNC_RUNTIME.spawn(pinned_fut);
+        common::ASYNC_RUNTIME.spawn(pinned_fut);
         future::ready(())
     });
 
-    let mut bot = discord_bot::create_discord_client(
+    let mut bot = discord::bot::create_discord_client(
         &discord_token,
         redis_client.clone(),
-        meetup_client.clone(),
         async_meetup_client.clone(),
         task_scheduler.clone(),
         tx,
@@ -97,11 +85,10 @@ fn main() {
         ([127, 0, 0, 1], port).into(),
         redis_client.clone(),
         bot.cache_and_http.clone(),
-        meetup_client.clone(),
         async_meetup_client.clone(),
         bot.data
             .read()
-            .get::<discord_bot::BotNameKey>()
+            .get::<discord::bot::BotNameKey>()
             .expect("Bot name was not set")
             .clone(),
     );
@@ -121,27 +108,24 @@ fn main() {
         Some(time) => time,
         None => white_rabbit::Utc::now(),
     };
-    let mut task_scheduler_guard = ASYNC_RUNTIME.block_on(task_scheduler.lock());
+    let mut task_scheduler_guard = common::ASYNC_RUNTIME.block_on(task_scheduler.lock());
     task_scheduler_guard.add_task_datetime(
         next_refresh_time,
-        meetup_oauth2_consumer.organizer_token_refresh_task(
-            redis_client.clone(),
-            meetup_client.clone(),
-            async_meetup_client.clone(),
-        ),
+        meetup_oauth2_consumer
+            .organizer_token_refresh_task(redis_client.clone(), async_meetup_client.clone()),
     );
     drop(task_scheduler_guard);
-    let discord_api = discord_bot::CacheAndHttp {
+    let discord_api = discord::bot::CacheAndHttp {
         cache: bot.cache_and_http.cache.clone().into(),
         http: bot.cache_and_http.http.clone(),
     };
     // Schedule the end of game task
-    let end_of_game_task = discord_end_of_game::create_end_of_game_task(
+    let end_of_game_task = discord::end_of_game::create_end_of_game_task(
         redis_client.clone(),
         discord_api.clone(),
         bot.data
             .read()
-            .get::<discord_bot::BotIdKey>()
+            .get::<discord::bot::BotIdKey>()
             .expect("Bot ID was not set")
             .clone(),
         /*recurring*/ true,
@@ -155,23 +139,23 @@ fn main() {
         }
         task_time
     };
-    let mut task_scheduler_guard = ASYNC_RUNTIME.block_on(task_scheduler.lock());
+    let mut task_scheduler_guard = common::ASYNC_RUNTIME.block_on(task_scheduler.lock());
     task_scheduler_guard.add_task_datetime(next_end_of_game_task_time, end_of_game_task);
     drop(task_scheduler_guard);
 
-    let syncing_task = sync::create_recurring_syncing_task(
+    let syncing_task = crate::sync_task::create_recurring_syncing_task(
         redis_client.clone(),
         async_meetup_client.clone(),
         discord_api,
         bot.data
             .read()
-            .get::<discord_bot::BotIdKey>()
+            .get::<discord::bot::BotIdKey>()
             .expect("Bot ID was not set")
             .clone(),
         task_scheduler.clone(),
     );
 
-    ASYNC_RUNTIME.spawn(
+    common::ASYNC_RUNTIME.spawn(
         future::join3(
             meetup_oauth2_server,
             spawn_other_futures_future,
