@@ -1,5 +1,5 @@
 [package]
-name = "swissrpg-discord-bot"
+name = "swissrpg-common"
 version = "0.1.0"
 authors = ["Daniel Thul <daniel.thul@gmail.com>"]
 edition = "2018"

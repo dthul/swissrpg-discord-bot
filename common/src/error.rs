@@ -11,7 +11,7 @@ use simple_error::SimpleError;
 use std::num::ParseIntError;
 use tokio::timer::Error as TokioTimerError;
 use url::ParseError as UrlParseError;
-
+ 
 type RequestTokenError = oauth2::RequestTokenError<
     crate::oauth2_async_http_client::Error,
     oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,

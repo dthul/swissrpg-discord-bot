@@ -1,4 +1,3 @@
-use crate::{meetup_api, strings};
 use askama::Template;
 use cookie::Cookie;
 use futures_util::{compat::Future01CompatExt, lock::Mutex, TryFutureExt};
@@ -65,7 +64,7 @@ pub fn new_random_id(num_bytes: u32) -> String {
 async fn generate_csrf_cookie(
     redis_connection: redis::aio::Connection,
     csrf_state: &str,
-) -> crate::Result<(redis::aio::Connection, Cookie<'static>)> {
+) -> common::Result<(redis::aio::Connection, Cookie<'static>)> {
     let random_csrf_user_id = new_random_id(16);
     let redis_csrf_key = format!("csrf:{}", &random_csrf_user_id);
     let mut pipe = redis::pipe();
@@ -209,10 +208,10 @@ impl From<(String, String)> for HandlerResponse {
 }
 
 async fn get_group_profiles(
-    meetup_api: meetup_api::AsyncClient,
-) -> Result<Vec<Option<meetup_api::User>>, crate::meetup_api::Error> {
-    let mut profiles = Vec::with_capacity(meetup_api::URLNAMES.len());
-    for urlname in &meetup_api::URLNAMES {
+    meetup_api: crate::api::AsyncClient,
+) -> Result<Vec<Option<crate::api::User>>, crate::api::Error> {
+    let mut profiles = Vec::with_capacity(crate::api::URLNAMES.len());
+    for urlname in &crate::api::URLNAMES {
         let user = meetup_api.get_group_profile(None, urlname).await?;
         profiles.push(user);
     }
@@ -225,8 +224,8 @@ async fn meetup_http_handler(
     oauth2_authorization_client: &BasicClient,
     oauth2_link_client: &BasicClient,
     _discord_http: &serenity::CacheAndHttp,
-    meetup_client: &Arc<Mutex<Option<meetup_api::Client>>>,
-    async_meetup_client: &Arc<Mutex<Option<meetup_api::AsyncClient>>>,
+    meetup_client: &Arc<Mutex<Option<crate::api::Client>>>,
+    async_meetup_client: &Arc<Mutex<Option<crate::api::AsyncClient>>>,
     req: Request<Body>,
     bot_name: String,
 ) -> Result<HandlerResponse, crate::BoxedError> {
@@ -291,21 +290,21 @@ async fn meetup_http_handler(
             .await?;
         // Check that this token belongs to an organizer of all our Meetup groups
         let new_async_meetup_client =
-            meetup_api::AsyncClient::new(token_res.access_token().secret());
+            crate::api::AsyncClient::new(token_res.access_token().secret());
         let user_profiles = get_group_profiles(new_async_meetup_client.clone()).await?;
         let is_organizer = user_profiles.iter().all(|profile| {
             let is_organizer = match profile {
-                Some(meetup_api::User {
+                Some(crate::api::User {
                     group_profile:
-                        Some(meetup_api::GroupProfile {
-                            status: meetup_api::UserStatus::Active,
+                        Some(crate::api::GroupProfile {
+                            status: crate::api::UserStatus::Active,
                             role: Some(role),
                         }),
                     ..
                 }) => {
-                    *role == meetup_api::LeadershipRole::Organizer
-                        || *role == meetup_api::LeadershipRole::Coorganizer
-                        || *role == meetup_api::LeadershipRole::AssistantOrganizer
+                    *role == crate::api::LeadershipRole::Organizer
+                        || *role == crate::api::LeadershipRole::Coorganizer
+                        || *role == crate::api::LeadershipRole::AssistantOrganizer
                 }
                 _ => false,
             };
@@ -341,7 +340,7 @@ async fn meetup_http_handler(
         )
         .await?;
         // Replace the meetup client
-        let new_blocking_meetup_client = meetup_api::Client::new(token_res.access_token().secret());
+        let new_blocking_meetup_client = crate::api::Client::new(token_res.access_token().secret());
         *meetup_client.lock().await = Some(new_blocking_meetup_client);
         *async_meetup_client.lock().await = Some(new_async_meetup_client);
         Ok(("Thanks for logging in :)", "").into())
@@ -488,7 +487,7 @@ async fn meetup_http_handler(
             .await?;
         // Get the user's Meetup ID
         let async_user_meetup_client =
-            meetup_api::AsyncClient::new(token_res.access_token().secret());
+            crate::api::AsyncClient::new(token_res.access_token().secret());
         let meetup_user = async_user_meetup_client.get_member_profile(None).await?;
         let meetup_user = match meetup_user {
             Some(info) => info,
@@ -673,8 +672,8 @@ impl OAuth2Consumer {
         addr: std::net::SocketAddr,
         redis_client: redis::Client,
         discord_http: Arc<serenity::CacheAndHttp>,
-        meetup_client: Arc<Mutex<Option<meetup_api::Client>>>,
-        async_meetup_client: Arc<Mutex<Option<meetup_api::AsyncClient>>>,
+        meetup_client: Arc<Mutex<Option<crate::api::Client>>>,
+        async_meetup_client: Arc<Mutex<Option<crate::api::AsyncClient>>>,
         bot_name: String,
     ) -> impl Future<Output = ()> + Send + 'static {
         // And a MakeService to handle each connection...
@@ -769,8 +768,8 @@ impl OAuth2Consumer {
     pub fn organizer_token_refresh_task(
         &self,
         redis_client: redis::Client,
-        meetup_client: Arc<Mutex<Option<meetup_api::Client>>>,
-        async_meetup_client: Arc<Mutex<Option<meetup_api::AsyncClient>>>,
+        meetup_client: Arc<Mutex<Option<crate::api::Client>>>,
+        async_meetup_client: Arc<Mutex<Option<crate::api::AsyncClient>>>,
     ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static
     {
         let oauth2_client = self.authorization_client.clone();
@@ -800,8 +799,8 @@ impl OAuth2Consumer {
                     crate::ASYNC_RUNTIME.block_on(async {
                         (meetup_client.lock().await, async_meetup_client.lock().await)
                     });
-                *meetup_guard = Some(meetup_api::Client::new(new_access_token.secret()));
-                *async_meetup_guard = Some(meetup_api::AsyncClient::new(new_access_token.secret()));
+                *meetup_guard = Some(crate::api::Client::new(new_access_token.secret()));
+                *async_meetup_guard = Some(crate::api::AsyncClient::new(new_access_token.secret()));
                 drop(meetup_guard);
                 drop(async_meetup_guard);
                 // Refresh the access token in two days from now
