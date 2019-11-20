@@ -1,6 +1,9 @@
+pub mod discord;
 pub mod error;
+pub mod meetup;
 pub mod redis;
 pub mod strings;
+pub mod tasks;
 
 pub use error::BoxedError;
 use lazy_static::lazy_static;

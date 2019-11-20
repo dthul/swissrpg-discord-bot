@@ -64,7 +64,7 @@ pub fn new_random_id(num_bytes: u32) -> String {
 async fn generate_csrf_cookie(
     redis_connection: redis::aio::Connection,
     csrf_state: &str,
-) -> Result<(redis::aio::Connection, Cookie<'static>), crate::Error> {
+) -> Result<(redis::aio::Connection, Cookie<'static>), super::Error> {
     let random_csrf_user_id = new_random_id(16);
     let redis_csrf_key = format!("csrf:{}", &random_csrf_user_id);
     let mut pipe = redis::pipe();
@@ -85,7 +85,7 @@ async fn check_csrf_cookie(
     redis_connection: redis::aio::Connection,
     headers: &hyper::HeaderMap<hyper::header::HeaderValue>,
     csrf_state: &str,
-) -> Result<(redis::aio::Connection, bool), crate::Error> {
+) -> Result<(redis::aio::Connection, bool), super::Error> {
     let csrf_user_id_cookie =
         headers
             .get_all(hyper::header::COOKIE)
@@ -119,7 +119,7 @@ async fn check_csrf_cookie(
 pub async fn generate_meetup_linking_link(
     redis_connection: redis::aio::Connection,
     discord_id: u64,
-) -> Result<(redis::aio::Connection, String), crate::Error> {
+) -> Result<(redis::aio::Connection, String), super::Error> {
     let linking_id = new_random_id(16);
     let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
     let redis_connection = match redis::cmd("SET")
@@ -155,7 +155,7 @@ enum HandlerResponse {
 }
 
 impl HandlerResponse {
-    pub fn from_template(template: impl Template) -> Result<Self, common::BoxedError> {
+    pub fn from_template(template: impl Template) -> Result<Self, crate::BoxedError> {
         template
             .render()
             .map_err(Into::into)
@@ -208,10 +208,10 @@ impl From<(String, String)> for HandlerResponse {
 }
 
 async fn get_group_profiles(
-    meetup_api: crate::api::AsyncClient,
-) -> Result<Vec<Option<crate::api::User>>, crate::api::Error> {
-    let mut profiles = Vec::with_capacity(crate::api::URLNAMES.len());
-    for urlname in &crate::api::URLNAMES {
+    meetup_api: super::api::AsyncClient,
+) -> Result<Vec<Option<super::api::User>>, super::api::Error> {
+    let mut profiles = Vec::with_capacity(super::api::URLNAMES.len());
+    for urlname in &super::api::URLNAMES {
         let user = meetup_api.get_group_profile(None, urlname).await?;
         profiles.push(user);
     }
@@ -224,10 +224,10 @@ async fn meetup_http_handler(
     oauth2_authorization_client: &BasicClient,
     oauth2_link_client: &BasicClient,
     _discord_http: &serenity::CacheAndHttp,
-    async_meetup_client: &Arc<Mutex<Option<Arc<crate::api::AsyncClient>>>>,
+    async_meetup_client: &Arc<Mutex<Option<Arc<super::api::AsyncClient>>>>,
     req: Request<Body>,
     bot_name: String,
-) -> Result<HandlerResponse, crate::Error> {
+) -> Result<HandlerResponse, super::Error> {
     let (method, path) = (req.method(), req.uri().path());
     if let (&Method::GET, "/authorize") = (method, path) {
         // Generate the authorization URL to which we'll redirect the user.
@@ -283,26 +283,26 @@ async fn meetup_http_handler(
         let async_meetup_client = async_meetup_client.clone();
         let token_res = oauth2_authorization_client
             .exchange_code(code)
-            .request_async(crate::oauth2_async_http_client::async_http_client)
+            .request_async(super::oauth2_async_http_client::async_http_client)
             .compat()
             .await?;
         // Check that this token belongs to an organizer of all our Meetup groups
         let new_async_meetup_client =
-            crate::api::AsyncClient::new(token_res.access_token().secret());
+            super::api::AsyncClient::new(token_res.access_token().secret());
         let user_profiles = get_group_profiles(new_async_meetup_client.clone()).await?;
         let is_organizer = user_profiles.iter().all(|profile| {
             let is_organizer = match profile {
-                Some(crate::api::User {
+                Some(super::api::User {
                     group_profile:
-                        Some(crate::api::GroupProfile {
-                            status: crate::api::UserStatus::Active,
+                        Some(super::api::GroupProfile {
+                            status: super::api::UserStatus::Active,
                             role: Some(role),
                         }),
                     ..
                 }) => {
-                    *role == crate::api::LeadershipRole::Organizer
-                        || *role == crate::api::LeadershipRole::Coorganizer
-                        || *role == crate::api::LeadershipRole::AssistantOrganizer
+                    *role == super::api::LeadershipRole::Organizer
+                        || *role == super::api::LeadershipRole::Coorganizer
+                        || *role == super::api::LeadershipRole::AssistantOrganizer
                 }
                 _ => false,
             };
@@ -331,7 +331,7 @@ async fn meetup_http_handler(
                 }
             }
         };
-        let (_redis_connection, _): (_, ()) = common::redis::async_redis_transaction(
+        let (_redis_connection, _): (_, ()) = crate::redis::async_redis_transaction(
             redis_connection,
             &["meetup_access_token", "meetup_refresh_token"],
             transaction_fn,
@@ -354,8 +354,8 @@ async fn meetup_http_handler(
             pipe.query_async(redis_connection).compat().await?;
         if discord_id.is_none() {
             return Ok((
-                common::strings::OAUTH2_LINK_EXPIRED_TITLE,
-                common::strings::OAUTH2_LINK_EXPIRED_CONTENT,
+                crate::strings::OAUTH2_LINK_EXPIRED_TITLE,
+                crate::strings::OAUTH2_LINK_EXPIRED_CONTENT,
             )
                 .into());
         }
@@ -417,8 +417,8 @@ async fn meetup_http_handler(
             Some(id) => id,
             None => {
                 return Ok((
-                    common::strings::OAUTH2_LINK_EXPIRED_TITLE,
-                    common::strings::OAUTH2_LINK_EXPIRED_CONTENT,
+                    crate::strings::OAUTH2_LINK_EXPIRED_TITLE,
+                    crate::strings::OAUTH2_LINK_EXPIRED_CONTENT,
                 )
                     .into())
             }
@@ -445,7 +445,7 @@ async fn meetup_http_handler(
                     title: Cow::Borrowed("Linking Failure"),
                     content: None,
                     img_url: None,
-                    safe_content: Some(Cow::Owned(common::strings::OAUTH2_AUTHORISATION_DENIED(
+                    safe_content: Some(Cow::Owned(crate::strings::OAUTH2_AUTHORISATION_DENIED(
                         &linking_url,
                     ))),
                 });
@@ -478,12 +478,12 @@ async fn meetup_http_handler(
             .clone()
             .set_redirect_url(redirect_url)
             .exchange_code(code)
-            .request_async(crate::oauth2_async_http_client::async_http_client)
+            .request_async(super::oauth2_async_http_client::async_http_client)
             .compat()
             .await?;
         // Get the user's Meetup ID
         let async_user_meetup_client =
-            crate::api::AsyncClient::new(token_res.access_token().secret());
+            super::api::AsyncClient::new(token_res.access_token().secret());
         let meetup_user = async_user_meetup_client.get_member_profile(None).await?;
         let meetup_user = match meetup_user {
             Some(info) => info,
@@ -503,14 +503,14 @@ async fn meetup_http_handler(
             Some(existing_meetup_id) => {
                 if existing_meetup_id == meetup_user.id {
                     return Ok((
-                        common::strings::OAUTH2_ALREADY_LINKED_SUCCESS_TITLE,
-                        common::strings::OAUTH2_ALREADY_LINKED_SUCCESS_CONTENT,
+                        crate::strings::OAUTH2_ALREADY_LINKED_SUCCESS_TITLE,
+                        crate::strings::OAUTH2_ALREADY_LINKED_SUCCESS_CONTENT,
                     )
                         .into());
                 } else {
                     return Ok((
-                        common::strings::OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_TITLE,
-                        common::strings::OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_CONTENT(&bot_name),
+                        crate::strings::OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_TITLE,
+                        crate::strings::OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_CONTENT(&bot_name),
                     )
                         .into());
                 }
@@ -526,8 +526,8 @@ async fn meetup_http_handler(
         match existing_discord_id {
             Some(_) => {
                 return Ok((
-                    common::strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_TITLE,
-                    common::strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_CONTENT(&bot_name),
+                    crate::strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_TITLE,
+                    crate::strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_CONTENT(&bot_name),
                 )
                     .into());
             }
@@ -587,7 +587,7 @@ async fn meetup_http_handler(
                 }
             };
             let transaction_keys = &[&redis_key_d2m, &redis_key_m2d];
-            common::redis::async_redis_transaction(
+            crate::redis::async_redis_transaction(
                 redis_connection,
                 transaction_keys,
                 transaction_fn,
@@ -603,8 +603,8 @@ async fn meetup_http_handler(
         }
         if let Some(photo) = meetup_user.photo {
             Ok(HandlerResponse::Message {
-                title: Cow::Borrowed(common::strings::OAUTH2_LINKING_SUCCESS_TITLE),
-                content: Some(Cow::Owned(common::strings::OAUTH2_LINKING_SUCCESS_CONTENT(
+                title: Cow::Borrowed(crate::strings::OAUTH2_LINKING_SUCCESS_TITLE),
+                content: Some(Cow::Owned(crate::strings::OAUTH2_LINKING_SUCCESS_CONTENT(
                     &meetup_user.name,
                 ))),
                 safe_content: None,
@@ -613,8 +613,8 @@ async fn meetup_http_handler(
             .into())
         } else {
             Ok((
-                common::strings::OAUTH2_LINKING_SUCCESS_TITLE,
-                common::strings::OAUTH2_LINKING_SUCCESS_CONTENT(&meetup_user.name),
+                crate::strings::OAUTH2_LINKING_SUCCESS_TITLE,
+                crate::strings::OAUTH2_LINKING_SUCCESS_CONTENT(&meetup_user.name),
             )
                 .into())
         }
@@ -668,7 +668,7 @@ impl OAuth2Consumer {
         addr: std::net::SocketAddr,
         redis_client: redis::Client,
         discord_http: Arc<serenity::CacheAndHttp>,
-        async_meetup_client: Arc<Mutex<Option<Arc<crate::api::AsyncClient>>>>,
+        async_meetup_client: Arc<Mutex<Option<Arc<super::api::AsyncClient>>>>,
         bot_name: String,
     ) -> impl Future<Output = ()> + Send + 'static {
         // And a MakeService to handle each connection...
@@ -708,7 +708,7 @@ impl OAuth2Consumer {
                             match handler_response {
                                 Ok(handler_response) => match handler_response {
                                     HandlerResponse::Response(response) => {
-                                        Ok::<_, common::BoxedError>(response)
+                                        Ok::<_, crate::BoxedError>(response)
                                     }
                                     HandlerResponse::Message {
                                         title,
@@ -732,7 +732,7 @@ impl OAuth2Consumer {
                                     // is available on stable, since this function will never return an error
                                     eprintln!("Error in meetup_authorize: {}", err);
                                     let message_template = LinkingMessageTemplate {
-                                        title: common::strings::INTERNAL_SERVER_ERROR,
+                                        title: crate::strings::INTERNAL_SERVER_ERROR,
                                         content: None,
                                         safe_content: None,
                                         img_url: None,
@@ -744,7 +744,7 @@ impl OAuth2Consumer {
                         }
                     }
                 };
-                async { Ok::<_, common::BoxedError>(service_fn(request_to_response_fn)) }
+                async { Ok::<_, crate::BoxedError>(service_fn(request_to_response_fn)) }
             })
         };
         let server = Server::bind(&addr)
@@ -761,14 +761,14 @@ impl OAuth2Consumer {
     pub fn organizer_token_refresh_task(
         &self,
         redis_client: redis::Client,
-        async_meetup_client: Arc<Mutex<Option<Arc<crate::api::AsyncClient>>>>,
+        async_meetup_client: Arc<Mutex<Option<Arc<super::api::AsyncClient>>>>,
     ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static
     {
         let oauth2_client = self.authorization_client.clone();
         let refresh_meetup_access_token_task =
             move |_context: &mut white_rabbit::Context| -> white_rabbit::DateResult {
                 // Try to refresh the organizer oauth tokens
-                let refresh_result = common::ASYNC_RUNTIME.block_on(async {
+                let refresh_result = crate::ASYNC_RUNTIME.block_on(async {
                     let redis_connection = redis_client.get_async_connection().compat().await?;
                     refresh_oauth_tokens(
                         TokenType::Organizer,
@@ -788,8 +788,8 @@ impl OAuth2Consumer {
                     Ok(res) => res,
                 };
                 let mut async_meetup_guard =
-                    common::ASYNC_RUNTIME.block_on(async { async_meetup_client.lock().await });
-                *async_meetup_guard = Some(Arc::new(crate::api::AsyncClient::new(
+                    crate::ASYNC_RUNTIME.block_on(async { async_meetup_client.lock().await });
+                *async_meetup_guard = Some(Arc::new(super::api::AsyncClient::new(
                     new_access_token.secret(),
                 )));
                 drop(async_meetup_guard);
@@ -800,7 +800,7 @@ impl OAuth2Consumer {
                     next_refresh.to_rfc3339()
                 );
                 // Store refresh date in Redis, ignore failures
-                let _: redis::RedisResult<(_, ())> = common::ASYNC_RUNTIME.block_on(
+                let _: redis::RedisResult<(_, ())> = crate::ASYNC_RUNTIME.block_on(
                     redis::cmd("SET")
                         .arg("meetup_access_token_refresh_time")
                         .arg(next_refresh.to_rfc3339())
@@ -817,7 +817,7 @@ impl OAuth2Consumer {
         &self,
         token_type: TokenType,
         redis_client: redis::Client,
-    ) -> Result<(redis::aio::Connection, oauth2::AccessToken), crate::Error> {
+    ) -> Result<(redis::aio::Connection, oauth2::AccessToken), super::Error> {
         let redis_connection = redis_client.get_async_connection().compat().await?;
         refresh_oauth_tokens(
             token_type,
@@ -837,7 +837,7 @@ pub async fn refresh_oauth_tokens(
     token_type: TokenType,
     oauth2_client: Arc<BasicClient>,
     redis_connection: redis::aio::Connection,
-) -> Result<(redis::aio::Connection, oauth2::AccessToken), crate::Error> {
+) -> Result<(redis::aio::Connection, oauth2::AccessToken), super::Error> {
     // Try to get the refresh token from Redis
     let (redis_connection, refresh_token): (_, Option<String>) = match token_type {
         TokenType::Organizer => {
@@ -871,7 +871,7 @@ pub async fn refresh_oauth_tokens(
     let refresh_token = oauth2::RefreshToken::new(refresh_token);
     let refresh_token_response = oauth2_client
         .exchange_refresh_token(&refresh_token)
-        .request_async(crate::oauth2_async_http_client::async_http_client)
+        .request_async(super::oauth2_async_http_client::async_http_client)
         .compat()
         .await?;
     // Store the new tokens in Redis

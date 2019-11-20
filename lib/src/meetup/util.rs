@@ -7,14 +7,14 @@ use std::{
 
 async fn try_with_token_refresh<
     T,
-    Ret: Future<Output = Result<T, crate::api::Error>>,
-    F: Fn(crate::api::AsyncClient) -> Ret,
+    Ret: Future<Output = Result<T, super::api::Error>>,
+    F: Fn(super::api::AsyncClient) -> Ret,
 >(
     f: F,
     user_id: u64,
     redis_client: redis::Client,
-    oauth2_consumer: Arc<crate::oauth2::OAuth2Consumer>,
-) -> Result<T, crate::Error> {
+    oauth2_consumer: Arc<super::oauth2::OAuth2Consumer>,
+) -> Result<T, super::Error> {
     let redis_connection = redis_client.get_async_connection().compat().await?;
     // Look up the Meetup access token for this user
     println!("Looking up the oauth access token");
@@ -34,7 +34,7 @@ async fn try_with_token_refresh<
             io::stdout().flush().unwrap();
             let (_, access_token) = oauth2_consumer
                 .refresh_oauth_tokens(
-                    crate::oauth2::TokenType::User(user_id),
+                    super::oauth2::TokenType::User(user_id),
                     redis_client.clone(),
                 )
                 .await?;
@@ -44,25 +44,25 @@ async fn try_with_token_refresh<
         }
     };
     // Run the provided function
-    let meetup_api_user_client = crate::api::AsyncClient::new(&access_token);
+    let meetup_api_user_client = super::api::AsyncClient::new(&access_token);
     println!("Running the provided funtion");
     io::stdout().flush().unwrap();
     match f(meetup_api_user_client).await {
         Err(err) => {
             println!("Got an error");
             io::stdout().flush().unwrap();
-            if let crate::api::Error::AuthenticationFailure = err {
+            if let super::api::Error::AuthenticationFailure = err {
                 // The request seems to have failed due to invalid credentials.
                 // Try to obtain a new access token and re-run the provided function.
                 println!("Calling oauth2_consumer.refresh_oauth_tokens");
                 io::stdout().flush().unwrap();
                 let (_, access_token) = oauth2_consumer
-                    .refresh_oauth_tokens(crate::oauth2::TokenType::User(user_id), redis_client)
+                    .refresh_oauth_tokens(super::oauth2::TokenType::User(user_id), redis_client)
                     .await?;
                 println!("Got an access token!");
                 io::stdout().flush().unwrap();
                 // Re-run the provided function one more time
-                let meetup_api_user_client = crate::api::AsyncClient::new(access_token.secret());
+                let meetup_api_user_client = super::api::AsyncClient::new(access_token.secret());
                 f(meetup_api_user_client).await.map_err(Into::into)
             } else {
                 eprintln!("Meetup API error: {:#?}", err);
@@ -83,9 +83,9 @@ pub async fn rsvp_user_to_event(
     urlname: &str,
     event_id: &str,
     redis_client: redis::Client,
-    oauth2_consumer: Arc<crate::oauth2::OAuth2Consumer>,
-) -> Result<crate::api::RSVP, crate::Error> {
-    let rsvp_fun = |async_meetup_user_client: crate::api::AsyncClient| {
+    oauth2_consumer: Arc<super::oauth2::OAuth2Consumer>,
+) -> Result<super::api::RSVP, super::Error> {
+    let rsvp_fun = |async_meetup_user_client: super::api::AsyncClient| {
         async move { async_meetup_user_client.rsvp(urlname, event_id, true).await }
     };
     try_with_token_refresh(rsvp_fun, user_id, redis_client, oauth2_consumer).await
@@ -94,11 +94,11 @@ pub async fn rsvp_user_to_event(
 pub async fn clone_event<'a>(
     urlname: &'a str,
     event_id: &'a str,
-    meetup_client: &'a crate::api::AsyncClient,
+    meetup_client: &'a super::api::AsyncClient,
     hook: Option<
-        Box<dyn (FnOnce(crate::api::NewEvent) -> Result<crate::api::NewEvent, crate::Error>) + 'a>,
+        Box<dyn (FnOnce(super::api::NewEvent) -> Result<super::api::NewEvent, super::Error>) + 'a>,
     >,
-) -> Result<crate::api::Event, crate::Error> {
+) -> Result<super::api::Event, super::Error> {
     let event = meetup_client.get_event(urlname, event_id).await?;
     let event = match event {
         Some(event) => event,
@@ -110,7 +110,7 @@ pub async fn clone_event<'a>(
             .into())
         }
     };
-    let new_event = crate::api::NewEvent {
+    let new_event = super::api::NewEvent {
         description: event.simple_html_description.unwrap_or(event.description),
         duration_ms: event.duration_ms,
         featured_photo_id: event.featured_photo.map(|p| p.id),
@@ -143,15 +143,15 @@ pub async fn clone_rsvps(
     src_event_id: &str,
     dst_event_id: &str,
     redis_client: redis::Client,
-    meetup_client: &crate::api::AsyncClient,
-    oauth2_consumer: Arc<crate::oauth2::OAuth2Consumer>,
-) -> Result<(), crate::Error> {
+    meetup_client: &super::api::AsyncClient,
+    oauth2_consumer: Arc<super::oauth2::OAuth2Consumer>,
+) -> Result<(), super::Error> {
     // First, query the source event's RSVPs and filter them by "yes" responses
     let rsvps: Vec<_> = meetup_client
         .get_rsvps(urlname, src_event_id)
         .await?
         .into_iter()
-        .filter(|rsvp| rsvp.response == crate::api::RSVPResponse::Yes)
+        .filter(|rsvp| rsvp.response == super::api::RSVPResponse::Yes)
         .collect();
     // Now, try to RSVP each user to the destination event
     let mut last_err = None;

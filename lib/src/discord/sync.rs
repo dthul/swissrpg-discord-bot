@@ -53,7 +53,7 @@ struct Event {
 // Syncs Discord with the state of the Redis database
 pub fn create_sync_discord_task(
     redis_client: redis::Client,
-    discord_api: crate::bot::CacheAndHttp,
+    discord_api: super::CacheAndHttp,
     bot_id: u64,
     recurring: bool,
 ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static {
@@ -79,9 +79,9 @@ pub fn create_sync_discord_task(
 
 pub fn sync_discord(
     redis_client: &redis::Client,
-    discord_api: &crate::bot::CacheAndHttp,
+    discord_api: &super::CacheAndHttp,
     bot_id: u64,
-) -> Result<(), crate::Error> {
+) -> Result<(), crate::meetup::Error> {
     let redis_series_key = "event_series";
     let mut con = redis_client.get_connection()?;
     let event_series: Vec<String> = con.smembers(redis_series_key)?;
@@ -116,9 +116,9 @@ For each event series:
 fn sync_event_series(
     series_id: &str,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
+    discord_api: &super::CacheAndHttp,
     bot_id: u64,
-) -> Result<(), crate::Error> {
+) -> Result<(), crate::meetup::Error> {
     // Only sync event series that have events in the future
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
@@ -308,8 +308,8 @@ fn sync_role(
     is_host_role: bool,
     channel_id: ChannelId,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
-) -> Result<RoleId, crate::Error> {
+    discord_api: &super::CacheAndHttp,
+) -> Result<RoleId, crate::meetup::Error> {
     let max_retries = 1;
     let mut current_num_try = 0;
     loop {
@@ -384,8 +384,8 @@ fn sync_role_impl(
     is_host_role: bool,
     channel_id: ChannelId,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
-) -> Result<RoleId, crate::Error> {
+    discord_api: &super::CacheAndHttp,
+) -> Result<RoleId, crate::meetup::Error> {
     let redis_channel_role_key = if is_host_role {
         format!("discord_channel:{}:discord_host_role", channel_id.0)
     } else {
@@ -484,8 +484,8 @@ fn sync_channel(
     event_series_id: &str,
     bot_id: u64,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
-) -> Result<ChannelId, crate::Error> {
+    discord_api: &super::CacheAndHttp,
+) -> Result<ChannelId, crate::meetup::Error> {
     let max_retries = 1;
     let mut current_num_try = 0;
     loop {
@@ -559,8 +559,8 @@ fn sync_channel_impl(
     event_series_id: &str,
     bot_id: u64,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
-) -> Result<ChannelId, crate::Error> {
+    discord_api: &super::CacheAndHttp,
+) -> Result<ChannelId, crate::meetup::Error> {
     let redis_series_channel_key = format!("event_series:{}:discord_channel", event_series_id);
     // Check if the channel already exists
     {
@@ -655,8 +655,8 @@ fn sync_channel_permissions(
     host_role_id: RoleId,
     bot_id: u64,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
-) -> Result<(), crate::Error> {
+    discord_api: &super::CacheAndHttp,
+) -> Result<(), crate::meetup::Error> {
     // The @everyone role has the same id as the guild
     let role_everyone_id = RoleId(GUILD_ID.0);
     // Make this channel private.
@@ -715,7 +715,7 @@ fn get_events_participants(
     event_ids: &[&str],
     hosts: bool,
     redis_connection: &mut redis::Connection,
-) -> Result<Vec<u64>, crate::Error> {
+) -> Result<Vec<u64>, crate::meetup::Error> {
     // Find all Meetup users RSVP'd to the specified events
     let redis_event_users_keys: Vec<_> = event_ids
         .iter()
@@ -739,7 +739,7 @@ fn get_events_participants(
 fn meetup_to_discord_ids(
     meetup_user_ids: &[u64],
     redis_connection: &mut redis::Connection,
-) -> Result<Vec<(u64, Option<u64>)>, crate::Error> {
+) -> Result<Vec<(u64, Option<u64>)>, crate::meetup::Error> {
     // Try to associate the RSVP'd Meetup users with Discord users
     let discord_user_ids: Result<Vec<Option<u64>>, _> = meetup_user_ids
         .iter()
@@ -761,8 +761,8 @@ fn sync_user_role_assignments(
     role: RoleId,
     is_host_role: bool,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
-) -> Result<(), crate::Error> {
+    discord_api: &super::CacheAndHttp,
+) -> Result<(), crate::meetup::Error> {
     // Check whether any users have manually removed roles and don't add them back
     let redis_channel_removed_hosts_key = format!("discord_channel:{}:removed_hosts", channel.0);
     let redis_channel_removed_users_key = format!("discord_channel:{}:removed_users", channel.0);
@@ -815,11 +815,10 @@ fn sync_user_role_assignments(
     if !newly_added_user_ids.is_empty() {
         if let Err(err) = channel.send_message(&discord_api.http, |message_builder| {
             if is_host_role {
-                message_builder.content(common::strings::CHANNEL_ADDED_HOSTS(&newly_added_user_ids))
+                message_builder.content(crate::strings::CHANNEL_ADDED_HOSTS(&newly_added_user_ids))
             } else {
-                message_builder.content(common::strings::CHANNEL_ADDED_PLAYERS(
-                    &newly_added_user_ids,
-                ))
+                message_builder
+                    .content(crate::strings::CHANNEL_ADDED_PLAYERS(&newly_added_user_ids))
             }
         }) {
             eprintln!(
@@ -834,8 +833,8 @@ fn sync_user_role_assignments(
 fn sync_game_master_role(
     event_series_id: &str,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
-) -> Result<(), crate::Error> {
+    discord_api: &super::CacheAndHttp,
+) -> Result<(), crate::meetup::Error> {
     if let Some(game_master_role) = GAME_MASTER_ID {
         // First, find all events belonging to this event series
         let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
@@ -900,8 +899,8 @@ fn sync_channel_topic_and_category(
     channel_id: ChannelId,
     next_event: &Event,
     redis_connection: &mut redis::Connection,
-    discord_api: &crate::bot::CacheAndHttp,
-) -> Result<(), crate::Error> {
+    discord_api: &super::CacheAndHttp,
+) -> Result<(), crate::meetup::Error> {
     // Sync the topic and the category
     let topic = format!("Next session: {}", &next_event.link);
     let redis_series_type_key = format!("event_series:{}:type", series_id);

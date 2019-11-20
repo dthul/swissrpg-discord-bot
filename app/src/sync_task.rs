@@ -6,8 +6,8 @@ use tokio::prelude::*;
 
 pub async fn create_recurring_syncing_task(
     redis_client: redis::Client,
-    meetup_client: Arc<Mutex<Option<Arc<meetup::api::AsyncClient>>>>,
-    discord_api: discord::bot::CacheAndHttp,
+    meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
+    discord_api: lib::discord::CacheAndHttp,
     bot_id: UserId,
     task_scheduler: Arc<Mutex<white_rabbit::Scheduler>>,
 ) {
@@ -18,8 +18,8 @@ pub async fn create_recurring_syncing_task(
         let discord_api = discord_api.clone();
         let meetup_client = meetup_client.clone();
         let task_scheduler = task_scheduler.clone();
-        common::ASYNC_RUNTIME.spawn(async move {
-            let sync_result = meetup::sync::sync_task(meetup_client, redis_client.clone())
+        lib::ASYNC_RUNTIME.spawn(async move {
+            let sync_result = lib::meetup::sync::sync_task(meetup_client, redis_client.clone())
                 .map_err(|err| {
                     eprintln!("Syncing task failed: {}", err);
                     err
@@ -34,7 +34,7 @@ pub async fn create_recurring_syncing_task(
                 let mut guard = task_scheduler.lock().await;
                 guard.add_task_datetime(
                     white_rabbit::Utc::now(),
-                    discord::sync::create_sync_discord_task(
+                    lib::discord::sync::create_sync_discord_task(
                         redis_client,
                         discord_api,
                         bot_id.0,

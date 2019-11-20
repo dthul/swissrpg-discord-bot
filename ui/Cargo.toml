@@ -1,5 +1,5 @@
 [package]
-name = "swissrpg-common"
+name = "swissrpg-ui"
 version = "0.1.0"
 authors = ["Daniel Thul <daniel.thul@gmail.com>"]
 edition = "2018"
@@ -9,9 +9,10 @@ edition = "2018"
 # bottest feature not enabled by default
 default = []
 
-bottest = []
+bottest = ["lib/bottest"]
 
 [dependencies]
+lib = { path = "../lib", package = "swissrpg-lib" }
 askama = "0.8"
 backtrace = "0.3"
 base64 = "0.10"

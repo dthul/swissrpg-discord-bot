@@ -1,10 +1,10 @@
 [workspace]
 
 members = [
+    "lib",
+    "ui",
     "app",
-    "discord",
-    "meetup",
 ]
 
 [profile.release]
-lto = true
+# lto = true

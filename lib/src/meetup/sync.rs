@@ -30,9 +30,9 @@ lazy_static! {
 // methods as MeetupClient (so we don't need to match on the Option
 // every time we want to use the client)
 pub async fn sync_task(
-    meetup_client: Arc<Mutex<Option<Arc<crate::api::AsyncClient>>>>,
+    meetup_client: Arc<Mutex<Option<Arc<super::api::AsyncClient>>>>,
     mut redis_client: redis::Client,
-) -> Result<(), crate::Error> {
+) -> Result<(), super::Error> {
     let meetup_client = {
         let guard = meetup_client.lock().await;
         match *guard {
@@ -70,9 +70,9 @@ pub async fn sync_task(
 // This function is supposed to be idempotent, so calling it with the same
 // event is fine.
 async fn sync_event(
-    event: crate::api::Event,
+    event: super::api::Event,
     redis_client: &mut redis::Client,
-) -> Result<(), crate::Error> {
+) -> Result<(), super::Error> {
     let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(&event.description);
     let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(&event.description);
     let is_online = ONLINE_REGEX.is_match(&event.description);
@@ -241,7 +241,7 @@ async fn sync_event(
                         if (is_new_adventure || is_new_campaign)
                             && indicated_event_series_id.is_none()
                         {
-                            let new_series_id = crate::oauth2::new_random_id(16);
+                            let new_series_id = super::oauth2::new_random_id(16);
                             if let Some(channel_id) = indicated_channel_id {
                                 // If this event wants to be associated with a channel but that channel already
                                 // has an event series ID, something is fishy
@@ -320,7 +320,7 @@ async fn sync_event(
         &redis_event_key,
         &redis_channel_series_key,
     ];
-    common::redis::async_redis_transaction::<_, (), _, _>(con, transaction_keys, transaction_fn)
+    crate::redis::async_redis_transaction::<_, (), _, _>(con, transaction_keys, transaction_fn)
         .await?;
     println!("Event syncing task: Synced event \"{}\"", event_name);
     Ok(())
@@ -328,9 +328,9 @@ async fn sync_event(
 
 async fn sync_event_series(
     series_id: String,
-    meetup_client: &crate::api::AsyncClient,
+    meetup_client: &super::api::AsyncClient,
     redis_client: &mut redis::Client,
-) -> Result<(), crate::Error> {
+) -> Result<(), super::Error> {
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     // Get all events belonging to this event series
     let event_ids: Vec<String> = redis_client.smembers(&redis_series_events_key)?;
@@ -388,13 +388,13 @@ async fn sync_event_series(
 
 async fn sync_rsvps(
     event_id: &str,
-    rsvps: Vec<crate::api::RSVP>,
+    rsvps: Vec<super::api::RSVP>,
     redis_client: &mut redis::Client,
-) -> Result<(), crate::Error> {
+) -> Result<(), super::Error> {
     let rsvp_yes_user_ids: Vec<_> = rsvps
         .iter()
         .filter_map(|rsvp| {
-            if rsvp.response == crate::api::RSVPResponse::Yes {
+            if rsvp.response == super::api::RSVPResponse::Yes {
                 Some(rsvp.member.id)
             } else {
                 None

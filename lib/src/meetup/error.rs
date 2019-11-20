@@ -11,15 +11,15 @@ use tokio::timer::Error as TokioTimerError;
 use url::ParseError as UrlParseError;
 
 type RequestTokenError = oauth2::RequestTokenError<
-    crate::oauth2_async_http_client::Error,
+    super::oauth2_async_http_client::Error,
     oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
 >;
 
 #[derive(Debug)]
 pub enum Error {
-    APIError(crate::api::Error),
+    APIError(super::api::Error),
     OAuthError(RequestTokenError),
-    CommonError(common::BoxedError),
+    CommonError(crate::BoxedError),
 }
 
 impl std::fmt::Display for Error {
@@ -38,8 +38,8 @@ impl std::error::Error for Error {
     }
 }
 
-impl From<crate::api::Error> for Error {
-    fn from(err: crate::api::Error) -> Self {
+impl From<super::api::Error> for Error {
+    fn from(err: super::api::Error) -> Self {
         Error::APIError(err)
     }
 }
