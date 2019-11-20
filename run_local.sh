@@ -1,4 +1,4 @@
 #!/bin/sh
 . ./secrets.sh
 export BOT_ENV=test
-./swissrpg-app
+./target/debug/swissrpg-app
