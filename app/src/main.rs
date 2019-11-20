@@ -48,10 +48,10 @@ fn main() {
     };
 
     // Create a Meetup OAuth2 consumer
-    let meetup_oauth2_consumer = Arc::new(lib::meetup::oauth2::OAuth2Consumer::new(
-        meetup_client_id,
-        meetup_client_secret,
-    ));
+    let meetup_oauth2_consumer = Arc::new(
+        lib::meetup::oauth2::OAuth2Consumer::new(meetup_client_id, meetup_client_secret)
+            .expect("Could not create OAuth2 consumer"),
+    );
 
     // Create a task scheduler and schedule the refresh token task
     let task_scheduler = Arc::new(futures_util::lock::Mutex::new(

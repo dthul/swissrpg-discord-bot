@@ -11,7 +11,7 @@ use tokio::timer::Error as TokioTimerError;
 use url::ParseError as UrlParseError;
 
 type RequestTokenError = oauth2::RequestTokenError<
-    super::oauth2_async_http_client::Error,
+    oauth2::reqwest::Error<reqwest::Error>,
     oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
 >;
 

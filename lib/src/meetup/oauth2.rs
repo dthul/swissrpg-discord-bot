@@ -7,8 +7,9 @@ use hyper::{
 };
 use lazy_static::lazy_static;
 use oauth2::{
-    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl,
-    Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AsyncCodeTokenRequest, AsyncRefreshTokenRequest, AuthUrl,
+    AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope, TokenResponse,
+    TokenUrl,
 };
 use rand::Rng;
 use redis::PipelineCommands;
@@ -283,8 +284,7 @@ async fn meetup_http_handler(
         let async_meetup_client = async_meetup_client.clone();
         let token_res = oauth2_authorization_client
             .exchange_code(code)
-            .request_async(super::oauth2_async_http_client::async_http_client)
-            .compat()
+            .request_async(oauth2::reqwest::async_http_client)
             .await?;
         // Check that this token belongs to an organizer of all our Meetup groups
         let new_async_meetup_client =
@@ -366,19 +366,19 @@ async fn meetup_http_handler(
         let csrf_state = CsrfToken::new_random();
         let (_authorize_url_basic, csrf_state) = oauth2_link_client
             .clone()
-            .set_redirect_url(RedirectUrl::new(
-                Url::parse(format!("{}/link/{}/norsvp/redirect", BASE_URL, linking_id).as_str())
-                    .unwrap(),
-            ))
+            .set_redirect_url(RedirectUrl::new(format!(
+                "{}/link/{}/norsvp/redirect",
+                BASE_URL, linking_id
+            ))?)
             .authorize_url(|| csrf_state)
             .add_scope(Scope::new("basic".to_string()))
             .url();
         let (authorize_url_rsvp, csrf_state) = oauth2_link_client
             .clone()
-            .set_redirect_url(RedirectUrl::new(
-                Url::parse(format!("{}/link/{}/rsvp/redirect", BASE_URL, linking_id).as_str())
-                    .unwrap(),
-            ))
+            .set_redirect_url(RedirectUrl::new(format!(
+                "{}/link/{}/rsvp/redirect",
+                BASE_URL, linking_id
+            ))?)
             .authorize_url(|| csrf_state)
             .add_scope(Scope::new("basic".to_string()))
             .add_scope(Scope::new("rsvp".to_string()))
@@ -472,14 +472,12 @@ async fn meetup_http_handler(
         }
         // Exchange the code with a token.
         let code = AuthorizationCode::new(code.to_string());
-        let redirect_url =
-            RedirectUrl::new(Url::parse(format!("{}{}", BASE_URL, path).as_str()).unwrap());
+        let redirect_url = RedirectUrl::new(format!("{}{}", BASE_URL, path))?;
         let token_res = oauth2_link_client
             .clone()
             .set_redirect_url(redirect_url)
             .exchange_code(code)
-            .request_async(super::oauth2_async_http_client::async_http_client)
-            .compat()
+            .request_async(oauth2::reqwest::async_http_client)
             .await?;
         // Get the user's Meetup ID
         let async_user_meetup_client =
@@ -630,13 +628,14 @@ pub struct OAuth2Consumer {
 }
 
 impl OAuth2Consumer {
-    pub fn new(meetup_client_id: String, meetup_client_secret: String) -> Self {
+    pub fn new(
+        meetup_client_id: String,
+        meetup_client_secret: String,
+    ) -> Result<Self, crate::BoxedError> {
         let meetup_client_id = ClientId::new(meetup_client_id);
         let meetup_client_secret = ClientSecret::new(meetup_client_secret);
-        let auth_url =
-            AuthUrl::new(Url::parse("https://secure.meetup.com/oauth2/authorize").unwrap());
-        let token_url =
-            TokenUrl::new(Url::parse("https://secure.meetup.com/oauth2/access").unwrap());
+        let auth_url = AuthUrl::new("https://secure.meetup.com/oauth2/authorize".to_string())?;
+        let token_url = TokenUrl::new("https://secure.meetup.com/oauth2/access".to_string())?;
 
         // Set up the config for the Github OAuth2 process.
         let authorization_client = BasicClient::new(
@@ -646,21 +645,20 @@ impl OAuth2Consumer {
             Some(token_url),
         )
         .set_auth_type(oauth2::AuthType::RequestBody)
-        .set_redirect_url(RedirectUrl::new(
-            Url::parse(format!("{}/authorize/redirect", BASE_URL).as_str()).unwrap(),
-        ));
+        .set_redirect_url(RedirectUrl::new(format!(
+            "{}/authorize/redirect",
+            BASE_URL
+        ))?);
         let link_client = authorization_client
             .clone()
-            .set_redirect_url(RedirectUrl::new(
-                Url::parse(format!("{}/link/redirect", BASE_URL).as_str()).unwrap(),
-            ));
+            .set_redirect_url(RedirectUrl::new(format!("{}/link/redirect", BASE_URL))?);
         let authorization_client = Arc::new(authorization_client);
         let link_client = Arc::new(link_client);
 
-        OAuth2Consumer {
+        Ok(OAuth2Consumer {
             authorization_client: authorization_client,
             link_client: link_client,
-        }
+        })
     }
 
     pub fn create_auth_server(
@@ -871,8 +869,7 @@ pub async fn refresh_oauth_tokens(
     let refresh_token = oauth2::RefreshToken::new(refresh_token);
     let refresh_token_response = oauth2_client
         .exchange_refresh_token(&refresh_token)
-        .request_async(super::oauth2_async_http_client::async_http_client)
-        .compat()
+        .request_async(oauth2::reqwest::async_http_client)
         .await?;
     // Store the new tokens in Redis
     let mut pipe = redis::pipe();
