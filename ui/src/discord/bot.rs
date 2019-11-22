@@ -36,7 +36,7 @@ pub fn create_discord_client(
         .map(|info| (info.id, info.name))?;
 
     // pre-compile the regexes
-    let regexes = super::bot_commands::compile_regexes(bot_id.0);
+    let regexes = super::bot_commands::compile_regexes(bot_id.0, &bot_name);
 
     // Store the bot's id in the client for easy access
     {
@@ -138,14 +138,16 @@ impl EventHandler for Handler {
             Channel::Private(_) => true,
             _ => false,
         };
+        // Does the message start with a mention of the bot?
+        let is_mention = regexes.bot_mention.is_match(&msg.content);
         // If the message is not a direct message and does not start with a
         // mention of the bot, ignore it
-        if !is_dm && !msg.content.starts_with(&regexes.bot_mention) {
+        if !is_dm && !is_mention {
             return;
         }
         // If the message is a direct message but starts with a mention of the bot,
         // switch to the non-DM parsing
-        if is_dm && msg.content.starts_with(&regexes.bot_mention) {
+        if is_dm && is_mention {
             is_dm = false;
         }
         // TODO: might want to use a RegexSet here to speed up matching

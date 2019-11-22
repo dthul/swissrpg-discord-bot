@@ -14,7 +14,7 @@ const USERNAME_TAG_PATTERN: &'static str = r"(?P<discord_username_tag>[^@#:]{2,3
 const MEETUP_ID_PATTERN: &'static str = r"(?P<meetup_user_id>[0-9]+)";
 
 pub struct Regexes {
-    pub bot_mention: String,
+    pub bot_mention: Regex,
     pub link_meetup_dm: Regex,
     pub link_meetup_mention: Regex,
     pub link_meetup_bot_admin_dm: Regex,
@@ -101,8 +101,12 @@ impl Regexes {
     }
 }
 
-pub fn compile_regexes(bot_id: u64) -> Regexes {
-    let bot_mention = format!(r"<@{}>", bot_id);
+pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
+    let bot_mention = format!(
+        r"(?:<@{bot_id}>|@{bot_name})",
+        bot_id = bot_id,
+        bot_name = bot_name
+    );
     let link_meetup_dm = r"^(?i)link[ -]?meetup\s*$";
     let link_meetup_mention = format!(
         r"^{bot_mention}\s+(?i)link[ -]?meetup\s*$",
@@ -213,7 +217,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         whois_bot_admin = whois_bot_admin
     );
     Regexes {
-        bot_mention: bot_mention,
+        bot_mention: Regex::new(&format!("^{}", bot_mention)).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
         link_meetup_mention: Regex::new(link_meetup_mention.as_str()).unwrap(),
         link_meetup_bot_admin_dm: Regex::new(link_meetup_bot_admin_dm.as_str()).unwrap(),
