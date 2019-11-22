@@ -32,7 +32,7 @@ pub fn create_discord_client(
     let (bot_id, bot_name) = client
         .cache_and_http
         .http
-        .get_current_application_info()
+        .get_current_user()
         .map(|info| (info.id, info.name))?;
 
     // pre-compile the regexes
