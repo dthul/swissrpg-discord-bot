@@ -38,6 +38,7 @@ pub struct Regexes {
     pub refresh_user_token_admin_dm: Regex,
     pub rsvp_user_admin_mention: Regex,
     pub clone_event_admin_mention: Regex,
+    pub schedule_session_mention: Regex,
     pub whois_bot_admin_dm: Regex,
     pub whois_bot_admin_mention: Regex,
 }
@@ -195,6 +196,10 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         r"^{bot_mention}\s+(?i)clone\s+event\s+(?P<meetup_event_id>[^\s]+)\s*$",
         bot_mention = bot_mention,
     );
+    let schedule_session_mention = format!(
+        r"^{bot_mention}\s+(?i)schedule\s+session\s*$",
+        bot_mention = bot_mention,
+    );
     let whois_bot_admin = format!(
         r"(?i)whois\s+{mention_pattern}|{username_tag_pattern}|{meetup_id_pattern}",
         mention_pattern = MENTION_PATTERN,
@@ -236,6 +241,7 @@ pub fn compile_regexes(bot_id: u64) -> Regexes {
         refresh_user_token_admin_dm: Regex::new(refresh_user_token_admin_dm.as_str()).unwrap(),
         rsvp_user_admin_mention: Regex::new(rsvp_user_admin_mention.as_str()).unwrap(),
         clone_event_admin_mention: Regex::new(clone_event_admin_mention.as_str()).unwrap(),
+        schedule_session_mention: Regex::new(schedule_session_mention.as_str()).unwrap(),
         whois_bot_admin_dm: Regex::new(whois_bot_admin_dm.as_str()).unwrap(),
         whois_bot_admin_mention: Regex::new(whois_bot_admin_mention.as_str()).unwrap(),
     }
@@ -833,7 +839,7 @@ impl super::bot::Handler {
         ctx: &Context,
         msg: &Message,
         user_id: UserId,
-        redis_client: redis::Client,
+        mut redis_client: redis::Client,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
         // Look up the Meetup ID for this user
@@ -862,7 +868,7 @@ impl super::bot::Handler {
         };
         let res = lib::ASYNC_RUNTIME.block_on(oauth2_consumer.refresh_oauth_tokens(
             lib::meetup::oauth2::TokenType::User(meetup_id),
-            redis_client,
+            &mut redis_client,
         ));
         match res {
             Ok(_) => {
@@ -881,53 +887,12 @@ impl super::bot::Handler {
         };
     }
 
-    fn new_event_hook(
-        mut new_event: lib::meetup::api::NewEvent,
-        old_event_id: &str,
-    ) -> Result<lib::meetup::api::NewEvent, lib::meetup::Error> {
-        // Remove unnecessary shortcodes from follow-up sessions
-        let description = new_event.description;
-        let description = lib::meetup::sync::NEW_ADVENTURE_REGEX.replace_all(&description, "");
-        let description = lib::meetup::sync::NEW_CAMPAIGN_REGEX.replace_all(&description, "");
-        let mut description = lib::meetup::sync::CHANNEL_REGEX
-            .replace_all(&description, "")
-            .into_owned();
-        // Add an event series shortcode if there is none yet
-        if !lib::meetup::sync::EVENT_SERIES_REGEX.is_match(&description) {
-            description.push_str(&format!("\n[campaign {}]", old_event_id));
-        }
-        // Increase the Session number
-        let mut name = new_event.name.clone();
-        let title_captures = lib::meetup::sync::SESSION_REGEX.captures_iter(&new_event.name);
-        // Match the rightmost occurence of "Session X" in the title
-        if let Some(capture) = title_captures.last() {
-            // If there is a match, increase the number
-            // Extract the current number from the title
-            let session_number = capture.name("number").unwrap().as_str();
-            // Try to parse the session number
-            let session_number = session_number.parse::<i32>()?;
-            // Find the range of the "Session X" match
-            let session_x_match = capture.get(0).unwrap();
-            // Replace the text "Session X" by "Session X+1"
-            name.replace_range(
-                session_x_match.start()..session_x_match.end(),
-                &format!("Session {}", session_number + 1),
-            );
-        } else {
-            // If there is no match, append a Session number
-            name.push_str(&format!(" Session 2"));
-        }
-        new_event.name = name;
-        new_event.description = description;
-        Ok(new_event)
-    }
-
     pub fn clone_event(
         ctx: &Context,
         msg: &Message,
         urlname: &str,
         meetup_event_id: &str,
-        redis_client: redis::Client,
+        mut redis_client: redis::Client,
         async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
@@ -944,8 +909,14 @@ impl super::bot::Handler {
                 }
                 Some(client) => client,
             };
-            let new_event_hook =
-                Box::new(|new_event| Self::new_event_hook(new_event, meetup_event_id));
+            let new_event_hook = Box::new(|new_event: lib::meetup::api::NewEvent| {
+                let date_time = new_event.time.clone();
+                lib::flow::ScheduleSessionFlow::new_event_hook(
+                    new_event,
+                    date_time,
+                    meetup_event_id,
+                )
+            });
             let new_event = lib::meetup::util::clone_event(
                 urlname,
                 meetup_event_id,
@@ -958,9 +929,9 @@ impl super::bot::Handler {
                 urlname,
                 meetup_event_id,
                 &new_event.id,
-                redis_client,
+                &mut redis_client,
                 client.as_ref(),
-                oauth2_consumer,
+                oauth2_consumer.as_ref(),
             )
             .await
             {
@@ -994,7 +965,7 @@ impl super::bot::Handler {
         user_id: UserId,
         urlname: &str,
         meetup_event_id: &str,
-        redis_client: redis::Client,
+        mut redis_client: redis::Client,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
         // Look up the Meetup ID for this user
@@ -1026,8 +997,8 @@ impl super::bot::Handler {
             meetup_id,
             urlname,
             meetup_event_id,
-            redis_client,
-            oauth2_consumer,
+            &mut redis_client,
+            oauth2_consumer.as_ref(),
         )) {
             Ok(rsvp) => {
                 let _ = msg.react(ctx, "\u{2705}");
@@ -1151,6 +1122,52 @@ impl super::bot::Handler {
                 let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
             }
         }
+    }
+
+    pub fn schedule_session(
+        ctx: &Context,
+        msg: &Message,
+        redis_client: &mut redis::Client,
+    ) -> Result<(), lib::meetup::Error> {
+        let mut redis_connection = redis_client.get_connection()?;
+        // Check whether this is a bot controlled channel
+        let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+        let channel_roles = match channel_roles {
+            Some(roles) => roles,
+            None => {
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, strings::CHANNEL_NOT_BOT_CONTROLLED);
+                return Ok(());
+            }
+        };
+        // This is only for channel hosts
+        let is_host = msg
+            .author
+            .has_role(ctx, lib::discord::sync::ids::GUILD_ID, channel_roles.host)
+            .unwrap_or(false);
+        if !is_host {
+            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
+            return Ok(());
+        }
+        // Find the series belonging to the channel
+        let redis_channel_series_key = format!("discord_channel:{}:event_series", msg.channel_id.0);
+        let event_series: String = redis_client.get(&redis_channel_series_key)?;
+        // Create a new Flow
+        let flow = lib::flow::ScheduleSessionFlow::new(redis_client, event_series)?;
+        let link = format!(
+            "{}/schedule_session/{}",
+            lib::meetup::oauth2::BASE_URL,
+            flow.id
+        );
+        let _ = msg.author.direct_message(ctx, |message_builder| {
+            message_builder.content(format!(
+                "Use the following link to schedule your next session:\n{}",
+                link
+            ))
+        });
+        let _ = msg.react(ctx, "\u{2705}");
+        Ok(())
     }
 }
 

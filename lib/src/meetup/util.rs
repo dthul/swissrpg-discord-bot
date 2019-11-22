@@ -1,8 +1,8 @@
 use futures_util::compat::Future01CompatExt;
+use redis::Commands;
 use std::{
     future::Future,
     io::{self, Write},
-    sync::Arc,
 };
 
 async fn try_with_token_refresh<
@@ -12,8 +12,8 @@ async fn try_with_token_refresh<
 >(
     f: F,
     user_id: u64,
-    redis_client: redis::Client,
-    oauth2_consumer: Arc<super::oauth2::OAuth2Consumer>,
+    redis_client: &mut redis::Client,
+    oauth2_consumer: &super::oauth2::OAuth2Consumer,
 ) -> Result<T, super::Error> {
     let redis_connection = redis_client.get_async_connection().compat().await?;
     // Look up the Meetup access token for this user
@@ -33,10 +33,7 @@ async fn try_with_token_refresh<
             println!("No access token, calling oauth2_consumer.refresh_oauth_tokens");
             io::stdout().flush().unwrap();
             let (_, access_token) = oauth2_consumer
-                .refresh_oauth_tokens(
-                    super::oauth2::TokenType::User(user_id),
-                    redis_client.clone(),
-                )
+                .refresh_oauth_tokens(super::oauth2::TokenType::User(user_id), redis_client)
                 .await?;
             println!("Got an access token!");
             io::stdout().flush().unwrap();
@@ -82,8 +79,8 @@ pub async fn rsvp_user_to_event(
     user_id: u64,
     urlname: &str,
     event_id: &str,
-    redis_client: redis::Client,
-    oauth2_consumer: Arc<super::oauth2::OAuth2Consumer>,
+    redis_client: &mut redis::Client,
+    oauth2_consumer: &super::oauth2::OAuth2Consumer,
 ) -> Result<super::api::RSVP, super::Error> {
     let rsvp_fun = |async_meetup_user_client: super::api::AsyncClient| {
         async move { async_meetup_user_client.rsvp(urlname, event_id, true).await }
@@ -138,14 +135,22 @@ pub async fn clone_event<'a>(
     return Ok(new_event);
 }
 
+#[derive(Debug)]
+pub struct CloneRSVPResult {
+    pub cloned_rsvps: Vec<super::api::RSVP>,
+    pub num_success: u16,
+    pub num_failure: u16,
+    pub latest_error: Option<super::Error>,
+}
+
 pub async fn clone_rsvps(
     urlname: &str,
     src_event_id: &str,
     dst_event_id: &str,
-    redis_client: redis::Client,
+    redis_client: &mut redis::Client,
     meetup_client: &super::api::AsyncClient,
-    oauth2_consumer: Arc<super::oauth2::OAuth2Consumer>,
-) -> Result<(), super::Error> {
+    oauth2_consumer: &super::oauth2::OAuth2Consumer,
+) -> Result<CloneRSVPResult, super::Error> {
     // First, query the source event's RSVPs and filter them by "yes" responses
     let rsvps: Vec<_> = meetup_client
         .get_rsvps(urlname, src_event_id)
@@ -154,35 +159,79 @@ pub async fn clone_rsvps(
         .filter(|rsvp| rsvp.response == super::api::RSVPResponse::Yes)
         .collect();
     // Now, try to RSVP each user to the destination event
-    let mut last_err = None;
-    let mut num_success: u16 = 0;
+    let mut result = CloneRSVPResult {
+        cloned_rsvps: Vec::with_capacity(rsvps.len()),
+        num_success: 0,
+        num_failure: 0,
+        latest_error: None,
+    };
     for rsvp in &rsvps {
-        if let Err(err) = rsvp_user_to_event(
+        match rsvp_user_to_event(
             rsvp.member.id,
             urlname,
             dst_event_id,
-            redis_client.clone(),
-            oauth2_consumer.clone(),
+            redis_client,
+            oauth2_consumer,
         )
         .await
         {
-            eprintln!(
-                "Could not RSVP user {} to event {}:\n{:#?}",
-                rsvp.member.id, dst_event_id, err
-            );
-            last_err = Some(err);
-        } else {
-            num_success += 1;
+            Ok(rsvp) => {
+                result.cloned_rsvps.push(rsvp);
+                result.num_success += 1;
+            }
+            Err(err) => {
+                eprintln!(
+                    "Could not RSVP user {} to event {}:\n{:#?}",
+                    rsvp.member.id, dst_event_id, err
+                );
+                result.latest_error = Some(err);
+                result.num_failure += 1;
+            }
         }
     }
-    if let Some(err) = last_err {
-        return Err(simple_error::SimpleError::new(format!(
-            "Could not RSVP all users. {} out of {} were successfully RSVPd. Last error:\n{:#?}",
-            num_success,
-            rsvps.len(),
-            err,
-        ))
-        .into());
-    }
-    Ok(())
+    Ok(result)
+}
+
+// TODO: move to redis module?
+pub struct Event {
+    pub id: String,
+    pub name: String,
+    pub time: chrono::DateTime<chrono::Utc>,
+    pub link: String,
+    pub urlname: String,
+}
+
+// Queries all events belonging to the specified series from Redis,
+// ignoring errors that might arise querying specific events
+// (and not returning them instead)
+pub fn get_events_for_series(
+    redis_client: &mut redis::Client,
+    series_id: &str,
+) -> Result<Vec<Event>, super::Error> {
+    let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
+    // Get all events belonging to this event series
+    let event_ids: Vec<String> = redis_client.smembers(&redis_series_events_key)?;
+    let events: Vec<_> = event_ids
+        .into_iter()
+        .filter_map(|event_id| {
+            let redis_event_key = format!("meetup_event:{}", event_id);
+            let res: redis::RedisResult<(String, String, String, String)> =
+                redis_client.hget(&redis_event_key, &["time", "name", "link", "urlname"]);
+            if let Ok((time, name, link, urlname)) = res {
+                match chrono::DateTime::parse_from_rfc3339(&time) {
+                    Ok(time) => Some(Event {
+                        id: event_id,
+                        name: name,
+                        time: time.with_timezone(&chrono::Utc),
+                        link: link,
+                        urlname: urlname,
+                    }),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+    Ok(events)
 }

@@ -681,6 +681,17 @@ impl EventHandler for Handler {
                 async_meetup_client,
                 oauth2_consumer,
             )
+        } else if regexes.schedule_session_mention.is_match(&msg.content) {
+            let mut redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            if let Err(err) = Self::schedule_session(&ctx, &msg, &mut redis_client) {
+                eprintln!("Error when trying to schedule session:\n{:#?}", err);
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
         } else if let Some(captures) = regexes.whois_bot_admin(is_dm).captures(&msg.content) {
             // This is only for bot_admins
             if !msg

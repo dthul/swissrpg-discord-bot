@@ -69,7 +69,7 @@ pub async fn sync_task(
 
 // This function is supposed to be idempotent, so calling it with the same
 // event is fine.
-async fn sync_event(
+pub async fn sync_event(
     event: super::api::Event,
     redis_client: &mut redis::Client,
 ) -> Result<(), super::Error> {
@@ -331,45 +331,21 @@ async fn sync_event_series(
     meetup_client: &super::api::AsyncClient,
     redis_client: &mut redis::Client,
 ) -> Result<(), super::Error> {
-    let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     // Get all events belonging to this event series
-    let event_ids: Vec<String> = redis_client.smembers(&redis_series_events_key)?;
-    let events: Vec<_> = event_ids
-        .into_iter()
-        .filter_map(|event_id| {
-            let redis_event_key = format!("meetup_event:{}", event_id);
-            let tuple: redis::RedisResult<(String, String, String)> =
-                redis_client.hget(&redis_event_key, &["time", "name", "urlname"]);
-            match tuple {
-                Ok((time, name, urlname)) => Some((event_id, time, name, urlname)),
-                Err(err) => {
-                    eprintln!("Redis error when querying event time: {}", err);
-                    None
-                }
-            }
-        })
-        .collect();
+    let events = super::util::get_events_for_series(redis_client, &series_id)?;
     // Filter past events
     let now = chrono::Utc::now();
     let mut upcoming: Vec<_> = events
         .into_iter()
-        .filter_map(|(id, time, name, urlname)| {
-            if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
-                let time = time.with_timezone(&chrono::Utc);
-                if time > now {
-                    return Some((id, time, name, urlname));
-                }
-            }
-            None
-        })
+        .filter(|event| event.time > now)
         .collect();
     // Sort by date
-    upcoming.sort_unstable_by_key(|pair| pair.1);
+    upcoming.sort_unstable_by_key(|event| event.time);
     // The first element in this vector will be the next upcoming event
     if let Some(next_event) = upcoming.first() {
-        let next_event_id = next_event.0.clone();
-        let next_event_name = &next_event.2;
-        let group_urlname = &next_event.3;
+        let next_event_id = next_event.id.clone();
+        let next_event_name = &next_event.name;
+        let group_urlname = &next_event.urlname;
         println!(
             "Syncing task: Querying RSVPs for event \"{}\"",
             next_event_name
@@ -386,7 +362,7 @@ async fn sync_event_series(
     }
 }
 
-async fn sync_rsvps(
+pub async fn sync_rsvps(
     event_id: &str,
     rsvps: Vec<super::api::RSVP>,
     redis_client: &mut redis::Client,

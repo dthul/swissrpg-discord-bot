@@ -23,14 +23,15 @@ use std::{
 };
 use url::Url;
 
+// TODO: move to URL module
 #[cfg(feature = "bottest")]
-const DOMAIN: &'static str = "bottest.swissrpg.ch";
+pub const DOMAIN: &'static str = "bottest.swissrpg.ch";
 #[cfg(feature = "bottest")]
-const BASE_URL: &'static str = "https://bottest.swissrpg.ch";
+pub const BASE_URL: &'static str = "https://bottest.swissrpg.ch";
 #[cfg(not(feature = "bottest"))]
-const DOMAIN: &'static str = "bot.swissrpg.ch";
+pub const DOMAIN: &'static str = "bot.swissrpg.ch";
 #[cfg(not(feature = "bottest"))]
-const BASE_URL: &'static str = "https://bot.swissrpg.ch";
+pub const BASE_URL: &'static str = "https://bot.swissrpg.ch";
 lazy_static! {
     static ref LINK_URL_REGEX: regex::Regex =
         regex::Regex::new(r"^/link/(?P<id>[a-zA-Z0-9\-_]+)$").unwrap();
@@ -816,7 +817,7 @@ impl OAuth2Consumer {
     pub async fn refresh_oauth_tokens(
         &self,
         token_type: TokenType,
-        redis_client: redis::Client,
+        redis_client: &mut redis::Client,
     ) -> Result<(redis::aio::Connection, oauth2::AccessToken), super::Error> {
         let redis_connection = redis_client.get_async_connection().compat().await?;
         refresh_oauth_tokens(
