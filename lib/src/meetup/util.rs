@@ -235,3 +235,14 @@ pub fn get_events_for_series(
         .collect();
     Ok(events)
 }
+
+pub async fn get_group_profiles(
+    meetup_api: super::api::AsyncClient,
+) -> Result<Vec<Option<super::api::User>>, super::api::Error> {
+    let mut profiles = Vec::with_capacity(super::api::URLNAMES.len());
+    for urlname in &super::api::URLNAMES {
+        let user = meetup_api.get_group_profile(None, urlname).await?;
+        profiles.push(user);
+    }
+    Ok(profiles)
+}

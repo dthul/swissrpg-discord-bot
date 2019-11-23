@@ -1159,11 +1159,7 @@ impl super::bot::Handler {
         let event_series: String = redis_client.get(&redis_channel_series_key)?;
         // Create a new Flow
         let flow = lib::flow::ScheduleSessionFlow::new(redis_client, event_series)?;
-        let link = format!(
-            "{}/schedule_session/{}",
-            lib::meetup::oauth2::BASE_URL,
-            flow.id
-        );
+        let link = format!("{}/schedule_session/{}", lib::urls::BASE_URL, flow.id);
         let _ = msg.author.direct_message(ctx, |message_builder| {
             message_builder.content(format!(
                 "Use the following link to schedule your next session:\n{}",

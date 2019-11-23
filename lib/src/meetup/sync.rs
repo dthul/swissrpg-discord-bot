@@ -241,7 +241,7 @@ pub async fn sync_event(
                         if (is_new_adventure || is_new_campaign)
                             && indicated_event_series_id.is_none()
                         {
-                            let new_series_id = super::oauth2::new_random_id(16);
+                            let new_series_id = crate::new_random_id(16);
                             if let Some(channel_id) = indicated_channel_id {
                                 // If this event wants to be associated with a channel but that channel already
                                 // has an event series ID, something is fishy
