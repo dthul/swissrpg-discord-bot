@@ -27,7 +27,7 @@ http = "0.1" # Just for oauth2 reqwest async client
 hyper = "0.13.0-alpha.4"
 itertools = "0.8"
 lazy_static = "1.4"
-oauth2 = { version = "3.0.0-alpha.4", default-features = false }
+oauth2 = { version = "=3.0.0-alpha.4", default-features = false }
 rand = "0.7"
 redis = "0.12"
 regex = "1"
