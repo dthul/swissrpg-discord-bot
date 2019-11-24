@@ -4,8 +4,47 @@
 <div id="main">
     <h2>Schedule your next Game Session</h2>
     <p>
-        <form method="post" action="">
-
+        <form method="post" name="scheduleSessionForm" autocomplete="off">
+            Date:<br>
+            <select name="day" autocomplete="off">
+                {% for i in 1..=31 %}
+                <option value="{{ i }}" {% if day == i %}selected{% endif %}>{{ i }}</option>
+                {% endfor %}
+            </select>
+            <select name="month" autocomplete="off">
+                <option value="1" {% if month == 1 %}selected{% endif %}>Jan</option>
+                <option value="2" {% if month == 2 %}selected{% endif %}>Feb</option>
+                <option value="3" {% if month == 3 %}selected{% endif %}>Mar</option>
+                <option value="4" {% if month == 4 %}selected{% endif %}>Apr</option>
+                <option value="5" {% if month == 5 %}selected{% endif %}>May</option>
+                <option value="6" {% if month == 6 %}selected{% endif %}>Jun</option>
+                <option value="7" {% if month == 7 %}selected{% endif %}>Jul</option>
+                <option value="8" {% if month == 8 %}selected{% endif %}>Aug</option>
+                <option value="9" {% if month == 9 %}selected{% endif %}>Sep</option>
+                <option value="10" {% if month == 10 %}selected{% endif %}>Oct</option>
+                <option value="11" {% if month == 11 %}selected{% endif %}>Nov</option>
+                <option value="12" {% if month == 12 %}selected{% endif %}>Dec</option>
+            </select>
+            <select name="year" autocomplete="off">
+                {% for y in selectable_years %}
+                <option value="{{ y }}" {% if year|isequal(y) %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+            <br>
+            Time:<br>
+            <select name="hour" autocomplete="off">
+                {% for i in 0..=23 %}
+                <option value="{{ i }}" {% if hour == i %}selected{% endif %}>{{ format!("{:02}", i) }}</option>
+                {% endfor %}
+            </select>
+            :
+            <select name="minute" autocomplete="off">
+                {% for i in 0..=59 %}
+                <option value="{{ i }}" {% if minute == i %}selected{% endif %}>{{ format!("{:02}", i) }}</option>
+                {% endfor %}
+            </select>
+            <br>
+            <button type="submit">Schedule</button>
         </form>
     </p>
 </div>

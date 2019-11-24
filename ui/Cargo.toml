@@ -28,6 +28,7 @@ http = "0.1" # Just for oauth2 reqwest async client
 hyper = "0.13.0-alpha.4"
 itertools = "0.8"
 lazy_static = "1.4"
+num-traits = "0.2"
 oauth2 = { version = "=3.0.0-alpha.4", default-features = false }
 rand = "0.7"
 redis = "0.12"
@@ -40,4 +41,5 @@ simple-error = "0.2"
 time = "0.1"
 tokio = { version = "0.2.0-alpha.6", default-features = false, features = ["rt-full"] }
 url = "2.1"
+warp = { git = "https://github.com/seanmonstar/warp", rev = "09c215a2ef" }
 white_rabbit = "0.1"

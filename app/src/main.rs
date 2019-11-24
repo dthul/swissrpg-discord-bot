@@ -82,10 +82,9 @@ fn main() {
         3000
     };
     let meetup_oauth2_server = ui::web::server::create_server(
-        &meetup_oauth2_consumer,
+        meetup_oauth2_consumer.clone(),
         ([127, 0, 0, 1], port).into(),
         redis_client.clone(),
-        bot.cache_and_http.clone(),
         async_meetup_client.clone(),
         bot.data
             .read()

@@ -1,4 +1,5 @@
 pub mod linking;
+pub mod schedule_session;
 pub mod server;
 
 use askama::Template;
