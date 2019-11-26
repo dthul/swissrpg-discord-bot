@@ -17,6 +17,7 @@ askama = "0.8"
 backtrace = "0.3"
 base64 = "0.10"
 chrono = "0.4"
+chrono-tz = "0.5"
 cookie = "0.12"
 failure = "0.1" # Just for oauth2 reqwest async client
 failure_derive = "0.1" # Just for oauth2 reqwest async client

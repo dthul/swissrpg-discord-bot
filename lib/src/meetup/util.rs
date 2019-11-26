@@ -93,7 +93,11 @@ pub async fn clone_event<'a>(
     event_id: &'a str,
     meetup_client: &'a super::api::AsyncClient,
     hook: Option<
-        Box<dyn (FnOnce(super::api::NewEvent) -> Result<super::api::NewEvent, super::Error>) + 'a>,
+        Box<
+            dyn (FnOnce(super::api::NewEvent) -> Result<super::api::NewEvent, super::Error>)
+                + Send
+                + 'a,
+        >,
     >,
 ) -> Result<super::api::Event, super::Error> {
     let event = meetup_client.get_event(urlname, event_id).await?;
@@ -233,6 +237,42 @@ pub fn get_events_for_series(
             }
         })
         .collect();
+    Ok(events)
+}
+
+pub async fn get_events_for_series_async(
+    redis_connection: redis::aio::Connection,
+    series_id: &str,
+) -> Result<Vec<Event>, super::Error> {
+    let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
+    // Get all events belonging to this event series
+    let (mut redis_connection, event_ids): (_, Vec<String>) = redis::cmd("SMEMBERS")
+        .arg(&redis_series_events_key)
+        .query_async(redis_connection)
+        .compat()
+        .await?;
+    let mut events = Vec::with_capacity(event_ids.len());
+    for event_id in event_ids {
+        let redis_event_key = format!("meetup_event:{}", event_id);
+        let (con, (time, name, link, urlname)): (_, (String, String, String, String)) =
+            redis::cmd("HGET")
+                .arg(&redis_event_key)
+                .arg(&["time", "name", "link", "urlname"])
+                .query_async(redis_connection)
+                .compat()
+                .await?;
+        redis_connection = con;
+        if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
+            let event = Event {
+                id: event_id,
+                name: name,
+                time: time.with_timezone(&chrono::Utc),
+                link: link,
+                urlname: urlname,
+            };
+            events.push(event);
+        }
+    }
     Ok(events)
 }
 

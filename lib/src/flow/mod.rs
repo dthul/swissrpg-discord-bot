@@ -1,4 +1,4 @@
-use futures_util::FutureExt;
+use futures_util::{compat::Future01CompatExt, FutureExt};
 use rand::Rng;
 use redis::{Commands, PipelineCommands};
 
@@ -26,16 +26,22 @@ impl ScheduleSessionFlow {
         })
     }
 
-    pub fn retrieve(
-        redis_client: &mut redis::Client,
+    pub async fn retrieve(
+        redis_connection: redis::aio::Connection,
         id: u64,
-    ) -> Result<Self, crate::meetup::Error> {
+    ) -> Result<(redis::aio::Connection, Self), crate::meetup::Error> {
         let redis_key = format!("flow:schedule_session:{}", id);
-        let event_series_id: String = redis_client.hget(&redis_key, "event_series_id")?;
-        Ok(ScheduleSessionFlow {
-            id: id,
-            event_series_id: event_series_id,
-        })
+        let mut pipe = redis::pipe();
+        pipe.hget(&redis_key, "event_series_id");
+        let (redis_connection, event_series_id): (_, String) =
+            pipe.query_async(redis_connection).compat().await?;
+        Ok((
+            redis_connection,
+            ScheduleSessionFlow {
+                id: id,
+                event_series_id: event_series_id,
+            },
+        ))
     }
 
     pub async fn schedule(
