@@ -4,6 +4,12 @@
 <div id="main">
     <h2>Schedule your next Game Session</h2>
     <p>
+        Previous Session:
+        <br>
+        <a href="{{ link }}">{{ title }}</a>
+        <br>
+        Details of the next session:
+        <br>
         <form method="post" name="scheduleSessionForm" autocomplete="off">
             Date:<br>
             <select name="day" autocomplete="off">
@@ -44,6 +50,9 @@
                 {% endfor %}
             </select>
             <br>
+            <input type="checkbox" name="transfer_rsvps" id="transfer_rsvps_checkbox" value="yes" autocomplete="off"
+                checked>
+            <label for="transfer_rsvps_checkbox">Add the players from the last session automatically</label>
             <button type="submit">Schedule</button>
         </form>
     </p>

@@ -29,6 +29,29 @@ pub fn create_routes(
                 }
             })
     };
+    #[cfg(feature = "bottest")]
+    let get_route = {
+        warp::get()
+            .and(warp::path!("schedule_session" / "test"))
+            .and_then(|| {
+                let local_time = chrono::Utc::now().with_timezone(&Europe::Zurich);
+                let template = ScheduleSessionTemplate {
+                    day: local_time.day() as u8,
+                    month: local_time.month() as u8,
+                    year: local_time.year() as u16,
+                    hour: local_time.hour() as u8,
+                    minute: local_time.minute() as u8,
+                    selectable_years: &[local_time.year() as u16, local_time.year() as u16 + 1],
+                    title: "Test event",
+                    link: "https://meetup.com/",
+                };
+                futures::future::ready(
+                    HandlerResponse::from_template(template)
+                        .map_err(|err| warp::Rejection::from(err)),
+                )
+            })
+            .or(get_route)
+    };
     let post_route = {
         let redis_client = redis_client.clone();
         let meetup_client = meetup_client.clone();
@@ -66,6 +89,8 @@ struct ScheduleSessionTemplate<'a> {
     hour: u8,
     minute: u8,
     selectable_years: &'a [u16],
+    title: &'a str,
+    link: &'a str,
 }
 
 pub mod filters {
@@ -112,6 +137,8 @@ async fn handle_schedule_session(
                 next_event_local_datetime.year() as u16,
                 next_event_local_datetime.year() as u16 + 1,
             ],
+            title: &event.name,
+            link: &event.link,
         };
         Ok(HandlerResponse::from_template(template)?)
     } else {
@@ -148,6 +175,10 @@ async fn handle_schedule_session_post(
     events.sort_unstable_by_key(|event| event.time);
     if let Some(event) = events.last() {
         // Check that the form contains all necessary data
+        let transfer_rsvps = form_data
+            .get("transfer_rsvps")
+            .map(|value| value == "yes")
+            .unwrap_or(false);
         let (year, month, day, hour, minute) = match (
             form_data.get("year"),
             form_data.get("month"),
@@ -228,32 +259,33 @@ async fn handle_schedule_session_post(
         .await?;
         // Delete the flow, ignoring errors
         let _ = flow.delete(redis_connection);
-        // Try to transfer the RSVPs to the new event
-        if let Err(_) = lib::meetup::util::clone_rsvps(
-            &event.urlname,
-            &event.id,
-            &new_event.id,
-            redis_client,
-            &meetup_client,
-            oauth2_consumer.as_ref(),
-        )
-        .await
-        {
-            Ok((
-                "Success! Created a new event",
-                format!(
-                    "Could not transfer all RSVPs.\nNew event: {}",
-                    new_event.link
-                ),
+        if transfer_rsvps {
+            // Try to transfer the RSVPs to the new event
+            if let Err(_) = lib::meetup::util::clone_rsvps(
+                &event.urlname,
+                &event.id,
+                &new_event.id,
+                redis_client,
+                &meetup_client,
+                oauth2_consumer.as_ref(),
             )
-                .into())
-        } else {
-            Ok((
-                "Success! Created a new event",
-                format!("New event: {}", new_event.link),
-            )
-                .into())
+            .await
+            {
+                return Ok((
+                    "Success! Created a new event",
+                    format!(
+                        "Could not transfer all RSVPs.\nNew event: {}",
+                        new_event.link
+                    ),
+                )
+                    .into());
+            }
         }
+        Ok((
+            "Success! Created a new event",
+            format!("New event: {}", new_event.link),
+        )
+            .into())
     } else {
         Ok((
             "No prior event found",
