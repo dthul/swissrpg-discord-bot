@@ -109,8 +109,11 @@ pub fn create_server(
         async_meetup_client.clone(),
         bot_name.clone(),
     );
-    let schedule_session_routes =
-        super::schedule_session::create_routes(redis_client.clone(), async_meetup_client.clone());
+    let schedule_session_routes = super::schedule_session::create_routes(
+        redis_client.clone(),
+        async_meetup_client.clone(),
+        oauth2_consumer.clone(),
+    );
     #[cfg(feature = "bottest")]
     let combined_routes = {
         let static_route = warp::path("static").and(warp::fs::dir("ui/src/web/html/static"));

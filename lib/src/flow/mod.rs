@@ -29,19 +29,17 @@ impl ScheduleSessionFlow {
     pub async fn retrieve(
         redis_connection: redis::aio::Connection,
         id: u64,
-    ) -> Result<(redis::aio::Connection, Self), crate::meetup::Error> {
+    ) -> Result<(redis::aio::Connection, Option<Self>), crate::meetup::Error> {
         let redis_key = format!("flow:schedule_session:{}", id);
         let mut pipe = redis::pipe();
         pipe.hget(&redis_key, "event_series_id");
-        let (redis_connection, event_series_id): (_, String) =
+        let (redis_connection, (event_series_id,)): (_, (Option<String>,)) =
             pipe.query_async(redis_connection).compat().await?;
-        Ok((
-            redis_connection,
-            ScheduleSessionFlow {
-                id: id,
-                event_series_id: event_series_id,
-            },
-        ))
+        let flow = event_series_id.map(|event_series_id| ScheduleSessionFlow {
+            id: id,
+            event_series_id: event_series_id,
+        });
+        Ok((redis_connection, flow))
     }
 
     pub async fn schedule(
@@ -120,6 +118,19 @@ impl ScheduleSessionFlow {
             }
         }));
         Ok((new_event, rsvp_result))
+    }
+
+    pub async fn delete(
+        self,
+        redis_connection: redis::aio::Connection,
+    ) -> Result<redis::aio::Connection, crate::meetup::Error> {
+        let redis_key = format!("flow:schedule_session:{}", self.id);
+        let (redis_connection, ()) = redis::cmd("DEL")
+            .arg(&redis_key)
+            .query_async(redis_connection)
+            .compat()
+            .await?;
+        Ok(redis_connection)
     }
 
     pub fn new_event_hook(

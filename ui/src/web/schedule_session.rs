@@ -9,6 +9,7 @@ use warp::Filter;
 pub fn create_routes(
     redis_client: redis::Client,
     meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
+    oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let get_route = {
         let redis_client = redis_client.clone();
@@ -31,22 +32,20 @@ pub fn create_routes(
     let post_route = {
         let redis_client = redis_client.clone();
         let meetup_client = meetup_client.clone();
+        let oauth2_consumer = oauth2_consumer.clone();
         warp::post()
             .and(warp::path!("schedule_session" / u64))
             .and(warp::body::content_length_limit(32 * 1024))
             .and(warp::body::form())
             .and_then(move |flow_id, form_data: HashMap<String, String>| {
-                let redis_client = redis_client.clone();
+                let mut redis_client = redis_client.clone();
                 let meetup_client = meetup_client.clone();
+                let oauth2_consumer = oauth2_consumer.clone();
                 async move {
-                    let redis_connection = redis_client
-                        .get_async_connection()
-                        .compat()
-                        .err_into::<lib::meetup::Error>()
-                        .await?;
                     handle_schedule_session_post(
-                        redis_connection,
+                        &mut redis_client,
                         &meetup_client,
+                        oauth2_consumer,
                         flow_id,
                         form_data,
                     )
@@ -79,11 +78,18 @@ async fn handle_schedule_session(
     redis_connection: redis::aio::Connection,
     flow_id: u64,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
+    eprintln!("Retrieving flow...");
     let (redis_connection, flow) =
         lib::flow::ScheduleSessionFlow::retrieve(redis_connection, flow_id).await?;
-    let mut events =
+    let flow = match flow {
+        Some(flow) => flow,
+        None => return Ok(("Link expired", "Please request a new link").into()),
+    };
+    eprintln!("... got it!\nRetrieving events...");
+    let (_redis_connection, mut events) =
         lib::meetup::util::get_events_for_series_async(redis_connection, &flow.event_series_id)
             .await?;
+    eprintln!("... got them!");
     // Sort by date
     events.sort_unstable_by_key(|event| event.time);
     if let Some(event) = events.last() {
@@ -118,14 +124,24 @@ async fn handle_schedule_session(
 }
 
 async fn handle_schedule_session_post(
-    redis_connection: redis::aio::Connection,
+    redis_client: &mut redis::Client,
     meetup_client: &Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>,
+    oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     flow_id: u64,
     form_data: HashMap<String, String>,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
+    let redis_connection = redis_client
+        .get_async_connection()
+        .compat()
+        .err_into::<lib::meetup::Error>()
+        .await?;
     let (redis_connection, flow) =
         lib::flow::ScheduleSessionFlow::retrieve(redis_connection, flow_id).await?;
-    let mut events =
+    let flow = match flow {
+        Some(flow) => flow,
+        None => return Ok(("Link expired", "Please request a new link").into()),
+    };
+    let (redis_connection, mut events) =
         lib::meetup::util::get_events_for_series_async(redis_connection, &flow.event_series_id)
             .await?;
     // Sort by date
@@ -203,29 +219,41 @@ async fn handle_schedule_session_post(
             Some(ref meetup_client) => meetup_client.clone(),
             None => return Ok(("Meetup API unavailable", "Please try again later").into()),
         };
-        let _new_event = lib::meetup::util::clone_event(
+        let new_event = lib::meetup::util::clone_event(
             &event.urlname,
             &event.id,
             &meetup_client,
             Some(new_event_hook),
         )
         .await?;
+        // Delete the flow, ignoring errors
+        let _ = flow.delete(redis_connection);
         // Try to transfer the RSVPs to the new event
-        // if let Err(_) = lib::meetup::util::clone_rsvps(
-        //     &event.urlname,
-        //     &event.id,
-        //     &new_event.id,
-        //     &mut redis_client,
-        //     &meetup_client,
-        //     oauth2_consumer.as_ref(),
-        // )
-        // .await
-        // {
-        //     let _ = msg
-        //         .channel_id
-        //         .say(&ctx.http, "Could not transfer all RSVPs to the new event");
-        // }
-        unimplemented!()
+        if let Err(_) = lib::meetup::util::clone_rsvps(
+            &event.urlname,
+            &event.id,
+            &new_event.id,
+            redis_client,
+            &meetup_client,
+            oauth2_consumer.as_ref(),
+        )
+        .await
+        {
+            Ok((
+                "Success! Created a new event",
+                format!(
+                    "Could not transfer all RSVPs.\nNew event: {}",
+                    new_event.link
+                ),
+            )
+                .into())
+        } else {
+            Ok((
+                "Success! Created a new event",
+                format!("New event: {}", new_event.link),
+            )
+                .into())
+        }
     } else {
         Ok((
             "No prior event found",

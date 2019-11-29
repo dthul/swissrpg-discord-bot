@@ -1,5 +1,5 @@
 use futures_util::compat::Future01CompatExt;
-use redis::Commands;
+use redis::{Commands, PipelineCommands};
 use std::{
     future::Future,
     io::{self, Write},
@@ -243,24 +243,20 @@ pub fn get_events_for_series(
 pub async fn get_events_for_series_async(
     redis_connection: redis::aio::Connection,
     series_id: &str,
-) -> Result<Vec<Event>, super::Error> {
+) -> Result<(redis::aio::Connection, Vec<Event>), super::Error> {
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     // Get all events belonging to this event series
-    let (mut redis_connection, event_ids): (_, Vec<String>) = redis::cmd("SMEMBERS")
-        .arg(&redis_series_events_key)
-        .query_async(redis_connection)
-        .compat()
-        .await?;
+    let mut pipe = redis::pipe();
+    pipe.smembers(&redis_series_events_key);
+    let (mut redis_connection, (event_ids,)): (_, (Vec<String>,)) =
+        pipe.query_async(redis_connection).compat().await?;
     let mut events = Vec::with_capacity(event_ids.len());
     for event_id in event_ids {
         let redis_event_key = format!("meetup_event:{}", event_id);
-        let (con, (time, name, link, urlname)): (_, (String, String, String, String)) =
-            redis::cmd("HGET")
-                .arg(&redis_event_key)
-                .arg(&["time", "name", "link", "urlname"])
-                .query_async(redis_connection)
-                .compat()
-                .await?;
+        let mut pipe = redis::pipe();
+        pipe.hget(&redis_event_key, &["time", "name", "link", "urlname"]);
+        let (con, ((time, name, link, urlname),)): (_, ((String, String, String, String),)) =
+            pipe.query_async(redis_connection).compat().await?;
         redis_connection = con;
         if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
             let event = Event {
@@ -273,7 +269,7 @@ pub async fn get_events_for_series_async(
             events.push(event);
         }
     }
-    Ok(events)
+    Ok((redis_connection, events))
 }
 
 pub async fn get_group_profiles(
