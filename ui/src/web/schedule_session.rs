@@ -15,6 +15,7 @@ pub fn create_routes(
         let redis_client = redis_client.clone();
         warp::get()
             .and(warp::path!("schedule_session" / u64))
+            .and(warp::path::end())
             .and_then(move |flow_id| {
                 let redis_client = redis_client.clone();
                 async move {
@@ -33,6 +34,7 @@ pub fn create_routes(
     let get_route = {
         warp::get()
             .and(warp::path!("schedule_session" / "test"))
+            .and(warp::path::end())
             .and_then(|| {
                 let local_time = chrono::Utc::now().with_timezone(&Europe::Zurich);
                 let template = ScheduleSessionTemplate {
@@ -58,6 +60,7 @@ pub fn create_routes(
         let oauth2_consumer = oauth2_consumer.clone();
         warp::post()
             .and(warp::path!("schedule_session" / u64))
+            .and(warp::path::end())
             .and(warp::body::content_length_limit(32 * 1024))
             .and(warp::body::form())
             .and_then(move |flow_id, form_data: HashMap<String, String>| {
@@ -91,6 +94,14 @@ struct ScheduleSessionTemplate<'a> {
     selectable_years: &'a [u16],
     title: &'a str,
     link: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "schedule_session_success.html")]
+struct ScheduleSessionSuccessTemplate<'a> {
+    title: &'a str,
+    link: &'a str,
+    transferred_all_rsvps: Option<bool>,
 }
 
 pub mod filters {
@@ -271,21 +282,28 @@ async fn handle_schedule_session_post(
             )
             .await
             {
-                return Ok((
-                    "Success! Created a new event",
-                    format!(
-                        "Could not transfer all RSVPs.\nNew event: {}",
-                        new_event.link
-                    ),
-                )
-                    .into());
+                let template = ScheduleSessionSuccessTemplate {
+                    title: &event.name,
+                    link: &event.link,
+                    transferred_all_rsvps: Some(false),
+                };
+                Ok(HandlerResponse::from_template(template)?)
+            } else {
+                let template = ScheduleSessionSuccessTemplate {
+                    title: &event.name,
+                    link: &event.link,
+                    transferred_all_rsvps: Some(true),
+                };
+                Ok(HandlerResponse::from_template(template)?)
             }
+        } else {
+            let template = ScheduleSessionSuccessTemplate {
+                title: &event.name,
+                link: &event.link,
+                transferred_all_rsvps: None,
+            };
+            Ok(HandlerResponse::from_template(template)?)
         }
-        Ok((
-            "Success! Created a new event",
-            format!("New event: {}", new_event.link),
-        )
-            .into())
     } else {
         Ok((
             "No prior event found",
