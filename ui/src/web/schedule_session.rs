@@ -243,11 +243,14 @@ async fn handle_schedule_session_post(
                         Some(naive_date_time) => {
                             match Europe::Zurich.from_local_datetime(&naive_date_time) {
                                 chrono::LocalResult::Single(date_time) => date_time,
-                                _ => return Ok((
-                                    "Invalid data",
-                                    "Seems like the specified time is ambiguous or non-existent",
-                                )
-                                    .into()),
+                                _ => {
+                                    return Ok((
+                                        "Invalid data",
+                                        "Seems like the specified time is ambiguous or \
+                                         non-existent",
+                                    )
+                                        .into())
+                                }
                             }
                         }
                         _ => {
@@ -322,29 +325,35 @@ async fn handle_schedule_session_post(
         // Announce the new session in the Discord channel
         let message = if transfer_rsvps {
             format!(
-                "Your adventure continues @here: {link}. \
-                 Slay the dragon, save the prince, get the treasure, \
-                 or whatever shenanigans you like to get into.",
+                "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
+                 the treasure, or whatever shenanigans you like to get into.",
                 link = &new_event.link
             )
         } else {
             format!(
-                "Your adventure continues @here: {link}. \
-                 Slay the dragon, save the prince, get the treasure, \
-                 or whatever shenanigans you like to get into.\n\
-                 <@{publisher_id}>, please announce this session for new players to join.",
+                "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
+                 the treasure, or whatever shenanigans you like to get into.\n<@{publisher_id}>, \
+                 please announce this session for new players to join.",
                 link = &new_event.link,
                 publisher_id = lib::discord::sync::ids::PUBLISHER_ID.0
             )
         };
         // TODO: remove this superfluous Redis connection once the new async API is available
         if let Ok(redis_connection) = redis_client.get_async_connection().compat().await {
-            let _ = lib::discord::util::say_in_event_series_channel(
+            if let Err(err) = lib::discord::util::say_in_event_series_channel(
                 &new_event.id,
                 &message,
                 redis_connection,
                 discord_cache_http,
-            );
+            )
+            .await
+            {
+                eprintln!(
+                    "Encountered an error when trying to announce the new session in the \
+                     channel:\n{:#?}",
+                    err
+                );
+            }
         }
         let template = ScheduleSessionSuccessTemplate {
             title: &new_event.name,
