@@ -1145,12 +1145,20 @@ impl super::bot::Handler {
                 return Ok(());
             }
         };
-        // This is only for channel hosts
+        // This is only for channel hosts and admins
         let is_host = msg
             .author
             .has_role(ctx, lib::discord::sync::ids::GUILD_ID, channel_roles.host)
             .unwrap_or(false);
-        if !is_host {
+        let is_bot_admin = msg
+            .author
+            .has_role(
+                ctx,
+                lib::discord::sync::ids::GUILD_ID,
+                lib::discord::sync::ids::BOT_ADMIN_ID,
+            )
+            .unwrap_or(false);
+        if !is_host && !is_bot_admin {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
             return Ok(());
         }

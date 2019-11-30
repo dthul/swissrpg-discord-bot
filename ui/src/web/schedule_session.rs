@@ -32,7 +32,7 @@ pub fn create_routes(
     };
     #[cfg(feature = "bottest")]
     let get_route = {
-        warp::get()
+        let get_test_route = warp::get()
             .and(warp::path!("schedule_session" / "test"))
             .and(warp::path::end())
             .and_then(|| {
@@ -51,8 +51,22 @@ pub fn create_routes(
                     HandlerResponse::from_template(template)
                         .map_err(|err| warp::Rejection::from(err)),
                 )
-            })
-            .or(get_route)
+            });
+        let get_test_success_route = warp::get()
+            .and(warp::path!("schedule_session" / "test" / "success"))
+            .and(warp::path::end())
+            .and_then(|| {
+                let template = ScheduleSessionSuccessTemplate {
+                    title: "Test event",
+                    link: "https://meetup.com/",
+                    transferred_all_rsvps: Some(true),
+                };
+                futures::future::ready(
+                    HandlerResponse::from_template(template)
+                        .map_err(|err| warp::Rejection::from(err)),
+                )
+            });
+        get_test_route.or(get_test_success_route).or(get_route)
     };
     let post_route = {
         let redis_client = redis_client.clone();
@@ -219,18 +233,16 @@ async fn handle_schedule_session_post(
             (Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute)) => {
                 match chrono::NaiveDate::from_ymd_opt(year, month, day) {
                     Some(date) => match date.and_hms_opt(hour, minute, 0) {
-                        Some(naive_date_time) => match Europe::Zurich
-                            .from_local_datetime(&naive_date_time)
-                        {
-                            chrono::LocalResult::Single(date_time) => date_time,
-                            _ => {
-                                return Ok((
+                        Some(naive_date_time) => {
+                            match Europe::Zurich.from_local_datetime(&naive_date_time) {
+                                chrono::LocalResult::Single(date_time) => date_time,
+                                _ => return Ok((
                                     "Invalid data",
                                     "Seems like the specified time is ambiguous or non-existent",
                                 )
-                                    .into())
+                                    .into()),
                             }
-                        },
+                        }
                         _ => {
                             return Ok(
                                 ("Invalid data", "Seems like the specified time is invalid").into()
