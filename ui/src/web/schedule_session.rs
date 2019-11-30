@@ -45,6 +45,7 @@ pub fn create_routes(
                     hour: local_time.hour() as u8,
                     minute: local_time.minute() as u8,
                     selectable_years: &[local_time.year() as u16, local_time.year() as u16 + 1],
+                    duration: 150,
                     title: "Test event",
                     link: "https://meetup.com/",
                 };
@@ -105,12 +106,13 @@ pub fn create_routes(
 #[derive(Template)]
 #[template(path = "schedule_session.html")]
 struct ScheduleSessionTemplate<'a> {
-    day: u8,
+    day: u8, // In Europe::Zurich timezone
     month: u8,
     year: u16,
     hour: u8,
     minute: u8,
     selectable_years: &'a [u16],
+    duration: u16, // In minutes
     title: &'a str,
     link: &'a str,
 }
@@ -127,6 +129,10 @@ struct ScheduleSessionSuccessTemplate<'a> {
 pub mod filters {
     pub fn isequal<T: num_traits::PrimInt>(num: &T, val: &T) -> Result<bool, askama::Error> {
         Ok(num == val)
+    }
+
+    pub fn format_minutes_to_hhmm(minutes: &u16) -> Result<String, askama::Error> {
+        Ok(format!("{}:{:02}", minutes / 60, minutes % 60))
     }
 }
 
@@ -168,6 +174,7 @@ async fn handle_schedule_session(
                 next_event_local_datetime.year() as u16,
                 next_event_local_datetime.year() as u16 + 1,
             ],
+            duration: 4 * 60,
             title: &event.name,
             link: &event.link,
         };
@@ -229,6 +236,13 @@ async fn handle_schedule_session_post(
                     .into())
             }
         };
+        let duration = match form_data.get("duration") {
+            None => 4 * 60,
+            Some(duration) => match duration.parse::<u16>() {
+                Err(_) => 4 * 60,
+                Ok(duration) => duration.min(12 * 60),
+            },
+        };
         // Try to convert the supplied data to a DateTime
         let date_time = match (
             year.parse::<i32>(),
@@ -276,7 +290,8 @@ async fn handle_schedule_session_post(
         };
         // Convert time to UTC
         let date_time = date_time.with_timezone(&chrono::Utc);
-        let new_event_hook = Box::new(|new_event: lib::meetup::api::NewEvent| {
+        let new_event_hook = Box::new(|mut new_event: lib::meetup::api::NewEvent| {
+            new_event.duration_ms = Some(1000 * 60 * duration as u64);
             lib::flow::ScheduleSessionFlow::new_event_hook(new_event, date_time, &event.id)
         });
         let meetup_client = match *meetup_client.lock().await {

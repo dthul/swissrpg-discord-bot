@@ -51,6 +51,14 @@
                 {% endfor %}
             </select>
             <br>
+            Duration:<br>
+            <select name="duration" autocomplete="off">
+                {% for i in [30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360, 390, 420, 450, 480, 510, 540, 570, 600, 630, 660, 690, 720] %}
+                <option value="{{ i }}" {% if duration|isequal(i) %}selected{% endif %}>
+                    {{ i|format_minutes_to_hhmm }}</option>
+                {% endfor %}
+            </select>
+            <br>
             <input type="checkbox" name="transfer_rsvps" id="transfer_rsvps_checkbox" value="yes" autocomplete="off"
                 checked>
             <label for="transfer_rsvps_checkbox">Add the players from the last session automatically</label>
