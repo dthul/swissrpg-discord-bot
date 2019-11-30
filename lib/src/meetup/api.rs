@@ -433,6 +433,12 @@ impl AsyncClient {
         Self::try_deserialize(res).await
     }
 
+    pub async fn close_rsvps(&self, urlname: &str, event_id: &str) -> Result<(), Error> {
+        let url = format!("{}/{}/events/{}/rsvps/close", BASE_URL, urlname, event_id);
+        let _res = self.client.post(&url).send().await?;
+        Ok(())
+    }
+
     async fn try_deserialize<T: serde::de::DeserializeOwned>(
         response: reqwest::r#async::Response,
     ) -> Result<T, Error> {

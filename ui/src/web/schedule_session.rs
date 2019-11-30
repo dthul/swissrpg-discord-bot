@@ -60,6 +60,7 @@ pub fn create_routes(
                     title: "Test event",
                     link: "https://meetup.com/",
                     transferred_all_rsvps: Some(true),
+                    closed_rsvps: true,
                 };
                 futures::future::ready(
                     HandlerResponse::from_template(template)
@@ -116,6 +117,7 @@ struct ScheduleSessionSuccessTemplate<'a> {
     title: &'a str,
     link: &'a str,
     transferred_all_rsvps: Option<bool>,
+    closed_rsvps: bool,
 }
 
 pub mod filters {
@@ -280,9 +282,20 @@ async fn handle_schedule_session_post(
             Some(new_event_hook),
         )
         .await?;
+        // Close the RSVPs, ignoring errors
+        let rsvps_are_closed =
+            if let Err(err) = meetup_client.close_rsvps(&event.urlname, &event.id).await {
+                eprintln!(
+                    "RSVPs for event {} could not be closed:\n{:#?}",
+                    &event.id, err
+                );
+                false
+            } else {
+                true
+            };
         // Delete the flow, ignoring errors
         let _ = flow.delete(redis_connection);
-        if transfer_rsvps {
+        let transferred_all_rsvps = if transfer_rsvps {
             // Try to transfer the RSVPs to the new event
             if let Err(_) = lib::meetup::util::clone_rsvps(
                 &event.urlname,
@@ -294,28 +307,20 @@ async fn handle_schedule_session_post(
             )
             .await
             {
-                let template = ScheduleSessionSuccessTemplate {
-                    title: &event.name,
-                    link: &event.link,
-                    transferred_all_rsvps: Some(false),
-                };
-                Ok(HandlerResponse::from_template(template)?)
+                Some(false)
             } else {
-                let template = ScheduleSessionSuccessTemplate {
-                    title: &event.name,
-                    link: &event.link,
-                    transferred_all_rsvps: Some(true),
-                };
-                Ok(HandlerResponse::from_template(template)?)
+                Some(true)
             }
         } else {
-            let template = ScheduleSessionSuccessTemplate {
-                title: &event.name,
-                link: &event.link,
-                transferred_all_rsvps: None,
-            };
-            Ok(HandlerResponse::from_template(template)?)
-        }
+            None
+        };
+        let template = ScheduleSessionSuccessTemplate {
+            title: &event.name,
+            link: &event.link,
+            transferred_all_rsvps: transferred_all_rsvps,
+            closed_rsvps: rsvps_are_closed,
+        };
+        Ok(HandlerResponse::from_template(template)?)
     } else {
         Ok((
             "No prior event found",
