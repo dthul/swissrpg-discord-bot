@@ -83,7 +83,6 @@ button[type="submit"] {
 }
 
 select {
-    box-sizing: border-box;
     padding: 16px;
     border: 0;
     border-radius: 1px;
@@ -96,4 +95,14 @@ select {
     margin-top: 6px;
     margin-bottom: 10px;
     text-align: center;
+}
+
+strong {
+    color: white;
+}
+
+strong.title {
+    color: #ff1744;
+    font-family: Montserrat;
+    text-transform: uppercase;
 }

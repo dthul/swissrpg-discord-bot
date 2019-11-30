@@ -1,25 +1,26 @@
 {% extends "base.html" %}
 
+{% block title %}SwissRPG — Schedule a session{% endblock %}
+
 {% block content %}
 <div id="main">
-    <h2>Success! your "{{ title }}" session has been published</h2>
-    <p>
-        Important notes:
-        <ul>
-            <li>Please check that your meetup event looks correct: <a href="{{ link }}">{{ link }}</a></li>
-            {% if closed_rsvps %}
-            <li>Meetup RSVPs for this event are currently closed</li>
-            {% else %}
-            <li>Meetup RSVPs for this event are currently open</li>
-            {% endif %}
-            {% match transferred_all_rsvps %}
-            {% when Some with (true) %}
-            <li>All participants from the last session were added to the new event</li>
-            {% when Some with (false) %}
-            <li>Not all participants from the last session could be added to the new event</li>
-            {% when None %}
-            {% endmatch %}
-        </ul>
-    </p>
+    <h2>Success!</h2>
+    <p><strong class="title">{{ title }}</strong></p>
+    <h3>Important notes:</h3>
+    <ul>
+        <li>Please check that your meetup event looks correct: <a href="{{ link }}">{{ link }}</a></li>
+        {% if closed_rsvps %}
+        <li>Meetup RSVPs for this event are currently <strong>closed</strong>.</li>
+        {% else %}
+        <li>Meetup RSVPs for this event are currently <strong>open</strong>.</li>
+        {% endif %}
+        {% match transferred_all_rsvps %}
+        {% when Some with (true) %}
+        <li>All participants from the last session were added to the new event.</li>
+        {% when Some with (false) %}
+        <li><strong>Not all participants</strong> from the last session could be added to the new event.</li>
+        {% when None %}
+        {% endmatch %}
+    </ul>
 </div>
 {% endblock %}
