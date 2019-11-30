@@ -101,6 +101,7 @@ pub fn create_server(
     addr: std::net::SocketAddr,
     redis_client: redis::Client,
     async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
+    discord_cache_http: lib::discord::CacheAndHttp,
     bot_name: String,
 ) -> impl Future<Output = ()> + Send + 'static {
     let linking_routes = super::linking::create_routes(
@@ -113,6 +114,7 @@ pub fn create_server(
         redis_client.clone(),
         async_meetup_client.clone(),
         oauth2_consumer.clone(),
+        discord_cache_http.clone(),
     );
     #[cfg(feature = "bottest")]
     let combined_routes = {

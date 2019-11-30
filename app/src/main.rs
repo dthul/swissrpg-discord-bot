@@ -74,6 +74,10 @@ fn main() {
         meetup_oauth2_consumer.clone(),
     )
     .expect("Could not create the Discord bot");
+    let discord_api = lib::discord::CacheAndHttp {
+        cache: bot.cache_and_http.cache.clone().into(),
+        http: bot.cache_and_http.http.clone(),
+    };
 
     // Start a server to handle Meetup OAuth2 logins
     let port = if cfg!(feature = "bottest") {
@@ -86,6 +90,7 @@ fn main() {
         ([127, 0, 0, 1], port).into(),
         redis_client.clone(),
         async_meetup_client.clone(),
+        discord_api.clone(),
         bot.data
             .read()
             .get::<ui::discord::bot::BotNameKey>()
@@ -115,10 +120,6 @@ fn main() {
             .organizer_token_refresh_task(redis_client.clone(), async_meetup_client.clone()),
     );
     drop(task_scheduler_guard);
-    let discord_api = lib::discord::CacheAndHttp {
-        cache: bot.cache_and_http.cache.clone().into(),
-        http: bot.cache_and_http.http.clone(),
-    };
     // Schedule the end of game task
     let end_of_game_task = lib::tasks::end_of_game::create_end_of_game_task(
         redis_client.clone(),

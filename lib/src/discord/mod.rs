@@ -1,4 +1,5 @@
 pub mod sync;
+pub mod util;
 
 use std::sync::Arc;
 

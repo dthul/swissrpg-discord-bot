@@ -10,6 +10,7 @@ pub fn create_routes(
     redis_client: redis::Client,
     meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
+    discord_cache_http: lib::discord::CacheAndHttp,
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let get_route = {
         let redis_client = redis_client.clone();
@@ -73,6 +74,7 @@ pub fn create_routes(
         let redis_client = redis_client.clone();
         let meetup_client = meetup_client.clone();
         let oauth2_consumer = oauth2_consumer.clone();
+        let discord_cache_http = discord_cache_http.clone();
         warp::post()
             .and(warp::path!("schedule_session" / u64))
             .and(warp::path::end())
@@ -82,11 +84,13 @@ pub fn create_routes(
                 let mut redis_client = redis_client.clone();
                 let meetup_client = meetup_client.clone();
                 let oauth2_consumer = oauth2_consumer.clone();
+                let discord_cache_http = discord_cache_http.clone();
                 async move {
                     handle_schedule_session_post(
                         &mut redis_client,
                         &meetup_client,
                         oauth2_consumer,
+                        &discord_cache_http,
                         flow_id,
                         form_data,
                     )
@@ -181,6 +185,7 @@ async fn handle_schedule_session_post(
     redis_client: &mut redis::Client,
     meetup_client: &Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
+    discord_cache_http: &lib::discord::CacheAndHttp,
     flow_id: u64,
     form_data: HashMap<String, String>,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
@@ -314,9 +319,36 @@ async fn handle_schedule_session_post(
         } else {
             None
         };
+        // Announce the new session in the Discord channel
+        let message = if transfer_rsvps {
+            format!(
+                "Your adventure continues @here: {link}. \
+                 Slay the dragon, save the prince, get the treasure, \
+                 or whatever shenanigans you like to get into.",
+                link = &new_event.link
+            )
+        } else {
+            format!(
+                "Your adventure continues @here: {link}. \
+                 Slay the dragon, save the prince, get the treasure, \
+                 or whatever shenanigans you like to get into.\n\
+                 <@{publisher_id}>, please announce this session for new players to join.",
+                link = &new_event.link,
+                publisher_id = lib::discord::sync::ids::PUBLISHER_ID.0
+            )
+        };
+        // TODO: remove this superfluous Redis connection once the new async API is available
+        if let Ok(redis_connection) = redis_client.get_async_connection().compat().await {
+            let _ = lib::discord::util::say_in_event_series_channel(
+                &new_event.id,
+                &message,
+                redis_connection,
+                discord_cache_http,
+            );
+        }
         let template = ScheduleSessionSuccessTemplate {
-            title: &event.name,
-            link: &event.link,
+            title: &new_event.name,
+            link: &new_event.link,
             transferred_all_rsvps: transferred_all_rsvps,
             closed_rsvps: rsvps_are_closed,
         };
