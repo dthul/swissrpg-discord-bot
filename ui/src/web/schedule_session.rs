@@ -369,7 +369,8 @@ async fn handle_schedule_session_post(
         if !transfer_rsvps {
             let message = format!(
                 "<@&{publisher_id}>, a new session has been scheduled:\n{link}.\nPlease announce \
-                 this session for new players to join.",
+                 this session for new players to join. Don't forget to **open RSVPs** when you do \
+                 that.",
                 publisher_id = lib::discord::sync::ids::PUBLISHER_ID.0,
                 link = &new_event.link,
             );

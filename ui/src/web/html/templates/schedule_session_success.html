@@ -9,8 +9,9 @@
     <h3>Important notes:</h3>
     <ul>
         <li>Please check that your meetup event looks correct: <a href="{{ link }}">{{ link }}</a></li>
+        <li><strong style="color: #ff1744">Please don't click the "Announce" button.</strong></li>
+        <li>If you plan to use a SwissRPG venue, please inform organisers so they can reserve it for you.</li>
         {% if closed_rsvps %}
-        <li>Meetup RSVPs for this event are currently <strong>closed</strong>.</li>
         {% else %}
         <li>Meetup RSVPs for this event are currently <strong>open</strong>.</li>
         {% endif %}
@@ -20,6 +21,7 @@
         {% when Some with (false) %}
         <li><strong>Not all participants</strong> from the last session could be added to the new event.</li>
         {% when None %}
+        <li>We will announce your new session for players to join shortly.</li>
         {% endmatch %}
     </ul>
 </div>
