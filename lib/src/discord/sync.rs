@@ -21,6 +21,7 @@ pub mod ids {
     pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
     pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561808429056042));
     pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561949651402772));
+    pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650656330390175764));
 }
 
 #[cfg(not(feature = "bottest"))]
@@ -33,6 +34,7 @@ pub mod ids {
     pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
     pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(562607292176924694));
     pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(414074722259828736));
+    pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
 }
 
 use ids::*;

@@ -343,23 +343,13 @@ async fn handle_schedule_session_post(
             None
         };
         // Announce the new session in the Discord channel
-        let message = if transfer_rsvps {
-            format!(
+        // TODO: remove this superfluous Redis connection once the new async API is available
+        if let Ok(redis_connection) = redis_client.get_async_connection().compat().await {
+            let message = format!(
                 "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
                  the treasure, or whatever shenanigans you like to get into.",
                 link = &new_event.link
-            )
-        } else {
-            format!(
-                "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
-                 the treasure, or whatever shenanigans you like to get into.\n<@{publisher_id}>, \
-                 please announce this session for new players to join.",
-                link = &new_event.link,
-                publisher_id = lib::discord::sync::ids::PUBLISHER_ID.0
-            )
-        };
-        // TODO: remove this superfluous Redis connection once the new async API is available
-        if let Ok(redis_connection) = redis_client.get_async_connection().compat().await {
+            );
             if let Err(err) = lib::discord::util::say_in_event_channel(
                 &event.id,
                 &message,
@@ -370,6 +360,24 @@ async fn handle_schedule_session_post(
             {
                 eprintln!(
                     "Encountered an error when trying to announce the new session in the \
+                     channel:\n{:#?}",
+                    err
+                );
+            }
+        }
+        // If RSVPs were not transferred, announce the new session in the bot alerts channel
+        if !transfer_rsvps {
+            let message = format!(
+                "<@&{publisher_id}>, a new session has been scheduled:\n{link}.\nPlease announce \
+                 this session for new players to join.",
+                publisher_id = lib::discord::sync::ids::PUBLISHER_ID.0,
+                link = &new_event.link,
+            );
+            if let Err(err) =
+                lib::discord::util::say_in_bot_alerts_channel(&message, discord_cache_http)
+            {
+                eprintln!(
+                    "Encountered an error when trying to announce a new session in the bot alerts \
                      channel:\n{:#?}",
                     err
                 );
