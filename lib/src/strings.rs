@@ -40,7 +40,12 @@ pub fn HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id: u64) -> String {
          `@some-user`** - _(in game channel)_ makes a user an additional Host. _(Desktop \
          only)_\n:white_small_square: **<@{bot_id}> remove host `@some-user`** - _(in game \
          channel)_ makes a user no longer a Host.\n:white_small_square: **<@{bot_id}> add \
-         `@some-user`** - _(in game channel)_ adds a user to the channel. _(Desktop only)_",
+         `@some-user`** - _(in game channel)_ adds a user to the channel.\n:white_small_square: \
+         **<@{bot_id}> whois @some-discord-user** - _(needs proper mention)_ shows the Meetup \
+         profile of the mentioned Discord user\n:white_small_square: **<@{bot_id}> whois \
+         some-discord-username#1234** - _(no mention)_ shows the Meetup profile of the mentioned \
+         Discord user\n:white_small_square: **whois meetup-ID** - shows the Discord user linked \
+         to the provided Meetup profile",
         bot_id = bot_id
     )
 }
