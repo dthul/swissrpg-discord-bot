@@ -115,8 +115,8 @@ Can the GM please confirm this by typing here:
 ***<@{bot_id}> end adventure***
 This will set the channel for closure in the next 24 hours, which should be just enough time to \
          say thanks and goodbye.
-If you are not quite done with this adventure, please contact an @Organiser to schedule another \
-         session on Meetup and I will extend the lifetime of this channel.",
+If the adventure is not done, you can schedule a new session by typing here:
+***<@{bot_id}> schedule session***",
         bot_id = bot_id
     )
 }
@@ -127,9 +127,8 @@ If you are not quite done with this adventure, please contact an @Organiser to s
 pub fn END_OF_CAMPAIGN_MESSAGE(bot_id: u64) -> String {
     format!(
         "I hope everyone @here had fun at the last session!
-It's time to book your next session. As soon as you have it scheduled, please write the date in \
-         this channel and tag `@publisher (campaigns)`. I'll remind you in a few days until your \
-         new session is published.
+It's time to schedule your next session. Type here:
+***<@{bot_id}> schedule session***
 
 If your adventure is over, the Game Master can inform me of this by typing here:
 ***<@{bot_id}> end adventure***
