@@ -317,7 +317,12 @@ async fn handle_schedule_session_post(
                 true
             };
         // Delete the flow, ignoring errors
-        let _ = flow.delete(redis_connection);
+        if let Err(err) = flow.delete(redis_connection).await {
+            eprintln!(
+                "Encountered an error when trying to delete a schedule session flow:\n{:#?}",
+                err
+            );
+        }
         let transferred_all_rsvps = if transfer_rsvps {
             // Try to transfer the RSVPs to the new event
             if let Err(_) = lib::meetup::util::clone_rsvps(
@@ -355,8 +360,8 @@ async fn handle_schedule_session_post(
         };
         // TODO: remove this superfluous Redis connection once the new async API is available
         if let Ok(redis_connection) = redis_client.get_async_connection().compat().await {
-            if let Err(err) = lib::discord::util::say_in_event_series_channel(
-                &new_event.id,
+            if let Err(err) = lib::discord::util::say_in_event_channel(
+                &event.id,
                 &message,
                 redis_connection,
                 discord_cache_http,
