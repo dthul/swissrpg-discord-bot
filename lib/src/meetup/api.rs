@@ -99,6 +99,7 @@ pub struct NewEvent {
     pub time: chrono::DateTime<chrono::Utc>,
     pub venue_id: u64,
     pub guest_limit: Option<u16>,
+    pub published: bool,
 }
 
 impl<'de> Deserialize<'de> for UserStatus {
@@ -418,7 +419,14 @@ impl AsyncClient {
             ("self_rsvp", "false".into()),
             ("time", event.time.timestamp_millis().to_string()),
             ("venue_id", event.venue_id.to_string()),
-            ("publish_status", "draft".to_string()),
+            (
+                "publish_status",
+                if event.published {
+                    "published".to_string()
+                } else {
+                    "draft".to_string()
+                },
+            ),
         ];
         if let Some(duration_ms) = event.duration_ms {
             query.push(("duration", duration_ms.to_string()));

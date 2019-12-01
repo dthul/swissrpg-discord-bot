@@ -127,6 +127,7 @@ pub async fn clone_event<'a>(
             .ok_or(simple_error::SimpleError::new(
                 "Cannot clone an event that doesn't have a venue",
             ))?,
+        published: false,
     };
     // If there is a hook specified, let it modify the new event before
     // publishing it to Meetup

@@ -292,6 +292,7 @@ async fn handle_schedule_session_post(
         let date_time = date_time.with_timezone(&chrono::Utc);
         let new_event_hook = Box::new(|mut new_event: lib::meetup::api::NewEvent| {
             new_event.duration_ms = Some(1000 * 60 * duration as u64);
+            new_event.published = true;
             lib::flow::ScheduleSessionFlow::new_event_hook(new_event, date_time, &event.id)
         });
         let meetup_client = match *meetup_client.lock().await {
