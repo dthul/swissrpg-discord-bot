@@ -128,6 +128,7 @@ fn update_series_channel_expiration(
             _ => false,
         }
     };
+    let redis_channel_expiration_key = format!("discord_channel:{}:expiration_time", channel_id);
     // The last element in this vector will be the last event in the series
     if let Some(last_event) = events.last() {
         let last_event_id = last_event.0.clone();
@@ -137,8 +138,6 @@ fn update_series_channel_expiration(
             "Expiration update: Event \"{}\" {} is the last event in series {} with datetime {}",
             last_event_name, last_event_id, series_id, last_event_time
         );
-        let redis_channel_expiration_key =
-            format!("discord_channel:{}:expiration_time", channel_id);
         // Query the current expiration time
         let current_expiration_time =
             match con.get::<_, Option<String>>(&redis_channel_expiration_key)? {
@@ -159,16 +158,41 @@ fn update_series_channel_expiration(
         } else {
             last_event_time + chrono::Duration::days(1)
         };
-        let (new_expiration_time, needs_update) = match current_expiration_time {
-            Some(current_expiration_time) => {
-                if current_expiration_time >= new_expiration_time {
-                    (current_expiration_time, false)
-                } else {
-                    (new_expiration_time, true)
-                }
-            }
-            None => (new_expiration_time, true),
-        };
+        let needs_update = current_expiration_time
+            .map(|current| current != new_expiration_time)
+            .unwrap_or(true);
+        // Store the new expiration time in Redis
+        if needs_update {
+            let _: () = con.set(
+                &redis_channel_expiration_key,
+                new_expiration_time.to_rfc3339(),
+            )?;
+            println!(
+                "Set expiration time of channel {} to {}",
+                channel_id, new_expiration_time
+            );
+        }
+    } else {
+        // No event in this series, expire the channel immediately
+        let new_expiration_time = chrono::Utc::now();
+        // Query the current expiration time
+        let current_expiration_time =
+            match con.get::<_, Option<String>>(&redis_channel_expiration_key)? {
+                Some(time) => match chrono::DateTime::parse_from_rfc3339(&time) {
+                    Ok(time) => Some(time.with_timezone(&chrono::Utc)),
+                    Err(err) => {
+                        eprintln!(
+                            "Discord channel {} had an invalid expiration time: {}",
+                            channel_id, err
+                        );
+                        None
+                    }
+                },
+                None => None,
+            };
+        let needs_update = current_expiration_time
+            .map(|current| current > new_expiration_time)
+            .unwrap_or(true);
         // Store the new expiration time in Redis
         if needs_update {
             let _: () = con.set(

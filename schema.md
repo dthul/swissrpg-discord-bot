@@ -89,6 +89,9 @@ Set of hosts (Discord ID) that have been manually removed from this channel. The
 `discord_channel:{}:removed_users`: set of u64\
 Set of users (Discord ID) that have been manually removed from this channel. These users should not be automatically added back to this channel anymore.
 
+`discord_channel:{}:expiration_time`: string\
+Expiration time of this channel
+
 `orphaned_discord_channels`: set of u64\
 Set of Discord channels that were created by the bot but could not be successfully deleted in the past
 
