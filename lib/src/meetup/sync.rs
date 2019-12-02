@@ -308,8 +308,11 @@ pub async fn sync_event(
                     .sadd(redis_series_key, &series_id)
                     .sadd(redis_event_hosts_key, host_user_ids)
                     .set(redis_event_series_key, &series_id)
-                    .sadd(&redis_series_events_key, &event.id)
-                    .hset_multiple(redis_event_key, event_hash);
+                    .sadd(&redis_series_events_key, &event.id);
+                for &(field, value) in event_hash {
+                    // Do not use hset_multiple, it deletes existing fields!
+                    pipe.hset(redis_event_key, field, value);
+                }
                 pipe.query_async(con).compat().await
             }
         }
@@ -344,7 +347,7 @@ async fn sync_event_series(
     // We loop since the next event might have been deleted on Meetup.
     // So we just continue until we find one that has not been deleted or the list is exhausted.
     for next_event in upcoming {
-    // The first element in this vector will be the next upcoming event
+        // The first element in this vector will be the next upcoming event
         let next_event_id = next_event.id.clone();
         let next_event_name = &next_event.name;
         let group_urlname = &next_event.urlname;
@@ -372,8 +375,8 @@ async fn sync_event_series(
         println!("Syncing task: Found {} RSVPs", rsvps.len());
         return sync_rsvps(&next_event_id, rsvps, redis_client).await;
     }
-        Ok(())
-    }
+    Ok(())
+}
 
 pub async fn sync_rsvps(
     event_id: &str,

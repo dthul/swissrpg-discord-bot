@@ -205,15 +205,19 @@ pub async fn refresh_oauth_tokens(
             }
         }
         TokenType::User(meetup_user_id) => {
-            let mut hash = vec![(
+            let redis_user_token_key = format!("meetup_user:{}:oauth2_tokens", meetup_user_id);
+            pipe.hset(
+                &redis_user_token_key,
                 "access_token",
                 refresh_token_response.access_token().secret(),
-            )];
+            );
             if let Some(new_refresh_token) = refresh_token_response.refresh_token() {
-                hash.push(("refresh_token", new_refresh_token.secret()));
+                pipe.hset(
+                    &redis_user_token_key,
+                    "refresh_token",
+                    new_refresh_token.secret(),
+                );
             }
-            let redis_user_token_key = format!("meetup_user:{}:oauth2_tokens", meetup_user_id);
-            pipe.hset_multiple(&redis_user_token_key, &hash);
         }
     };
     let (redis_connection, _): (_, ()) = pipe.query_async(redis_connection).compat().await?;

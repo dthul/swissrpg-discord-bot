@@ -522,12 +522,17 @@ async fn handle_link_redirect(
         if with_rsvp_scope {
             if let Some(refresh_token) = token_res.refresh_token() {
                 let redis_user_tokens_key = format!("meetup_user:{}:oauth2_tokens", meetup_user.id);
-                let fields = &[
-                    ("access_token", token_res.access_token().secret()),
-                    ("refresh_token", refresh_token.secret()),
-                ];
                 let mut pipe = redis::pipe();
-                pipe.hset_multiple(&redis_user_tokens_key, fields);
+                pipe.hset(
+                    &redis_user_tokens_key,
+                    "access_token",
+                    token_res.access_token().secret(),
+                );
+                pipe.hset(
+                    &redis_user_tokens_key,
+                    "refresh_token",
+                    refresh_token.secret(),
+                );
                 let (new_redis_connection, _): (_, ()) =
                     pipe.query_async(redis_connection).compat().await?;
                 redis_connection = new_redis_connection;
