@@ -142,6 +142,7 @@ impl ScheduleSessionFlow {
         let description = new_event.description;
         let description = crate::meetup::sync::NEW_ADVENTURE_REGEX.replace_all(&description, "");
         let description = crate::meetup::sync::NEW_CAMPAIGN_REGEX.replace_all(&description, "");
+        let description = crate::meetup::sync::ONLINE_REGEX.replace_all(&description, "");
         let mut description = crate::meetup::sync::CHANNEL_REGEX
             .replace_all(&description, "")
             .into_owned();
