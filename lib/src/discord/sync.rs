@@ -19,8 +19,8 @@ pub mod ids {
     pub const BOT_ADMIN_ID: RoleId = RoleId(606829075226689536);
     pub const PUBLISHER_ID: RoleId = RoleId(613769364990066699);
     pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
-    pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561808429056042));
-    pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(607561949651402772));
+    pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561808429056042)];
+    pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561949651402772)];
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650656330390175764));
 }
 
@@ -32,8 +32,9 @@ pub mod ids {
     pub const BOT_ADMIN_ID: RoleId = RoleId(610541498852966436);
     pub const PUBLISHER_ID: RoleId = RoleId(611290948395073585);
     pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
-    pub const ONE_SHOT_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(562607292176924694));
-    pub const CAMPAIGN_CATEGORY_ID: Option<ChannelId> = Some(ChannelId(414074722259828736));
+    pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(562607292176924694)];
+    pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] =
+        &[ChannelId(414074722259828736), ChannelId(651006290998329354)];
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
 }
 
@@ -907,20 +908,20 @@ fn sync_channel_topic_and_category(
     let topic = format!("Next session: {}", &next_event.link);
     let redis_series_type_key = format!("event_series:{}:type", series_id);
     let event_type: Option<String> = redis_connection.get(&redis_series_type_key)?;
-    let category = match event_type.as_ref().map(String::as_str) {
-        Some("campaign") => CAMPAIGN_CATEGORY_ID,
-        Some("adventure") => ONE_SHOT_CATEGORY_ID,
+    let categories = match event_type.as_ref().map(String::as_str) {
+        Some("campaign") => CAMPAIGN_CATEGORY_IDS,
+        Some("adventure") => ONE_SHOT_CATEGORY_IDS,
         _ => {
             eprintln!(
                 "Event series {} does not have a type of 'campaign' or 'adventure'",
                 series_id
             );
-            CAMPAIGN_CATEGORY_ID
+            CAMPAIGN_CATEGORY_IDS
         }
     };
     let channel = channel_id.to_channel(discord_api)?;
     if let serenity::model::channel::Channel::Guild(channel) = channel {
-        let channel_needs_update = {
+        let (topic_needs_update, category_needs_update) = {
             let channel_lock = channel.read();
             let current_topic = &channel_lock.topic;
             let topic_needs_update = if let Some(current_topic) = current_topic {
@@ -928,21 +929,30 @@ fn sync_channel_topic_and_category(
             } else {
                 true
             };
-            let category_needs_update = if category.is_some() {
-                category != channel_lock.category_id
-            } else {
-                false
+            let category_needs_update = match channel_lock.category_id {
+                Some(channel_category) => !categories.contains(&channel_category),
+                None => true,
             };
-            topic_needs_update || category_needs_update
+            (topic_needs_update, category_needs_update)
         };
-        if channel_needs_update {
+        if topic_needs_update {
             channel_id.edit(&discord_api.http, |channel_edit| {
                 channel_edit.topic(topic);
-                if category.is_some() {
-                    channel_edit.category(category);
-                }
                 channel_edit
             })?;
+        }
+        if category_needs_update {
+            // Try the categories in order and put the channel in the first
+            // one that works. Meetup has an undocumented limit of 50 channels
+            // per category, so an error will be returned if the category is full.
+            for category in categories {
+                if let Ok(_) = channel_id.edit(&discord_api.http, |channel_edit| {
+                    channel_edit.category(Some(*category));
+                    channel_edit
+                }) {
+                    break;
+                }
+            }
         }
     }
     Ok(())
