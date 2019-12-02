@@ -341,8 +341,10 @@ async fn sync_event_series(
         .collect();
     // Sort by date
     upcoming.sort_unstable_by_key(|event| event.time);
+    // We loop since the next event might have been deleted on Meetup.
+    // So we just continue until we find one that has not been deleted or the list is exhausted.
+    for next_event in upcoming {
     // The first element in this vector will be the next upcoming event
-    if let Some(next_event) = upcoming.first() {
         let next_event_id = next_event.id.clone();
         let next_event_name = &next_event.name;
         let group_urlname = &next_event.urlname;
@@ -351,16 +353,27 @@ async fn sync_event_series(
             next_event_name
         );
         // Query the RSVPs for that event
-        let rsvps = meetup_client
-            .get_rsvps(group_urlname, &next_event_id)
-            .await?;
+        let rsvps = match meetup_client.get_rsvps(group_urlname, &next_event_id).await {
+            Err(super::api::Error::ResourceNotFound) => {
+                // Remove this event from Redis
+                eprintln!(
+                    "Event {} was deleted from Meetup, removing from database...",
+                    &next_event.id
+                );
+                let redis_connection = redis_client.get_async_connection().compat().await?;
+                crate::redis::delete_event(redis_connection, &next_event.id).await?;
+                eprintln!("Removed event {} from database", &next_event.id);
+                continue;
+            }
+            Err(err) => return Err(err.into()),
+            Ok(rsvps) => rsvps,
+        };
         // Sync the RSVPs
         println!("Syncing task: Found {} RSVPs", rsvps.len());
-        sync_rsvps(&next_event_id, rsvps, redis_client).await
-    } else {
+        return sync_rsvps(&next_event_id, rsvps, redis_client).await;
+    }
         Ok(())
     }
-}
 
 pub async fn sync_rsvps(
     event_id: &str,

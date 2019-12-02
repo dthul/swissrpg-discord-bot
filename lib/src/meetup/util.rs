@@ -42,7 +42,7 @@ async fn try_with_token_refresh<
     };
     // Run the provided function
     let meetup_api_user_client = super::api::AsyncClient::new(&access_token);
-    println!("Running the provided funtion");
+    println!("Running the provided function");
     io::stdout().flush().unwrap();
     match f(meetup_api_user_client).await {
         Err(err) => {
@@ -101,16 +101,6 @@ pub async fn clone_event<'a>(
     >,
 ) -> Result<super::api::Event, super::Error> {
     let event = meetup_client.get_event(urlname, event_id).await?;
-    let event = match event {
-        Some(event) => event,
-        None => {
-            return Err(simple_error::SimpleError::new(format!(
-                "Specified event ({}/{}) was not found",
-                urlname, event_id
-            ))
-            .into())
-        }
-    };
     let new_event = super::api::NewEvent {
         description: event.simple_html_description.unwrap_or(event.description),
         duration_ms: event.duration_ms,
