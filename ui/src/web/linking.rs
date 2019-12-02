@@ -4,6 +4,7 @@ use futures_util::{compat::Future01CompatExt, lock::Mutex, try_future::TryFuture
 use hyper::Response;
 use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, RedirectUrl, Scope, TokenResponse};
 use redis::PipelineCommands;
+use serde::Deserialize;
 use std::{
     borrow::Cow,
     sync::{
@@ -13,6 +14,13 @@ use std::{
 };
 use url::Url;
 use warp::Filter;
+
+#[derive(Deserialize)]
+struct LinkQuery {
+    code: String,
+    state: String,
+    error: Option<String>,
+}
 
 pub fn create_routes(
     redis_client: redis::Client,
@@ -48,9 +56,9 @@ pub fn create_routes(
         warp::get()
             .and(warp::path!("authorize" / "redirect"))
             .and(warp::path::end())
-            .and(warp::path::full())
+            .and(warp::query())
             .and(warp::header::headers_cloned())
-            .and_then(move |path: warp::path::FullPath, headers| {
+            .and_then(move |query: LinkQuery, headers| {
                 let redis_client = redis_client.clone();
                 let oauth2_consumer = oauth2_consumer.clone();
                 let async_meetup_client = async_meetup_client.clone();
@@ -64,7 +72,7 @@ pub fn create_routes(
                         redis_connection,
                         &oauth2_consumer.authorization_client,
                         &async_meetup_client,
-                        path.as_str(),
+                        query,
                         &headers,
                     )
                     .err_into::<warp::Rejection>()
@@ -108,9 +116,14 @@ pub fn create_routes(
             .and(warp::path("redirect"))
             .and(warp::path::end())
             .and(warp::path::full())
+            .and(warp::query())
             .and(warp::header::headers_cloned())
             .and_then(
-                move |linking_id: String, with_rsvp, path: warp::path::FullPath, headers| {
+                move |linking_id: String,
+                      with_rsvp,
+                      path: warp::path::FullPath,
+                      query: LinkQuery,
+                      headers| {
                     let redis_client = redis_client.clone();
                     let oauth2_consumer = oauth2_consumer.clone();
                     let bot_name = bot_name.clone();
@@ -125,6 +138,7 @@ pub fn create_routes(
                             &oauth2_consumer.link_client,
                             &bot_name,
                             path.as_str(),
+                            query,
                             &headers,
                             &linking_id,
                             with_rsvp,
@@ -229,32 +243,16 @@ async fn handle_authorize_redirect(
     redis_connection: redis::aio::Connection,
     oauth2_authorization_client: &BasicClient,
     async_meetup_client: &Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
-    path: &str,
+    query: LinkQuery,
     headers: &hyper::HeaderMap<hyper::header::HeaderValue>,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
-    let full_uri = format!("{}{}", lib::urls::BASE_URL, path);
-    let req_url = Url::parse(&full_uri)?;
-    let params: Vec<_> = req_url.query_pairs().collect();
-    let code = params
-        .iter()
-        .find_map(|(key, value)| if key == "code" { Some(value) } else { None });
-    let state = params
-        .iter()
-        .find_map(|(key, value)| if key == "state" { Some(value) } else { None });
-    let error = params
-        .iter()
-        .find_map(|(key, value)| if key == "error" { Some(value) } else { None });
-    if let Some(error) = error {
+    if let Some(error) = query.error {
         return Ok(("OAuth2 error", error.to_string()).into());
     }
-    let (code, csrf_state) = match (code, state) {
-        (Some(code), Some(state)) => (code, state),
-        _ => return Ok(("Request parameters missing", "").into()),
-    };
     // Compare the CSRF state that was returned by Meetup to the one
     // we have saved
     let (redis_connection, csrf_is_valid) =
-        check_csrf_cookie(redis_connection, headers, &csrf_state).await?;
+        check_csrf_cookie(redis_connection, headers, &query.state).await?;
     if !csrf_is_valid {
         return Ok((
             "CSRF check failed",
@@ -263,7 +261,7 @@ async fn handle_authorize_redirect(
             .into());
     }
     // Exchange the code with a token.
-    let code = AuthorizationCode::new(code.to_string());
+    let code = AuthorizationCode::new(query.code);
     let async_meetup_client = async_meetup_client.clone();
     let token_res = oauth2_authorization_client
         .exchange_code(code)
@@ -398,6 +396,7 @@ async fn handle_link_redirect(
     oauth2_link_client: &BasicClient,
     bot_name: &str,
     path: &str,
+    query: LinkQuery,
     headers: &hyper::HeaderMap<hyper::header::HeaderValue>,
     linking_id: &str,
     with_rsvp_scope: bool,
@@ -420,19 +419,7 @@ async fn handle_link_redirect(
                 .into())
         }
     };
-    let full_uri = format!("{}{}", lib::urls::BASE_URL, path);
-    let req_url = Url::parse(&full_uri)?;
-    let params: Vec<_> = req_url.query_pairs().collect();
-    let code = params
-        .iter()
-        .find_map(|(key, value)| if key == "code" { Some(value) } else { None });
-    let state = params
-        .iter()
-        .find_map(|(key, value)| if key == "state" { Some(value) } else { None });
-    let error = params
-        .iter()
-        .find_map(|(key, value)| if key == "error" { Some(value) } else { None });
-    if let Some(error) = error {
+    if let Some(error) = query.error {
         if error == "access_denied" {
             // The user did not grant access
             // Give them the chance to do it again
@@ -453,14 +440,10 @@ async fn handle_link_redirect(
             return Ok(("OAuth2 error", error.to_string()).into());
         }
     }
-    let (code, csrf_state) = match (code, state) {
-        (Some(code), Some(state)) => (code, state),
-        _ => return Ok(("Request parameters missing", "").into()),
-    };
     // Compare the CSRF state that was returned by Meetup to the one
     // we have saved
     let (redis_connection, csrf_is_valid) =
-        check_csrf_cookie(redis_connection, headers, &csrf_state).await?;
+        check_csrf_cookie(redis_connection, headers, &query.state).await?;
     if !csrf_is_valid {
         return Ok((
             "CSRF check failed",
@@ -469,7 +452,7 @@ async fn handle_link_redirect(
             .into());
     }
     // Exchange the code with a token.
-    let code = AuthorizationCode::new(code.to_string());
+    let code = AuthorizationCode::new(query.code);
     let redirect_url =
         RedirectUrl::new(Url::parse(format!("{}{}", lib::urls::BASE_URL, path).as_str()).unwrap());
     let token_res = oauth2_link_client
