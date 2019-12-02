@@ -212,111 +212,105 @@ async fn handle_schedule_session_post(
             .await?;
     // Sort by date
     events.sort_unstable_by_key(|event| event.time);
-    if let Some(event) = events.last() {
-        // Check that the form contains all necessary data
-        let transfer_rsvps = form_data
-            .get("transfer_rsvps")
-            .map(|value| value == "yes")
-            .unwrap_or(false);
-        let (year, month, day, hour, minute) = match (
-            form_data.get("year"),
-            form_data.get("month"),
-            form_data.get("day"),
-            form_data.get("hour"),
-            form_data.get("minute"),
-        ) {
-            (Some(year), Some(month), Some(day), Some(hour), Some(minute)) => {
-                (year, month, day, hour, minute)
-            }
-            _ => {
-                return Ok((
-                    "Invalid data",
-                    "Seems like the submitted data is incomplete",
-                )
-                    .into())
-            }
-        };
-        let duration = match form_data.get("duration") {
-            None => 4 * 60,
-            Some(duration) => match duration.parse::<u16>() {
-                Err(_) => 4 * 60,
-                Ok(duration) => duration.min(12 * 60),
-            },
-        };
-        // Try to convert the supplied data to a DateTime
-        let date_time = match (
-            year.parse::<i32>(),
-            month.parse::<u32>(),
-            day.parse::<u32>(),
-            hour.parse::<u32>(),
-            minute.parse::<u32>(),
-        ) {
-            (Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute)) => {
-                match chrono::NaiveDate::from_ymd_opt(year, month, day) {
-                    Some(date) => match date.and_hms_opt(hour, minute, 0) {
-                        Some(naive_date_time) => {
-                            match Europe::Zurich.from_local_datetime(&naive_date_time) {
-                                chrono::LocalResult::Single(date_time) => date_time,
-                                _ => {
-                                    return Ok((
-                                        "Invalid data",
-                                        "Seems like the specified time is ambiguous or \
-                                         non-existent",
-                                    )
-                                        .into())
-                                }
+    // Check that the form contains all necessary data
+    let transfer_rsvps = form_data
+        .get("transfer_rsvps")
+        .map(|value| value == "yes")
+        .unwrap_or(false);
+    let (year, month, day, hour, minute) = match (
+        form_data.get("year"),
+        form_data.get("month"),
+        form_data.get("day"),
+        form_data.get("hour"),
+        form_data.get("minute"),
+    ) {
+        (Some(year), Some(month), Some(day), Some(hour), Some(minute)) => {
+            (year, month, day, hour, minute)
+        }
+        _ => {
+            return Ok((
+                "Invalid data",
+                "Seems like the submitted data is incomplete",
+            )
+                .into())
+        }
+    };
+    let duration = match form_data.get("duration") {
+        None => 4 * 60,
+        Some(duration) => match duration.parse::<u16>() {
+            Err(_) => 4 * 60,
+            Ok(duration) => duration.min(12 * 60),
+        },
+    };
+    // Try to convert the supplied data to a DateTime
+    let date_time = match (
+        year.parse::<i32>(),
+        month.parse::<u32>(),
+        day.parse::<u32>(),
+        hour.parse::<u32>(),
+        minute.parse::<u32>(),
+    ) {
+        (Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute)) => {
+            match chrono::NaiveDate::from_ymd_opt(year, month, day) {
+                Some(date) => match date.and_hms_opt(hour, minute, 0) {
+                    Some(naive_date_time) => {
+                        match Europe::Zurich.from_local_datetime(&naive_date_time) {
+                            chrono::LocalResult::Single(date_time) => date_time,
+                            _ => {
+                                return Ok((
+                                    "Invalid data",
+                                    "Seems like the specified time is ambiguous or non-existent",
+                                )
+                                    .into())
                             }
                         }
-                        _ => {
-                            return Ok(
-                                ("Invalid data", "Seems like the specified time is invalid").into()
-                            )
-                        }
-                    },
+                    }
                     _ => {
                         return Ok(
-                            ("Invalid data", "Seems like the specified date is invalid").into()
+                            ("Invalid data", "Seems like the specified time is invalid").into()
                         )
                     }
-                }
+                },
+                _ => return Ok(("Invalid data", "Seems like the specified date is invalid").into()),
             }
-            _ => {
-                return Ok((
-                    "Invalid data",
-                    "Seems like the submitted data has an invalid format",
-                )
-                    .into())
-            }
-        };
-        // Convert time to UTC
-        let date_time = date_time.with_timezone(&chrono::Utc);
+        }
+        _ => {
+            return Ok((
+                "Invalid data",
+                "Seems like the submitted data has an invalid format",
+            )
+                .into())
+        }
+    };
+    // Convert time to UTC
+    let date_time = date_time.with_timezone(&chrono::Utc);
+    let meetup_client = match *meetup_client.lock().await {
+        Some(ref meetup_client) => meetup_client.clone(),
+        None => return Ok(("Meetup API unavailable", "Please try again later").into()),
+    };
+    // We go from the event furthest into the future backwards until we find one
+    // that has not been deleted to use as a template
+    for event in events.into_iter().rev() {
         let new_event_hook = Box::new(|mut new_event: lib::meetup::api::NewEvent| {
             new_event.duration_ms = Some(1000 * 60 * duration as u64);
             new_event.published = true;
             lib::flow::ScheduleSessionFlow::new_event_hook(new_event, date_time, &event.id)
         });
-        let meetup_client = match *meetup_client.lock().await {
-            Some(ref meetup_client) => meetup_client.clone(),
-            None => return Ok(("Meetup API unavailable", "Please try again later").into()),
-        };
-        let new_event = lib::meetup::util::clone_event(
+        let new_event = match lib::meetup::util::clone_event(
             &event.urlname,
             &event.id,
             &meetup_client,
             Some(new_event_hook),
         )
-        .await?;
-        // Close the RSVPs, ignoring errors
-        let rsvps_are_closed =
-            if let Err(err) = meetup_client.close_rsvps(&event.urlname, &event.id).await {
-                eprintln!(
-                    "RSVPs for event {} could not be closed:\n{:#?}",
-                    &event.id, err
-                );
-                false
-            } else {
-                true
-            };
+        .await
+        {
+            Err(lib::meetup::Error::APIError(lib::meetup::api::Error::ResourceNotFound)) => {
+                // Event was deleted, try the next one
+                continue;
+            }
+            Err(err) => return Err(err),
+            Ok(new_event) => new_event,
+        };
         // Delete the flow, ignoring errors
         if let Err(err) = flow.delete(redis_connection).await {
             eprintln!(
@@ -342,6 +336,19 @@ async fn handle_schedule_session_post(
             }
         } else {
             None
+        };
+        // Close the RSVPs, ignoring errors
+        let rsvps_are_closed = if let Err(err) = meetup_client
+            .close_rsvps(&event.urlname, &new_event.id)
+            .await
+        {
+            eprintln!(
+                "RSVPs for event {} could not be closed:\n{:#?}",
+                &new_event.id, err
+            );
+            false
+        } else {
+            true
         };
         // Announce the new session in the Discord channel
         // TODO: remove this superfluous Redis connection once the new async API is available
@@ -391,12 +398,11 @@ async fn handle_schedule_session_post(
             transferred_all_rsvps: transferred_all_rsvps,
             closed_rsvps: rsvps_are_closed,
         };
-        Ok(HandlerResponse::from_template(template)?)
-    } else {
-        Ok((
-            "No prior event found",
-            "Cannot schedule a continuation session without an initial event",
-        )
-            .into())
+        return Ok(HandlerResponse::from_template(template)?);
     }
+    Ok((
+        "No prior event found",
+        "Cannot schedule a continuation session without an initial event",
+    )
+        .into())
 }

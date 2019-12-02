@@ -193,6 +193,7 @@ pub enum Error {
         error: serde_json::Error,
         input: String,
     },
+    ResourceNotFound,
 }
 
 impl std::fmt::Display for Error {
@@ -207,6 +208,7 @@ impl std::fmt::Display for Error {
                 "Meetup Client Error (Deserialization Error):\n{:?}\nInput was:\n{}",
                 error, input
             ),
+            Error::ResourceNotFound => write!(f, "Meetup Client Error: Resource not found"),
         }
     }
 }
@@ -217,6 +219,7 @@ impl std::error::Error for Error {
             Error::AuthenticationFailure => None,
             Error::Reqwest(err) => Some(err),
             Error::Serde { error: err, .. } => Some(err),
+            Error::ResourceNotFound => None,
         }
     }
 }
@@ -336,7 +339,7 @@ impl AsyncClient {
         stream::iter(streams).flatten()
     }
 
-    pub async fn get_event(&self, urlname: &str, event_id: &str) -> Result<Option<Event>, Error> {
+    pub async fn get_event(&self, urlname: &str, event_id: &str) -> Result<Event, Error> {
         let url = format!(
             "{}/{}/events/{}?&fields=simple_html_description,featured_photo,event_hosts",
             BASE_URL, urlname, event_id
@@ -344,14 +347,14 @@ impl AsyncClient {
         let res = self.client.get(&url).send().await?;
         let event_res = Self::try_deserialize(res).await;
         match event_res {
-            Ok(event) => Ok(Some(event)),
+            Ok(event) => Ok(event),
             Err(err) => {
                 // Dirty hack: instead of properly parsing the errors returned
                 // by the Meetup API to figure out whether it is just a "404",
                 // just look at the error text instead
                 if let Error::Serde { input, .. } = &err {
                     if input.contains("event_error") {
-                        return Ok(None);
+                        return Err(Error::ResourceNotFound);
                     }
                 }
                 Err(err)
@@ -367,7 +370,21 @@ impl AsyncClient {
             BASE_URL, urlname, event_id
         );
         let res = self.client.get(&url).send().await?;
-        Self::try_deserialize(res).await
+        let rsvp_res = Self::try_deserialize(res).await;
+        match rsvp_res {
+            Ok(rsvps) => Ok(rsvps),
+            Err(err) => {
+                // Dirty hack: instead of properly parsing the errors returned
+                // by the Meetup API to figure out whether it is just a "404",
+                // just look at the error text instead
+                if let Error::Serde { input, .. } = &err {
+                    if input.contains("event_error") {
+                        return Err(Error::ResourceNotFound);
+                    }
+                }
+                Err(err)
+            }
+        }
     }
 
     pub async fn rsvp(
