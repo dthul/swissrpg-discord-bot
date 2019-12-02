@@ -44,8 +44,8 @@ pub fn HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id: u64) -> String {
          **<@{bot_id}> whois @some-discord-user** - _(needs proper mention)_ shows the Meetup \
          profile of the mentioned Discord user\n:white_small_square: **<@{bot_id}> whois \
          some-discord-username#1234** - _(no mention)_ shows the Meetup profile of the mentioned \
-         Discord user\n:white_small_square: **whois meetup-ID** - shows the Discord user linked \
-         to the provided Meetup profile",
+         Discord user\n:white_small_square: **<@{bot_id}> whois meetup-ID** - shows the Discord \
+         user linked to the provided Meetup profile",
         bot_id = bot_id
     )
 }
@@ -59,7 +59,8 @@ pub fn HELP_MESSAGE_GM_EMBED_CONTENT(bot_id: u64) -> String {
         ":white_small_square: **<@{bot_id}> remove `@some-user`** - removes a user from the \
          channel.\n:white_small_square: **<@{bot_id}> end adventure** - sets the channel for \
          closure at the end of an adventure. The channel won't be deleted immediately but within \
-         24 hours.",
+         24 hours.\n:white_small_square: **<@{bot_id}> schedule session** - allows you to \
+         schedule a new session for your adventure.",
         bot_id = bot_id
     )
 }
