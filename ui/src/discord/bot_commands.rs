@@ -3,11 +3,11 @@ use lib::strings;
 use redis::{Commands, PipelineCommands};
 use regex::Regex;
 use serenity::{
-    model::{channel::Message, id::UserId, user::User},
+    model::{channel, channel::Message, id::UserId, user::User},
     prelude::*,
 };
 use simple_error::SimpleError;
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
 const USERNAME_TAG_PATTERN: &'static str = r"(?P<discord_username_tag>[^@#:]{2,32}#[0-9]+)";
@@ -41,6 +41,7 @@ pub struct Regexes {
     pub schedule_session_mention: Regex,
     pub whois_bot_admin_dm: Regex,
     pub whois_bot_admin_mention: Regex,
+    pub list_players_mention: Regex,
 }
 
 impl Regexes {
@@ -216,6 +217,10 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         bot_mention = bot_mention,
         whois_bot_admin = whois_bot_admin
     );
+    let list_players_mention = format!(
+        r"^{bot_mention}\s+(?i)list\s+players\s*$",
+        bot_mention = bot_mention,
+    );
     Regexes {
         bot_mention: Regex::new(&format!("^{}", bot_mention)).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -248,6 +253,7 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         schedule_session_mention: Regex::new(schedule_session_mention.as_str()).unwrap(),
         whois_bot_admin_dm: Regex::new(whois_bot_admin_dm.as_str()).unwrap(),
         whois_bot_admin_mention: Regex::new(whois_bot_admin_mention.as_str()).unwrap(),
+        list_players_mention: Regex::new(list_players_mention.as_str()).unwrap(),
     }
 }
 
@@ -1175,6 +1181,242 @@ impl super::bot::Handler {
             ))
         });
         let _ = msg.react(ctx, "\u{2705}");
+        Ok(())
+    }
+
+    pub fn list_players(
+        ctx: &Context,
+        msg: &Message,
+        redis_client: redis::Client,
+    ) -> Result<(), lib::meetup::Error> {
+        let mut redis_connection = redis_client.get_connection()?;
+        // Check whether this is a bot controlled channel
+        let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+        let channel_roles = match channel_roles {
+            Some(roles) => roles,
+            None => {
+                let _ = msg
+                    .channel_id
+                    .say(&ctx.http, strings::CHANNEL_NOT_BOT_CONTROLLED);
+                return Ok(());
+            }
+        };
+        // This is only for bot_admins and channel hosts
+        let is_bot_admin = msg
+            .author
+            .has_role(
+                ctx,
+                lib::discord::sync::ids::GUILD_ID,
+                lib::discord::sync::ids::BOT_ADMIN_ID,
+            )
+            .unwrap_or(false);
+        let is_host = msg
+            .author
+            .has_role(ctx, lib::discord::sync::ids::GUILD_ID, channel_roles.host)
+            .unwrap_or(false);
+        if !is_bot_admin && !is_host {
+            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
+            return Ok(());
+        }
+
+        // Get all Meetup users that RSVPd "yes" to this event
+        // As a first step, get all upcoming events
+        let redis_channel_series_key =
+            format!("discord_channel:{}:event_series", &msg.channel_id.0);
+        let series_id: String = redis_connection.get(&redis_channel_series_key)?;
+        let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
+        let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
+        let mut event_ids_and_time: Vec<_> = event_ids
+            .iter()
+            .filter_map(|id| {
+                let redis_event_key = format!("meetup_event:{}", id);
+                let time: redis::RedisResult<String> =
+                    redis_connection.hget(&redis_event_key, "time");
+                match time {
+                    Ok(time) => match chrono::DateTime::parse_from_rfc3339(time.as_ref()) {
+                        Ok(time) => Some((id, time.with_timezone(&chrono::Utc))),
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            })
+            .collect();
+        // Sort by date
+        event_ids_and_time.sort_unstable_by_key(|(_id, time)| time.clone());
+        // Only look at future events (or the last one, if there is none in the future)
+        let now = chrono::Utc::now();
+        let future_event_idx = event_ids_and_time
+            .iter()
+            .position(|(_id, time)| time > &now);
+        let latest_event_ids_and_time = match future_event_idx {
+            Some(idx) => &event_ids_and_time[idx..],
+            None => {
+                if event_ids_and_time.is_empty() {
+                    let _ = msg.channel_id.say(ctx, "There are no events");
+                    return Ok(());
+                } else {
+                    &event_ids_and_time[event_ids_and_time.len() - 1..]
+                }
+            }
+        };
+        let latest_event_id_refs: Vec<_> = latest_event_ids_and_time
+            .iter()
+            .map(|(id, _time)| id.as_ref())
+            .collect();
+        // Now, look up all participants of those events
+        let meetup_player_ids = lib::redis::get_events_participants(
+            &latest_event_id_refs,
+            /*hosts*/ false,
+            &mut redis_connection,
+        )?;
+
+        // Look up all Discord users that have the player role
+        // TODO: check whether this returns offline members
+        let discord_player_ids: Vec<_> = if let Some(channel::Channel::Guild(channel)) =
+            msg.channel(&ctx)
+        {
+            let members = channel.read().members(&ctx)?;
+            members
+                .iter()
+                .filter_map(|member| {
+                    let user = member.user.read();
+                    match user.has_role(ctx, lib::discord::sync::ids::GUILD_ID, channel_roles.user)
+                    {
+                        Ok(has_role) => {
+                            if has_role {
+                                Some(user.id)
+                            } else {
+                                None
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "Error when trying to check whether user has role:\n{:#?}",
+                                err
+                            );
+                            None
+                        }
+                    }
+                })
+                .collect()
+        } else {
+            return Ok(());
+        };
+
+        // Four categories of users:
+        // - Meetup ID (with Discord ID) [The following Discord users signed up for this event on Meetup (in channel? yes / no)]
+        // - Only Meetup ID [The following people are signed up for this event on Meetup but are not linked to a Discord user]
+        // - Discord ID (with Meetup ID) (except for the ones that already fall into the first category)
+        //   [The following Discord users are in this channel but did not sign up for this event on Meetup]
+        // - Only Discord ID
+        //   If there is no Meetup ID without mapping, use text from third category, otherwise use:
+        //   [The following Discord users are in this channel but are not linked to a Meetup account. I cannot
+        //   tell whether they signed up for this event on Meetup or not]
+
+        // Create lists for all four categories
+        let mut meetup_id_with_discord_id = HashMap::with_capacity(meetup_player_ids.len());
+        let mut meetup_id_only = Vec::with_capacity(meetup_player_ids.len());
+        let mut discord_id_with_meetup_id = HashMap::with_capacity(discord_player_ids.len());
+        let mut discord_id_only = Vec::with_capacity(discord_player_ids.len());
+
+        for &meetup_id in &meetup_player_ids {
+            let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
+            let discord_id: Option<u64> = redis_connection.get(&redis_meetup_discord_key)?;
+            match discord_id {
+                Some(discord_id) => {
+                    // Falls into the first category
+                    meetup_id_with_discord_id.insert(meetup_id, UserId(discord_id));
+                }
+                None => {
+                    // Falls into the second category
+                    meetup_id_only.push(meetup_id);
+                }
+            }
+        }
+        for &discord_id in &discord_player_ids {
+            let redis_discord_meetup_key = format!("discord_user:{}:meetup_user", discord_id);
+            let meetup_id: Option<u64> = redis_connection.get(&redis_discord_meetup_key)?;
+            match meetup_id {
+                Some(meetup_id) => {
+                    // Check whether this meetup ID is already in the first category
+                    if meetup_id_with_discord_id.contains_key(&meetup_id) {
+                        continue;
+                    }
+                    // Falls into the third category
+                    discord_id_with_meetup_id.insert(discord_id, meetup_id);
+                }
+                None => {
+                    // Falls into the fourth category
+                    discord_id_only.push(discord_id);
+                }
+            }
+        }
+
+        // Construct the answer
+        let mut reply = "**Note:** *this data might be a few minutes out of date. It is refreshed \
+                         several times per hour.*\n\n"
+            .to_string();
+
+        if !meetup_id_with_discord_id.is_empty() {
+            reply += "The following Discord users signed up for an upcoming event on Meetup:\n";
+            for (&meetup_id, &discord_id) in &meetup_id_with_discord_id {
+                let is_in_channel = discord_player_ids.contains(&discord_id);
+                reply += &format!(
+                    "• <@{discord_id}> (<https://www.meetup.com/members/{meetup_id}/>)\n",
+                    discord_id = discord_id.0,
+                    meetup_id = meetup_id
+                );
+                if is_in_channel {
+                    reply += " (in this channel ✅)\n";
+                } else {
+                    reply += " (not in this channel ❌)\n";
+                }
+            }
+            reply += "\n\n";
+        }
+
+        if !meetup_id_only.is_empty() {
+            reply += "The following people are signed up for an upcoming event on Meetup but are \
+                      not linked to a Discord user:\n";
+            for &meetup_id in &meetup_id_only {
+                reply += &format!(
+                    "• <https://www.meetup.com/members/{meetup_id}/>\n",
+                    meetup_id = meetup_id
+                );
+            }
+            reply += "\n\n";
+        }
+
+        if !discord_id_with_meetup_id.is_empty()
+            || (!discord_id_only.is_empty() && meetup_id_only.is_empty())
+        {
+            reply += "The following Discord users are in this channel but did not sign up for an \
+                      upcoming event on Meetup:\n";
+            for (&discord_id, &meetup_id) in &discord_id_with_meetup_id {
+                reply += &format!(
+                    "• <@{discord_id}> (<https://www.meetup.com/members/{meetup_id}/>)\n",
+                    discord_id = discord_id.0,
+                    meetup_id = meetup_id
+                );
+            }
+            if meetup_id_only.is_empty() {
+                for &discord_id in &discord_id_only {
+                    reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
+                }
+            }
+            reply += "\n\n";
+        }
+
+        if !discord_id_only.is_empty() && !meetup_id_only.is_empty() {
+            reply += "The following Discord users are in this channel but are not linked to a \
+                      Meetup account. I cannot tell whether they signed up for an upcoming event \
+                      on Meetup or not:\n";
+            for &discord_id in &discord_id_only {
+                reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
+            }
+        }
+
+        let _ = msg.channel_id.say(ctx, &reply);
         Ok(())
     }
 }

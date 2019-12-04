@@ -205,12 +205,19 @@ fn sync_event_series(
         .into());
     }
     // Query the RSVPd guests and hosts
-    let meetup_guest_ids =
-        get_events_participants(&event_id_refs, /*hosts*/ false, redis_connection)?;
-    let meetup_host_ids =
-        get_events_participants(&event_id_refs, /*hosts*/ true, redis_connection)?;
-    let discord_guest_ids = meetup_to_discord_ids(&meetup_guest_ids, redis_connection)?;
-    let discord_host_ids = meetup_to_discord_ids(&meetup_host_ids, redis_connection)?;
+    let meetup_guest_ids = crate::redis::get_events_participants(
+        &event_id_refs,
+        /*hosts*/ false,
+        redis_connection,
+    )?;
+    let meetup_host_ids = crate::redis::get_events_participants(
+        &event_id_refs,
+        /*hosts*/ true,
+        redis_connection,
+    )?;
+    let discord_guest_ids =
+        crate::redis::meetup_to_discord_ids(&meetup_guest_ids, redis_connection)?;
+    let discord_host_ids = crate::redis::meetup_to_discord_ids(&meetup_host_ids, redis_connection)?;
     // Filter the None values
     let discord_guest_ids: Vec<_> = discord_guest_ids
         .into_iter()
@@ -710,52 +717,6 @@ fn sync_channel_permissions(
         channel_id.create_permission(discord_api.http(), permission_overwrite)?;
     }
     Ok(())
-}
-
-// Return a list of Meetup IDs of all participants of the specified events.
-// If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
-fn get_events_participants(
-    event_ids: &[&str],
-    hosts: bool,
-    redis_connection: &mut redis::Connection,
-) -> Result<Vec<u64>, crate::meetup::Error> {
-    // Find all Meetup users RSVP'd to the specified events
-    let redis_event_users_keys: Vec<_> = event_ids
-        .iter()
-        .map(|event_id| {
-            if hosts {
-                format!("meetup_event:{}:meetup_hosts", event_id)
-            } else {
-                format!("meetup_event:{}:meetup_users", event_id)
-            }
-        })
-        .collect();
-    let (meetup_user_ids,): (Vec<u64>,) = redis::pipe()
-        .sunion(redis_event_users_keys)
-        .query(redis_connection)?;
-    Ok(meetup_user_ids)
-}
-
-// Try to translate Meetup user IDs to Discord user IDs. Returns mappings from
-// the Meetup ID to a Discord ID or None if the user is not linked. The order of
-// the mapping is the same as the input order.
-fn meetup_to_discord_ids(
-    meetup_user_ids: &[u64],
-    redis_connection: &mut redis::Connection,
-) -> Result<Vec<(u64, Option<u64>)>, crate::meetup::Error> {
-    // Try to associate the RSVP'd Meetup users with Discord users
-    let discord_user_ids: Result<Vec<Option<u64>>, _> = meetup_user_ids
-        .iter()
-        .map(|meetup_id| {
-            let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
-            redis_connection.get(&redis_meetup_discord_key)
-        })
-        .collect();
-    Ok(meetup_user_ids
-        .iter()
-        .cloned()
-        .zip(discord_user_ids?.into_iter())
-        .collect())
 }
 
 fn sync_user_role_assignments(

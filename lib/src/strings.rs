@@ -60,7 +60,9 @@ pub fn HELP_MESSAGE_GM_EMBED_CONTENT(bot_id: u64) -> String {
          channel.\n:white_small_square: **<@{bot_id}> end adventure** - sets the channel for \
          closure at the end of an adventure. The channel won't be deleted immediately but within \
          24 hours.\n:white_small_square: **<@{bot_id}> schedule session** - allows you to \
-         schedule a new session for your adventure.",
+         schedule a new session for your adventure.\n:white_small_square: **<@{bot_id}> list \
+         players** - shows information about people in this channel and people signed up for this \
+         channel's events on Meetup.",
         bot_id = bot_id
     )
 }

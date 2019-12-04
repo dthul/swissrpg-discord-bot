@@ -749,6 +749,17 @@ impl EventHandler for Handler {
                 };
                 Self::whois_by_meetup_id(&ctx, &msg, meetup_id, redis_client)
             }
+        } else if regexes.list_players_mention.is_match(&msg.content) {
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            if let Err(err) = Self::list_players(&ctx, &msg, redis_client) {
+                eprintln!("Error in `list players` command:\n{:#?}", err);
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
         } else {
             let _ = msg
                 .channel_id

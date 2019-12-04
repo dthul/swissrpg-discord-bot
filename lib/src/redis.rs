@@ -1,5 +1,5 @@
 use futures_util::compat::Future01CompatExt;
-use redis::PipelineCommands;
+use redis::{Commands, PipelineCommands};
 use std::future::Future;
 
 // A direct translation of redis::transaction for the async case
@@ -76,4 +76,50 @@ pub async fn delete_event(
     };
     let (_, ()) = async_redis_transaction(con, &keys_to_watch, transaction_fn).await?;
     Ok(())
+}
+
+// Return a list of Meetup IDs of all participants of the specified events.
+// If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
+pub fn get_events_participants(
+    event_ids: &[&str],
+    hosts: bool,
+    redis_connection: &mut redis::Connection,
+) -> Result<Vec<u64>, crate::meetup::Error> {
+    // Find all Meetup users RSVP'd to the specified events
+    let redis_event_users_keys: Vec<_> = event_ids
+        .iter()
+        .map(|event_id| {
+            if hosts {
+                format!("meetup_event:{}:meetup_hosts", event_id)
+            } else {
+                format!("meetup_event:{}:meetup_users", event_id)
+            }
+        })
+        .collect();
+    let (meetup_user_ids,): (Vec<u64>,) = redis::pipe()
+        .sunion(redis_event_users_keys)
+        .query(redis_connection)?;
+    Ok(meetup_user_ids)
+}
+
+// Try to translate Meetup user IDs to Discord user IDs. Returns mappings from
+// the Meetup ID to a Discord ID or None if the user is not linked. The order of
+// the mapping is the same as the input order.
+pub fn meetup_to_discord_ids(
+    meetup_user_ids: &[u64],
+    redis_connection: &mut redis::Connection,
+) -> Result<Vec<(u64, Option<u64>)>, crate::meetup::Error> {
+    // Try to associate the RSVP'd Meetup users with Discord users
+    let discord_user_ids: Result<Vec<Option<u64>>, _> = meetup_user_ids
+        .iter()
+        .map(|meetup_id| {
+            let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
+            redis_connection.get(&redis_meetup_discord_key)
+        })
+        .collect();
+    Ok(meetup_user_ids
+        .iter()
+        .cloned()
+        .zip(discord_user_ids?.into_iter())
+        .collect())
 }
