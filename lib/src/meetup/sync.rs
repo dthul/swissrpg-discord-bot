@@ -405,8 +405,12 @@ pub async fn sync_rsvps(
     let redis_event_users_key = format!("meetup_event:{}:meetup_users", event_id);
     let con = redis_client.get_async_connection().compat().await?;
     let mut pipe = redis::pipe();
-    pipe.sadd(&redis_event_users_key, rsvp_yes_user_ids)
-        .srem(&redis_event_users_key, rsvp_no_user_ids);
+    if rsvp_yes_user_ids.len() > 0 {
+        pipe.sadd(&redis_event_users_key, rsvp_yes_user_ids);
+    }
+    if rsvp_no_user_ids.len() > 0 {
+        pipe.srem(&redis_event_users_key, rsvp_no_user_ids);
+    }
     let _: (_, ()) = pipe.query_async(con).compat().await?;
     Ok(())
 }
