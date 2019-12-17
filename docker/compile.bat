@@ -1,3 +1,4 @@
+:: docker create -it --volume C:\Users\dthul\repos\discord-bot:/opt --name=swissrpg-compile-container swissrpg-bot
 :: Start the container
 docker start swissrpg-compile-container
 :: Run the build command inside of the container
