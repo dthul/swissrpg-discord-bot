@@ -34,6 +34,8 @@ pub fn create_discord_client(
         .http
         .get_current_user()
         .map(|info| (info.id, info.name))?;
+    println!("Bot ID: {}", bot_id.0);
+    println!("Bot name: {}", &bot_name);
 
     // pre-compile the regexes
     let regexes = super::bot_commands::compile_regexes(bot_id.0, &bot_name);
@@ -761,6 +763,7 @@ impl EventHandler for Handler {
                 let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
             }
         } else {
+            eprintln!("Unrecognized command: {}", &msg.content);
             let _ = msg
                 .channel_id
                 .say(&ctx.http, strings::INVALID_COMMAND(bot_id.0));

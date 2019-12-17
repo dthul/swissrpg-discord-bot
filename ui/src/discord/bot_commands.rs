@@ -104,7 +104,7 @@ impl Regexes {
 
 pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
     let bot_mention = format!(
-        r"(?:<@{bot_id}>|@{bot_name})",
+        r"(?:<@!?{bot_id}>|@{bot_name})",
         bot_id = bot_id,
         bot_name = bot_name
     );
