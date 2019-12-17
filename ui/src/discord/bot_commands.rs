@@ -106,7 +106,7 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
     let bot_mention = format!(
         r"(?:<@!?{bot_id}>|@{bot_name})",
         bot_id = bot_id,
-        bot_name = bot_name
+        bot_name = regex::escape(bot_name)
     );
     let link_meetup_dm = r"^(?i)link[ -]?meetup\s*$";
     let link_meetup_mention = format!(
