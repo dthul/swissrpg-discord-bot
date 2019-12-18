@@ -11,7 +11,6 @@ use serenity::{
     prelude::*,
 };
 use std::{sync::Arc, time::Duration};
-use tokio::prelude::*;
 
 pub fn create_discord_client(
     discord_token: &str,
@@ -285,14 +284,17 @@ impl EventHandler for Handler {
                 (async_meetup_client, redis_client, future_spawner)
             };
             let sync_task = Box::new(
-                lib::meetup::sync::sync_task(async_meetup_client, redis_client)
-                    .unwrap_or_else(|err| {
-                        eprintln!("Syncing task failed: {}", err);
-                    })
-                    .timeout(Duration::from_secs(60))
-                    .unwrap_or_else(|err| {
-                        eprintln!("Syncing task timed out: {}", err);
-                    }),
+                tokio::time::timeout(
+                    Duration::from_secs(60),
+                    lib::meetup::sync::sync_task(async_meetup_client, redis_client).unwrap_or_else(
+                        |err| {
+                            eprintln!("Syncing task failed: {}", err);
+                        },
+                    ),
+                )
+                .unwrap_or_else(|err| {
+                    eprintln!("Syncing task timed out: {}", err);
+                }),
             );
             // Send the syncing future to the executor
             match future_spawner.try_send(sync_task) {
@@ -342,7 +344,8 @@ impl EventHandler for Handler {
                 (redis_client, bot_id, task_scheduler)
             };
             // Send the syncing task to the scheduler
-            let mut task_scheduler_guard = lib::ASYNC_RUNTIME.block_on(task_scheduler.lock());
+            let mut task_scheduler_guard =
+                lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(task_scheduler.lock()));
             task_scheduler_guard.add_task_datetime(
                 white_rabbit::Utc::now(),
                 lib::discord::sync::create_sync_discord_task(
@@ -390,7 +393,8 @@ impl EventHandler for Handler {
                 (redis_client, bot_id, task_scheduler)
             };
             // Send the syncing task to the scheduler
-            let mut task_scheduler_guard = lib::ASYNC_RUNTIME.block_on(task_scheduler.lock());
+            let mut task_scheduler_guard =
+                lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(task_scheduler.lock()));
             task_scheduler_guard.add_task_datetime(
                 white_rabbit::Utc::now(),
                 lib::tasks::end_of_game::create_end_of_game_task(

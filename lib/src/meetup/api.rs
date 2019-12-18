@@ -238,7 +238,7 @@ impl AsyncClient {
             format!("Bearer {}", access_token).parse().unwrap(),
         );
         AsyncClient {
-            client: reqwest::r#async::Client::builder()
+            client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()
                 .expect("Could not initialize the reqwest client"),
@@ -465,7 +465,7 @@ impl AsyncClient {
     }
 
     async fn try_deserialize<T: serde::de::DeserializeOwned>(
-        response: reqwest::r#async::Response,
+        response: reqwest::Response,
     ) -> Result<T, Error> {
         let text = response.text().await?;
         let value: T = serde_json::from_str(&text).map_err(|err| Error::Serde {

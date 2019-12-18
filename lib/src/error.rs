@@ -8,7 +8,7 @@ use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
 use std::num::ParseIntError;
-use tokio::timer::Error as TokioTimerError;
+use tokio::time::Error as TokioTimerError;
 use url::ParseError as UrlParseError;
 
 #[derive(Debug)]

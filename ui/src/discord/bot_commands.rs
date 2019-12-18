@@ -292,18 +292,20 @@ impl super::bot::Handler {
             // None = Meetup API unavailable
             // Some(None) = Meetup API available but no user found
             // Some(Some(user)) = User found
-            let meetup_user = lib::ASYNC_RUNTIME.block_on(async {
-                let meetup_client = meetup_client_mutex.lock().await.clone();
-                match meetup_client {
-                    None => Ok::<_, lib::meetup::Error>(None),
-                    Some(meetup_client) => match meetup_client
-                        .get_member_profile(Some(linked_meetup_id))
-                        .await?
-                    {
-                        None => Ok(Some(None)),
-                        Some(user) => Ok(Some(Some(user))),
-                    },
-                }
+            let meetup_user = lib::ASYNC_RUNTIME.enter(|| {
+                futures::executor::block_on(async {
+                    let meetup_client = meetup_client_mutex.lock().await.clone();
+                    match meetup_client {
+                        None => Ok::<_, lib::meetup::Error>(None),
+                        Some(meetup_client) => match meetup_client
+                            .get_member_profile(Some(linked_meetup_id))
+                            .await?
+                        {
+                            None => Ok(Some(None)),
+                            Some(user) => Ok(Some(Some(user))),
+                        },
+                    }
+                })
             })?;
             match meetup_user {
                 Some(meetup_user) => match meetup_user {
@@ -333,9 +335,11 @@ impl super::bot::Handler {
             return Ok(());
         }
         // TODO: creates a new Redis connection. Not optimal...
-        let (_, url) = lib::ASYNC_RUNTIME.block_on(async {
-            let redis_connection = redis_client.get_async_connection().compat().await?;
-            lib::meetup::oauth2::generate_meetup_linking_link(redis_connection, user_id).await
+        let (_, url) = lib::ASYNC_RUNTIME.enter(|| {
+            futures::executor::block_on(async {
+                let redis_connection = redis_client.get_async_connection().compat().await?;
+                lib::meetup::oauth2::generate_meetup_linking_link(redis_connection, user_id).await
+            })
         })?;
         let dm = msg.author.direct_message(ctx, |message| {
             message.content(strings::MEETUP_LINKING_MESSAGE(&url))
@@ -423,19 +427,21 @@ impl super::bot::Handler {
         }
         // The user has not yet linked their meetup account.
         // Test whether the specified Meetup user actually exists.
-        let meetup_user = lib::ASYNC_RUNTIME.block_on(async {
-            let meetup_client = meetup_client_mutex.lock().await.clone();
-            match meetup_client {
-                None => {
-                    return Err(lib::meetup::Error::from(SimpleError::new(
-                        "Meetup API unavailable",
-                    )))
+        let meetup_user = lib::ASYNC_RUNTIME.enter(|| {
+            futures::executor::block_on(async {
+                let meetup_client = meetup_client_mutex.lock().await.clone();
+                match meetup_client {
+                    None => {
+                        return Err(lib::meetup::Error::from(SimpleError::new(
+                            "Meetup API unavailable",
+                        )))
+                    }
+                    Some(meetup_client) => meetup_client
+                        .get_member_profile(Some(meetup_id))
+                        .await
+                        .map_err(Into::into),
                 }
-                Some(meetup_client) => meetup_client
-                    .get_member_profile(Some(meetup_id))
-                    .await
-                    .map_err(Into::into),
-            }
+            })
         })?;
         match meetup_user {
             None => {
@@ -876,10 +882,12 @@ impl super::bot::Handler {
                 return;
             }
         };
-        let res = lib::ASYNC_RUNTIME.block_on(oauth2_consumer.refresh_oauth_tokens(
-            lib::meetup::oauth2::TokenType::User(meetup_id),
-            &mut redis_client,
-        ));
+        let res = lib::ASYNC_RUNTIME.enter(|| {
+            futures::executor::block_on(oauth2_consumer.refresh_oauth_tokens(
+                lib::meetup::oauth2::TokenType::User(meetup_id),
+                &mut redis_client,
+            ))
+        });
         match res {
             Ok(_) => {
                 let _ = msg.react(ctx, "\u{2705}");
@@ -951,7 +959,7 @@ impl super::bot::Handler {
             }
             Ok(new_event)
         };
-        match lib::ASYNC_RUNTIME.block_on(future) {
+        match lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(future)) {
             Ok(new_event) => {
                 let _ = msg.react(ctx, "\u{2705}");
                 let _ = msg.channel_id.say(
@@ -1003,13 +1011,15 @@ impl super::bot::Handler {
             }
         };
         // Try to RSVP the user
-        match lib::ASYNC_RUNTIME.block_on(lib::meetup::util::rsvp_user_to_event(
-            meetup_id,
-            urlname,
-            meetup_event_id,
-            &mut redis_client,
-            oauth2_consumer.as_ref(),
-        )) {
+        match lib::ASYNC_RUNTIME.enter(|| {
+            futures::executor::block_on(lib::meetup::util::rsvp_user_to_event(
+                meetup_id,
+                urlname,
+                meetup_event_id,
+                &mut redis_client,
+                oauth2_consumer.as_ref(),
+            ))
+        }) {
             Ok(rsvp) => {
                 let _ = msg.react(ctx, "\u{2705}");
                 println!(

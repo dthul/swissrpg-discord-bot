@@ -518,7 +518,7 @@ fn sync_channel(
                     if let serenity::http::HttpError::UnsuccessfulRequest(response) =
                         http_err.as_ref()
                     {
-                        if response.status_code == reqwest::StatusCode::NOT_FOUND {
+                        if response.status_code == http::StatusCode::NOT_FOUND {
                             false
                         } else {
                             return Err(err.into());

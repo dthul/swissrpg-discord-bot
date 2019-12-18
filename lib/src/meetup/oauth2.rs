@@ -1,11 +1,11 @@
 use futures_util::{compat::Future01CompatExt, lock::Mutex};
 use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenResponse, TokenUrl,
+    basic::BasicClient, AsyncRefreshTokenRequest, AuthUrl, ClientId, ClientSecret, RedirectUrl,
+    TokenResponse, TokenUrl,
 };
 use redis::PipelineCommands;
 use simple_error::SimpleError;
 use std::sync::Arc;
-use url::Url;
 
 // TODO: move into flow?
 pub async fn generate_meetup_linking_link(
@@ -43,11 +43,14 @@ pub struct OAuth2Consumer {
 }
 
 impl OAuth2Consumer {
-    pub fn new(meetup_client_id: String, meetup_client_secret: String) -> Self {
+    pub fn new(
+        meetup_client_id: String,
+        meetup_client_secret: String,
+    ) -> Result<Self, crate::BoxedError> {
         let meetup_client_id = ClientId::new(meetup_client_id);
         let meetup_client_secret = ClientSecret::new(meetup_client_secret);
-        let auth_url = AuthUrl::new(Url::parse(crate::urls::MEETUP_OAUTH2_AUTH_URL).unwrap());
-        let token_url = TokenUrl::new(Url::parse(crate::urls::MEETUP_OAUTH2_TOKEN_URL).unwrap());
+        let auth_url = AuthUrl::new(crate::urls::MEETUP_OAUTH2_AUTH_URL.to_string())?;
+        let token_url = TokenUrl::new(crate::urls::MEETUP_OAUTH2_TOKEN_URL.to_string())?;
 
         // Set up the config for the Github OAuth2 process.
         let authorization_client = BasicClient::new(
@@ -57,21 +60,23 @@ impl OAuth2Consumer {
             Some(token_url),
         )
         .set_auth_type(oauth2::AuthType::RequestBody)
-        .set_redirect_url(RedirectUrl::new(
-            Url::parse(format!("{}/authorize/redirect", crate::urls::BASE_URL).as_str()).unwrap(),
-        ));
+        .set_redirect_url(RedirectUrl::new(format!(
+            "{}/authorize/redirect",
+            crate::urls::BASE_URL
+        ))?);
         let link_client = authorization_client
             .clone()
-            .set_redirect_url(RedirectUrl::new(
-                Url::parse(format!("{}/link/redirect", crate::urls::BASE_URL).as_str()).unwrap(),
-            ));
+            .set_redirect_url(RedirectUrl::new(format!(
+                "{}/link/redirect",
+                crate::urls::BASE_URL
+            ))?);
         let authorization_client = Arc::new(authorization_client);
         let link_client = Arc::new(link_client);
 
-        OAuth2Consumer {
+        Ok(OAuth2Consumer {
             authorization_client: authorization_client,
             link_client: link_client,
-        }
+        })
     }
 
     // TODO: move to tasks
@@ -86,14 +91,16 @@ impl OAuth2Consumer {
         let refresh_meetup_access_token_task =
             move |_context: &mut white_rabbit::Context| -> white_rabbit::DateResult {
                 // Try to refresh the organizer oauth tokens
-                let refresh_result = crate::ASYNC_RUNTIME.block_on(async {
-                    let redis_connection = redis_client.get_async_connection().compat().await?;
-                    refresh_oauth_tokens(
-                        TokenType::Organizer,
-                        oauth2_client.clone(),
-                        redis_connection,
-                    )
-                    .await
+                let refresh_result = crate::ASYNC_RUNTIME.enter(|| {
+                    futures::executor::block_on(async {
+                        let redis_connection = redis_client.get_async_connection().compat().await?;
+                        refresh_oauth_tokens(
+                            TokenType::Organizer,
+                            oauth2_client.clone(),
+                            redis_connection,
+                        )
+                        .await
+                    })
                 });
                 let (redis_connection, new_access_token) = match refresh_result {
                     Err(err) => {
@@ -105,8 +112,9 @@ impl OAuth2Consumer {
                     }
                     Ok(res) => res,
                 };
-                let mut async_meetup_guard =
-                    crate::ASYNC_RUNTIME.block_on(async { async_meetup_client.lock().await });
+                let mut async_meetup_guard = crate::ASYNC_RUNTIME.enter(|| {
+                    futures::executor::block_on(async { async_meetup_client.lock().await })
+                });
                 *async_meetup_guard = Some(Arc::new(super::api::AsyncClient::new(
                     new_access_token.secret(),
                 )));
@@ -118,13 +126,15 @@ impl OAuth2Consumer {
                     next_refresh.to_rfc3339()
                 );
                 // Store refresh date in Redis, ignore failures
-                let _: redis::RedisResult<(_, ())> = crate::ASYNC_RUNTIME.block_on(
-                    redis::cmd("SET")
-                        .arg("meetup_access_token_refresh_time")
-                        .arg(next_refresh.to_rfc3339())
-                        .query_async(redis_connection)
-                        .compat(),
-                );
+                let _: redis::RedisResult<(_, ())> = crate::ASYNC_RUNTIME.enter(|| {
+                    futures::executor::block_on(
+                        redis::cmd("SET")
+                            .arg("meetup_access_token_refresh_time")
+                            .arg(next_refresh.to_rfc3339())
+                            .query_async(redis_connection)
+                            .compat(),
+                    )
+                });
                 // Re-schedule this task
                 white_rabbit::DateResult::Repeat(next_refresh)
             };
@@ -190,7 +200,6 @@ pub async fn refresh_oauth_tokens(
     let refresh_token_response = oauth2_client
         .exchange_refresh_token(&refresh_token)
         .request_async(super::oauth2_async_http_client::async_http_client)
-        .compat()
         .await?;
     // Store the new tokens in Redis
     let mut pipe = redis::pipe();

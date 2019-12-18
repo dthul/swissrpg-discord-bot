@@ -48,10 +48,10 @@ fn main() {
     };
 
     // Create a Meetup OAuth2 consumer
-    let meetup_oauth2_consumer = Arc::new(lib::meetup::oauth2::OAuth2Consumer::new(
-        meetup_client_id,
-        meetup_client_secret,
-    ));
+    let meetup_oauth2_consumer = Arc::new(
+        lib::meetup::oauth2::OAuth2Consumer::new(meetup_client_id, meetup_client_secret)
+            .expect("Could not create a Meetup OAuth2 consumer"),
+    );
 
     // Create a task scheduler and schedule the refresh token task
     let task_scheduler = Arc::new(futures_util::lock::Mutex::new(
@@ -113,7 +113,8 @@ fn main() {
         Some(time) => time,
         None => white_rabbit::Utc::now(),
     };
-    let mut task_scheduler_guard = lib::ASYNC_RUNTIME.block_on(task_scheduler.lock());
+    let mut task_scheduler_guard =
+        lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(task_scheduler.lock()));
     task_scheduler_guard.add_task_datetime(
         next_refresh_time,
         meetup_oauth2_consumer
@@ -140,7 +141,8 @@ fn main() {
         }
         task_time
     };
-    let mut task_scheduler_guard = lib::ASYNC_RUNTIME.block_on(task_scheduler.lock());
+    let mut task_scheduler_guard =
+        lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(task_scheduler.lock()));
     task_scheduler_guard.add_task_datetime(next_end_of_game_task_time, end_of_game_task);
     drop(task_scheduler_guard);
 

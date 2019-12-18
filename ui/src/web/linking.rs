@@ -1,8 +1,11 @@
 use askama::Template;
 use cookie::Cookie;
-use futures_util::{compat::Future01CompatExt, lock::Mutex, try_future::TryFutureExt};
+use futures_util::{compat::Future01CompatExt, lock::Mutex, TryFutureExt};
 use hyper::Response;
-use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, RedirectUrl, Scope, TokenResponse};
+use oauth2::{
+    basic::BasicClient, AsyncCodeTokenRequest, AuthorizationCode, CsrfToken, RedirectUrl, Scope,
+    TokenResponse,
+};
 use redis::PipelineCommands;
 use serde::Deserialize;
 use std::{
@@ -12,7 +15,6 @@ use std::{
         Arc,
     },
 };
-use url::Url;
 use warp::Filter;
 
 #[derive(Deserialize)]
@@ -266,7 +268,6 @@ async fn handle_authorize_redirect(
     let token_res = oauth2_authorization_client
         .exchange_code(code)
         .request_async(lib::meetup::oauth2_async_http_client::async_http_client)
-        .compat()
         .await?;
     // Check that this token belongs to an organizer of all our Meetup groups
     let new_async_meetup_client =
@@ -351,28 +352,21 @@ async fn handle_link(
     let csrf_state = CsrfToken::new_random();
     let (_authorize_url_basic, csrf_state) = oauth2_link_client
         .clone()
-        .set_redirect_url(RedirectUrl::new(
-            Url::parse(
-                format!(
-                    "{}/link/{}/norsvp/redirect",
-                    lib::urls::BASE_URL,
-                    linking_id
-                )
-                .as_str(),
-            )
-            .unwrap(),
-        ))
+        .set_redirect_url(RedirectUrl::new(format!(
+            "{}/link/{}/norsvp/redirect",
+            lib::urls::BASE_URL,
+            linking_id
+        ))?)
         .authorize_url(|| csrf_state)
         .add_scope(Scope::new("basic".to_string()))
         .url();
     let (authorize_url_rsvp, csrf_state) = oauth2_link_client
         .clone()
-        .set_redirect_url(RedirectUrl::new(
-            Url::parse(
-                format!("{}/link/{}/rsvp/redirect", lib::urls::BASE_URL, linking_id).as_str(),
-            )
-            .unwrap(),
-        ))
+        .set_redirect_url(RedirectUrl::new(format!(
+            "{}/link/{}/rsvp/redirect",
+            lib::urls::BASE_URL,
+            linking_id
+        ))?)
         .authorize_url(|| csrf_state)
         .add_scope(Scope::new("basic".to_string()))
         .add_scope(Scope::new("rsvp".to_string()))
@@ -453,14 +447,12 @@ async fn handle_link_redirect(
     }
     // Exchange the code with a token.
     let code = AuthorizationCode::new(query.code);
-    let redirect_url =
-        RedirectUrl::new(Url::parse(format!("{}{}", lib::urls::BASE_URL, path).as_str()).unwrap());
+    let redirect_url = RedirectUrl::new(format!("{}{}", lib::urls::BASE_URL, path))?;
     let token_res = oauth2_link_client
         .clone()
         .set_redirect_url(redirect_url)
         .exchange_code(code)
         .request_async(lib::meetup::oauth2_async_http_client::async_http_client)
-        .compat()
         .await?;
     // Get the user's Meetup ID
     let async_user_meetup_client =

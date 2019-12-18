@@ -1,9 +1,8 @@
-use futures_util::{compat::Future01CompatExt, lock::Mutex};
+use futures_util::{compat::Future01CompatExt, lock::Mutex, stream::StreamExt};
 use lazy_static::lazy_static;
 use redis::{self, Commands, PipelineCommands};
 use simple_error::SimpleError;
 use std::sync::Arc;
-use tokio::{self, prelude::*};
 
 pub const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*adventure\s*[\]\)]";
 pub const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*campaign\s*[\]\)]";
@@ -62,7 +61,7 @@ pub async fn sync_task(
             _ => (),
         };
         // Add a 250ms delay between each item as a naive rate limit for the Meetup API
-        tokio::timer::delay_for(std::time::Duration::from_millis(250)).await;
+        tokio::time::delay_for(std::time::Duration::from_millis(250)).await;
     }
     Ok(())
 }
