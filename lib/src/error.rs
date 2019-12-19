@@ -8,7 +8,6 @@ use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
 use std::num::ParseIntError;
-use tokio::time::Error as TokioTimerError;
 use url::ParseError as UrlParseError;
 
 #[derive(Debug)]
@@ -99,15 +98,6 @@ impl From<ReqwestError> for BoxedError {
 
 impl From<HttpError> for BoxedError {
     fn from(err: HttpError) -> Self {
-        BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::new(),
-        }
-    }
-}
-
-impl From<TokioTimerError> for BoxedError {
-    fn from(err: TokioTimerError) -> Self {
         BoxedError {
             inner: Box::new(err),
             backtrace: Backtrace::new(),

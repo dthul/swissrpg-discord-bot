@@ -14,29 +14,10 @@ bottest = ["lib/bottest", "ui/bottest"]
 [dependencies]
 lib = { path = "../lib", package = "swissrpg-lib" }
 ui = { path = "../ui", package = "swissrpg-ui" }
-askama = "0.8"
-backtrace = "0.3"
-base64 = "0.10"
-chrono = "0.4"
-cookie = "0.12"
-failure = "0.1" # Just for oauth2 reqwest async client
-failure_derive = "0.1" # Just for oauth2 reqwest async client
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = { version = "0.3", features = ["compat"] }
-http = "0.1" # Just for oauth2 reqwest async client
-hyper = "0.13"
-itertools = "0.8"
-lazy_static = "1.4"
-oauth2 = { version = "3.0.0-alpha.7", default-features = false, features = ["futures-03"] }
-rand = "0.7"
 redis = "0.12"
-regex = "1"
-reqwest = { git = "https://github.com/seanmonstar/reqwest", rev = "f78846b6f15e82e60c8a83e7b3a7137e19f94884", features = ["blocking", "json"] }
-serde = "1.0"
-serde_json = "1.0"
 serenity = "0.7"
-simple-error = "0.2"
-time = "0.1"
 tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "time"] }
 white_rabbit = "0.1"

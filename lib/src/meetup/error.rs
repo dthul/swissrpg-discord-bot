@@ -7,7 +7,6 @@ use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
 use std::num::ParseIntError;
-use tokio::time::Error as TokioTimerError;
 use url::ParseError as UrlParseError;
 
 type RequestTokenError = oauth2::RequestTokenError<
@@ -94,12 +93,6 @@ impl From<ReqwestError> for Error {
 
 impl From<HttpError> for Error {
     fn from(err: HttpError) -> Self {
-        Error::CommonError(err.into())
-    }
-}
-
-impl From<TokioTimerError> for Error {
-    fn from(err: TokioTimerError) -> Self {
         Error::CommonError(err.into())
     }
 }
