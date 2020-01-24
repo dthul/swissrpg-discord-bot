@@ -158,14 +158,14 @@ fn main() {
         task_scheduler.clone(),
     );
 
-    lib::ASYNC_RUNTIME.spawn(
+    lib::ASYNC_RUNTIME.spawn(lib::ASYNC_RUNTIME.enter(|| {
         future::join3(
             meetup_oauth2_server,
             spawn_other_futures_future,
             syncing_task,
         )
-        .map(move |_| ()),
-    );
+        .map(move |_| ())
+    }));
 
     // Finally, start the Discord bot
     if let Err(why) = bot.start() {

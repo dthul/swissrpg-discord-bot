@@ -123,5 +123,6 @@ pub fn create_server(
     };
     #[cfg(not(feature = "bottest"))]
     let combined_routes = linking_routes.or(schedule_session_routes);
-    warp::serve(combined_routes).bind(addr)
+    let server = warp::serve(combined_routes);
+    async move { server.bind(addr).await }
 }
