@@ -10,7 +10,7 @@ pub async fn create_recurring_syncing_task(
     discord_api: lib::discord::CacheAndHttp,
     bot_id: UserId,
     task_scheduler: Arc<Mutex<white_rabbit::Scheduler>>,
-) {
+) -> ! {
     let mut interval_timer = tokio::time::interval_at(
         Instant::now() + Duration::from_secs(15 * 60),
         Duration::from_secs(15 * 60),

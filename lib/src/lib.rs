@@ -4,6 +4,7 @@ pub mod flow;
 pub mod meetup;
 pub mod redis;
 pub mod strings;
+pub mod stripe;
 pub mod tasks;
 pub mod urls;
 
@@ -13,6 +14,8 @@ use rand::Rng;
 
 lazy_static! {
     pub static ref ASYNC_RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new()
+        .enable_io()
+        .enable_time()
         .threaded_scheduler()
         .build()
         .expect("Could not create tokio runtime");

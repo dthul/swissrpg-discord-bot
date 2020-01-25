@@ -19,6 +19,7 @@ pub fn create_discord_client(
     task_scheduler: Arc<AsyncMutex<white_rabbit::Scheduler>>,
     futures_spawner: futures_channel::mpsc::Sender<lib::BoxedFuture<()>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
+    stripe_client: Arc<stripe::Client>,
 ) -> Result<Client, lib::meetup::Error> {
     let redis_connection = redis_client.get_connection()?;
 
@@ -51,6 +52,7 @@ pub fn create_discord_client(
         data.insert::<TaskSchedulerKey>(task_scheduler);
         data.insert::<FuturesSpawnerKey>(futures_spawner);
         data.insert::<OAuth2ConsumerKey>(oauth2_consumer);
+        data.insert::<StripeClientKey>(stripe_client);
     }
 
     Ok(client)
@@ -99,6 +101,11 @@ impl TypeMapKey for FuturesSpawnerKey {
 pub struct OAuth2ConsumerKey;
 impl TypeMapKey for OAuth2ConsumerKey {
     type Value = Arc<lib::meetup::oauth2::OAuth2Consumer>;
+}
+
+pub struct StripeClientKey;
+impl TypeMapKey for StripeClientKey {
+    type Value = Arc<stripe::Client>;
 }
 
 pub struct Handler;
@@ -766,6 +773,45 @@ impl EventHandler for Handler {
                 eprintln!("Error in `list players` command:\n{:#?}", err);
                 let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
             }
+        } else if regexes.list_stripe_subscriptions.is_match(&msg.content) {
+            let stripe_client = {
+                let data = ctx.data.read();
+                data.get::<StripeClientKey>()
+                    .expect("Stripe client was not set")
+                    .clone()
+            };
+            if let Err(err) = Self::list_subscriptions(&ctx, &msg, &stripe_client) {
+                eprintln!("Error in `list subscriptions` command:\n{:#?}", err);
+                let _ = msg.channel_id.say(&ctx.http, "Something went wrong");
+            }
+        } else if regexes.sync_stripe_subscriptions.is_match(&msg.content) {
+            // This is only for bot_admins
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    lib::discord::sync::ids::GUILD_ID,
+                    lib::discord::sync::ids::BOT_ADMIN_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return;
+            }
+            let stripe_client = {
+                let data = ctx.data.read();
+                data.get::<StripeClientKey>()
+                    .expect("Stripe client was not set")
+                    .clone()
+            };
+            let discord_api = lib::discord::CacheAndHttp {
+                cache: ctx.cache.clone(),
+                http: ctx.http.clone(),
+            };
+            lib::ASYNC_RUNTIME.spawn(async move {
+                lib::tasks::subscription_roles::update_roles(&discord_api, &stripe_client).await
+            });
+            let _ = msg.channel_id.say(&ctx.http, "Copy that");
         } else {
             eprintln!("Unrecognized command: {}", &msg.content);
             let _ = msg

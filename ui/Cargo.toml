@@ -22,7 +22,7 @@ futures-channel = "0.3"
 futures-util = { version = "0.3", features = ["compat"] }
 hyper = "0.13"
 num-traits = "0.2"
-oauth2 = { version = "3.0.0-alpha.7", default-features = false, features = ["futures-03"] }
+oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03"] }
 rand = "0.7"
 redis = "0.12"
 regex = "1"
@@ -30,7 +30,8 @@ serde = "1.0"
 serde_json = "1.0"
 serenity = "0.7"
 simple-error = "0.2"
+stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "dthul/list-fix", default-features = false, features = ["full", "webhook-events", "async"] }
 time = "0.1"
 tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "time"] }
-warp = { git = "https://github.com/seanmonstar/warp", rev = "b6cbcca0914cfb435ae19c1aab86c0ffa0316322" }
+warp = "0.2.1"
 white_rabbit = "0.1"

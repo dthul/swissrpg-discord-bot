@@ -24,17 +24,18 @@ http = "0.1" # Just for oauth2 reqwest async client
 hyper = "0.13"
 itertools = "0.8"
 lazy_static = "1.4"
-oauth2 = { version = "3.0.0-alpha.7", default-features = false, features = ["futures-03"] }
+oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03"] }
 rand = "0.7"
 redis = "0.12"
 regex = "1"
-reqwest = { git = "https://github.com/seanmonstar/reqwest", rev = "f78846b6f15e82e60c8a83e7b3a7137e19f94884", features = ["blocking", "json"] }
+reqwest = { version = "0.10", features = ["blocking", "json"] }
 serde = "1.0"
 serde_json = "1.0"
 serenity = "0.7"
 simple-error = "0.2"
+stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "dthul/list-fix", default-features = false, features = ["full", "webhook-events", "async"] }
 time = "0.1"
-tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "time"] }
+tokio = { version = "0.2", default-features = false, features = ["blocking", "rt-threaded", "time"] }
 url = "2.1"
-warp = { git = "https://github.com/seanmonstar/warp", rev = "b6cbcca0914cfb435ae19c1aab86c0ffa0316322" }
+warp = "0.2.1"
 white_rabbit = "0.1"

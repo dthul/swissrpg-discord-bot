@@ -8,6 +8,8 @@ use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
 use std::num::ParseIntError;
+use stripe::Error as StripeError;
+use tokio::task::JoinError;
 use url::ParseError as UrlParseError;
 
 #[derive(Debug)]
@@ -127,6 +129,26 @@ impl From<ParseIntError> for BoxedError {
     fn from(err: ParseIntError) -> Self {
         BoxedError {
             inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
+impl From<JoinError> for BoxedError {
+    fn from(err: JoinError) -> Self {
+        BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
+impl From<StripeError> for BoxedError {
+    fn from(err: StripeError) -> Self {
+        // TODO: stripe::Error is not Sync
+        let simple_error = SimpleError::new(format!("{:#?}", err));
+        BoxedError {
+            inner: Box::new(simple_error),
             backtrace: Backtrace::new(),
         }
     }

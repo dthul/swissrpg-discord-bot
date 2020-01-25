@@ -42,6 +42,8 @@ pub struct Regexes {
     pub whois_bot_admin_dm: Regex,
     pub whois_bot_admin_mention: Regex,
     pub list_players_mention: Regex,
+    pub list_stripe_subscriptions: Regex,
+    pub sync_stripe_subscriptions: Regex,
 }
 
 impl Regexes {
@@ -221,6 +223,14 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         r"^{bot_mention}\s+(?i)list\s+players\s*$",
         bot_mention = bot_mention,
     );
+    let list_stripe_subscriptions = format!(
+        r"^{bot_mention}\s+(?i)list\s+subscriptions\s*$",
+        bot_mention = bot_mention,
+    );
+    let sync_stripe_subscriptions = format!(
+        r"^{bot_mention}\s+(?i)sync\s+subscriptions\s*$",
+        bot_mention = bot_mention,
+    );
     Regexes {
         bot_mention: Regex::new(&format!("^{}", bot_mention)).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -254,6 +264,8 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         whois_bot_admin_dm: Regex::new(whois_bot_admin_dm.as_str()).unwrap(),
         whois_bot_admin_mention: Regex::new(whois_bot_admin_mention.as_str()).unwrap(),
         list_players_mention: Regex::new(list_players_mention.as_str()).unwrap(),
+        list_stripe_subscriptions: Regex::new(list_stripe_subscriptions.as_str()).unwrap(),
+        sync_stripe_subscriptions: Regex::new(sync_stripe_subscriptions.as_str()).unwrap(),
     }
 }
 
@@ -1427,6 +1439,81 @@ impl super::bot::Handler {
         }
 
         let _ = msg.channel_id.say(ctx, &reply);
+        Ok(())
+    }
+
+    pub fn list_subscriptions(
+        ctx: &Context,
+        msg: &Message,
+        stripe_client: &stripe::Client,
+    ) -> Result<(), lib::meetup::Error> {
+        // This is only for bot_admins
+        let is_bot_admin = msg
+            .author
+            .has_role(
+                ctx,
+                lib::discord::sync::ids::GUILD_ID,
+                lib::discord::sync::ids::BOT_ADMIN_ID,
+            )
+            .unwrap_or(false);
+        if !is_bot_admin {
+            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+            return Ok(());
+        }
+        let _ = msg.author.direct_message(ctx, |message_builder| {
+            message_builder.content("Sure! This might take a moment...")
+        });
+        let subscriptions = lib::ASYNC_RUNTIME.enter(|| {
+            futures::executor::block_on(lib::stripe::list_active_subscriptions(&stripe_client))
+        })?;
+        let mut message = String::new();
+        for subscription in &subscriptions {
+            // First, figure out which product was bought
+            // Subscription -> Plan -> Product
+            let product = match &subscription.plan {
+                Some(plan) => match &plan.product {
+                    Some(product) => match product {
+                        stripe::Expandable::Object(product) => Some(*product.clone()),
+                        stripe::Expandable::Id(product_id) => {
+                            let product = lib::ASYNC_RUNTIME.enter(|| {
+                                futures::executor::block_on(stripe::Product::retrieve(
+                                    stripe_client,
+                                    product_id,
+                                    &[],
+                                ))
+                            })?;
+                            Some(product)
+                        }
+                    },
+                    _ => None,
+                },
+                _ => None,
+            };
+            // Now, figure out who the customer is
+            let customer = match &subscription.customer {
+                stripe::Expandable::Object(customer) => *customer.clone(),
+                stripe::Expandable::Id(customer_id) => {
+                    let customer = lib::ASYNC_RUNTIME.enter(|| {
+                        futures::executor::block_on(stripe::Customer::retrieve(
+                            stripe_client,
+                            customer_id,
+                            &[],
+                        ))
+                    })?;
+                    customer
+                }
+            };
+            let discord_handle = customer.metadata.get("Discord");
+            message.push_str(&format!(
+                "Customer: {:?}, Discord: {:?}, Product: {:?}\n",
+                &customer.email,
+                discord_handle,
+                product.map(|p| p.name)
+            ));
+        }
+        let _ = msg.author.direct_message(ctx, |message_builder| {
+            message_builder.content(format!("Active subscriptions:\n{}", message))
+        });
         Ok(())
     }
 }

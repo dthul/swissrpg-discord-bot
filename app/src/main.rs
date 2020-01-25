@@ -24,6 +24,8 @@ fn main() {
     let meetup_client_secret =
         env::var("MEETUP_CLIENT_SECRET").expect("Found no MEETUP_CLIENT_SECRET in environment");
     let discord_token = env::var("DISCORD_TOKEN").expect("Found no DISCORD_TOKEN in environment");
+    let stripe_client_secret =
+        env::var("STRIPE_CLIENT_SECRET").expect("Found no STRIPE_CLIENT_SECRET in environment");
 
     // Connect to the local Redis server
     let redis_url = if cfg!(feature = "bottest") {
@@ -53,6 +55,14 @@ fn main() {
             .expect("Could not create a Meetup OAuth2 consumer"),
     );
 
+    // Create a Stripe client
+    let stripe_client = Arc::new(stripe::Client::new(&stripe_client_secret).with_headers(
+        stripe::Headers {
+            stripe_version: Some(stripe::ApiVersion::V2019_03_14),
+            ..Default::default()
+        },
+    ));
+
     // Create a task scheduler and schedule the refresh token task
     let task_scheduler = Arc::new(futures_util::lock::Mutex::new(
         white_rabbit::Scheduler::new(/*thread_count*/ 1),
@@ -72,6 +82,7 @@ fn main() {
         task_scheduler.clone(),
         tx,
         meetup_oauth2_consumer.clone(),
+        stripe_client.clone(),
     )
     .expect("Could not create the Discord bot");
     let discord_api = lib::discord::CacheAndHttp {

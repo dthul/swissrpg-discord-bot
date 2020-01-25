@@ -7,6 +7,8 @@ use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
 use std::num::ParseIntError;
+use stripe::Error as StripeError;
+use tokio::task::JoinError;
 use url::ParseError as UrlParseError;
 
 type RequestTokenError = oauth2::RequestTokenError<
@@ -111,6 +113,18 @@ impl From<RegexError> for Error {
 
 impl From<ParseIntError> for Error {
     fn from(err: ParseIntError) -> Self {
+        Error::CommonError(err.into())
+    }
+}
+
+impl From<StripeError> for Error {
+    fn from(err: stripe::Error) -> Self {
+        Error::CommonError(err.into())
+    }
+}
+
+impl From<JoinError> for Error {
+    fn from(err: JoinError) -> Self {
         Error::CommonError(err.into())
     }
 }
