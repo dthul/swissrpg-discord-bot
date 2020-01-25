@@ -328,7 +328,7 @@ fn delete_marked_channel(
             if let serenity::Error::Http(http_err) = &err {
                 if let serenity::http::HttpError::UnsuccessfulRequest(response) = http_err.as_ref()
                 {
-                    if response.status_code == http::StatusCode::NOT_FOUND {
+                    if response.status_code == serenity::http::StatusCode::NOT_FOUND {
                         false
                     } else {
                         return Err(err.into());
@@ -374,7 +374,7 @@ fn delete_role(
         // If something went wrong, check whether we should record this role as orphaned
         let role_is_orphaned = if let serenity::Error::Http(http_err) = &err {
             if let serenity::http::HttpError::UnsuccessfulRequest(response) = http_err.as_ref() {
-                if response.status_code == http::StatusCode::NOT_FOUND {
+                if response.status_code == serenity::http::StatusCode::NOT_FOUND {
                     false
                 } else {
                     true
