@@ -24,30 +24,31 @@ pub async fn create_recurring_syncing_task(
         let meetup_client = meetup_client.clone();
         let task_scheduler = task_scheduler.clone();
         lib::ASYNC_RUNTIME.spawn(async move {
-            let sync_result = tokio::time::timeout(
+            let mut redis_connection = redis_client.get_async_connection().await?;
+            tokio::time::timeout(
                 Duration::from_secs(360),
-                lib::meetup::sync::sync_task(meetup_client, redis_client.clone()).map_err(|err| {
+                lib::meetup::sync::sync_task(meetup_client, &mut redis_connection).map_err(|err| {
                     eprintln!("Syncing task failed: {}", err);
                     err
                 }),
             )
             .map_err(|err| {
                 eprintln!("Syncing task timed out: {}", err);
+                err
             })
-            .await;
-            if let Ok(Ok(_)) = sync_result {
-                // Send the Discord syncing task to the scheduler
-                let mut guard = task_scheduler.lock().await;
-                guard.add_task_datetime(
-                    white_rabbit::Utc::now(),
-                    lib::discord::sync::create_sync_discord_task(
-                        redis_client,
-                        discord_api,
-                        bot_id.0,
-                        /*recurring*/ false,
-                    ),
-                );
-            }
+            .await??;
+            // Send the Discord syncing task to the scheduler
+            let mut guard = task_scheduler.lock().await;
+            guard.add_task_datetime(
+                white_rabbit::Utc::now(),
+                lib::discord::sync::create_sync_discord_task(
+                    redis_client,
+                    discord_api,
+                    bot_id.0,
+                    /*recurring*/ false,
+                ),
+            );
+            Ok::<_, lib::BoxedError>(())
         });
     }
 }

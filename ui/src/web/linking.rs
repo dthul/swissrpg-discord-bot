@@ -1,20 +1,15 @@
 use askama::Template;
 use cookie::Cookie;
-use futures_util::{compat::Future01CompatExt, lock::Mutex, TryFutureExt};
+use futures_util::FutureExt;
+use futures_util::{lock::Mutex, TryFutureExt};
 use hyper::Response;
 use oauth2::{
     basic::BasicClient, AsyncCodeTokenRequest, AuthorizationCode, CsrfToken, RedirectUrl, Scope,
     TokenResponse,
 };
-use redis::PipelineCommands;
+use redis::AsyncCommands;
 use serde::Deserialize;
-use std::{
-    borrow::Cow,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{borrow::Cow, sync::Arc};
 use warp::Filter;
 
 #[derive(Deserialize)]
@@ -40,12 +35,11 @@ pub fn create_routes(
                 let redis_client = redis_client.clone();
                 let oauth2_consumer = oauth2_consumer.clone();
                 async move {
-                    let redis_connection = redis_client
+                    let mut redis_connection = redis_client
                         .get_async_connection()
-                        .compat()
                         .err_into::<lib::meetup::Error>()
                         .await?;
-                    handle_authorize(redis_connection, &oauth2_consumer.authorization_client)
+                    handle_authorize(&mut redis_connection, &oauth2_consumer.authorization_client)
                         .err_into::<warp::Rejection>()
                         .await
                 }
@@ -65,13 +59,12 @@ pub fn create_routes(
                 let oauth2_consumer = oauth2_consumer.clone();
                 let async_meetup_client = async_meetup_client.clone();
                 async move {
-                    let redis_connection = redis_client
+                    let mut redis_connection = redis_client
                         .get_async_connection()
-                        .compat()
                         .err_into::<lib::meetup::Error>()
                         .await?;
                     handle_authorize_redirect(
-                        redis_connection,
+                        &mut redis_connection,
                         &oauth2_consumer.authorization_client,
                         &async_meetup_client,
                         query,
@@ -92,14 +85,17 @@ pub fn create_routes(
                 let redis_client = redis_client.clone();
                 let oauth2_consumer = oauth2_consumer.clone();
                 async move {
-                    let redis_connection = redis_client
+                    let mut redis_connection = redis_client
                         .get_async_connection()
-                        .compat()
                         .err_into::<lib::meetup::Error>()
                         .await?;
-                    handle_link(redis_connection, &oauth2_consumer.link_client, &linking_id)
-                        .err_into::<warp::Rejection>()
-                        .await
+                    handle_link(
+                        &mut redis_connection,
+                        &oauth2_consumer.link_client,
+                        &linking_id,
+                    )
+                    .err_into::<warp::Rejection>()
+                    .await
                 }
             })
     };
@@ -130,13 +126,12 @@ pub fn create_routes(
                     let oauth2_consumer = oauth2_consumer.clone();
                     let bot_name = bot_name.clone();
                     async move {
-                        let redis_connection = redis_client
+                        let mut redis_connection = redis_client
                             .get_async_connection()
-                            .compat()
                             .err_into::<lib::meetup::Error>()
                             .await?;
                         handle_link_redirect(
-                            redis_connection,
+                            &mut redis_connection,
                             &oauth2_consumer.link_client,
                             &bot_name,
                             path.as_str(),
@@ -164,30 +159,27 @@ struct LinkingTemplate<'a> {
 }
 
 async fn generate_csrf_cookie(
-    redis_connection: redis::aio::Connection,
+    redis_connection: &mut redis::aio::Connection,
     csrf_state: &str,
-) -> Result<(redis::aio::Connection, Cookie<'static>), lib::meetup::Error> {
+) -> Result<Cookie<'static>, lib::meetup::Error> {
     let random_csrf_user_id = lib::new_random_id(16);
     let redis_csrf_key = format!("csrf:{}", &random_csrf_user_id);
-    let mut pipe = redis::pipe();
-    pipe.set_ex(&redis_csrf_key, csrf_state, 3600);
-    let (redis_connection, _): (_, ()) = pipe.query_async(redis_connection).compat().await?;
-    Ok((
-        redis_connection,
-        Cookie::build("csrf_user_id", random_csrf_user_id)
-            .domain(lib::urls::DOMAIN)
-            .http_only(true)
-            .same_site(cookie::SameSite::Lax)
-            .max_age(time::Duration::hours(1))
-            .finish(),
-    ))
+    let _: () = redis_connection
+        .set_ex(&redis_csrf_key, csrf_state, 3600)
+        .await?;
+    Ok(Cookie::build("csrf_user_id", random_csrf_user_id)
+        .domain(lib::urls::DOMAIN)
+        .http_only(true)
+        .same_site(cookie::SameSite::Lax)
+        .max_age(time::Duration::hours(1))
+        .finish())
 }
 
 async fn check_csrf_cookie(
-    redis_connection: redis::aio::Connection,
+    redis_connection: &mut redis::aio::Connection,
     headers: &hyper::HeaderMap<hyper::header::HeaderValue>,
     csrf_state: &str,
-) -> Result<(redis::aio::Connection, bool), lib::meetup::Error> {
+) -> Result<bool, lib::meetup::Error> {
     let csrf_user_id_cookie =
         headers
             .get_all(hyper::header::COOKIE)
@@ -203,23 +195,20 @@ async fn check_csrf_cookie(
                 None
             });
     let csrf_user_id_cookie = match csrf_user_id_cookie {
-        None => return Ok((redis_connection, false)),
+        None => return Ok(false),
         Some(csrf_user_id_cookie) => csrf_user_id_cookie,
     };
     let redis_csrf_key = format!("csrf:{}", csrf_user_id_cookie.value());
-    let mut pipe = redis::pipe();
-    pipe.get(&redis_csrf_key);
-    let (redis_connection, (csrf_stored_state,)): (_, (Option<String>,)) =
-        pipe.query_async(redis_connection).compat().await?;
+    let csrf_stored_state: Option<String> = redis_connection.get(&redis_csrf_key).await?;
     let csrf_stored_state: String = match csrf_stored_state {
-        None => return Ok((redis_connection, false)),
+        None => return Ok(false),
         Some(csrf_stored_state) => csrf_stored_state,
     };
-    Ok((redis_connection, csrf_state == csrf_stored_state))
+    Ok(csrf_state == csrf_stored_state)
 }
 
 async fn handle_authorize(
-    redis_connection: redis::aio::Connection,
+    redis_connection: &mut redis::aio::Connection,
     oauth2_authorization_client: &BasicClient,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
     // Generate the authorization URL to which we'll redirect the user.
@@ -231,8 +220,7 @@ async fn handle_authorize(
         .url();
     // Store the generated CSRF token so we can compare it to the one
     // returned by Meetup later
-    let (_redis_connection, csrf_cookie) =
-        generate_csrf_cookie(redis_connection, csrf_state.secret()).await?;
+    let csrf_cookie = generate_csrf_cookie(redis_connection, csrf_state.secret()).await?;
     let html_body = format!("<a href=\"{}\">Login with Meetup</a>", authorize_url);
     Response::builder()
         .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
@@ -242,7 +230,7 @@ async fn handle_authorize(
 }
 
 async fn handle_authorize_redirect(
-    redis_connection: redis::aio::Connection,
+    redis_connection: &mut redis::aio::Connection,
     oauth2_authorization_client: &BasicClient,
     async_meetup_client: &Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
     query: LinkQuery,
@@ -253,8 +241,7 @@ async fn handle_authorize_redirect(
     }
     // Compare the CSRF state that was returned by Meetup to the one
     // we have saved
-    let (redis_connection, csrf_is_valid) =
-        check_csrf_cookie(redis_connection, headers, &query.state).await?;
+    let csrf_is_valid = check_csrf_cookie(redis_connection, headers, &query.state).await?;
     if !csrf_is_valid {
         return Ok((
             "CSRF check failed",
@@ -297,25 +284,29 @@ async fn handle_authorize_redirect(
     }
     // Store the new access and refresh tokens in Redis
     let transaction_fn = {
-        let token_res = &token_res;
-        move |con: redis::aio::Connection, mut pipe: redis::Pipeline| {
-            async move {
-                match token_res.refresh_token() {
-                    Some(refresh_token) => {
-                        pipe.set("meetup_access_token", token_res.access_token().secret())
-                            .set("meetup_refresh_token", refresh_token.secret());
-                        pipe.query_async(con).compat().await
-                    }
-                    None => {
-                        // Don't delete the (possibly existing) old refresh token
-                        pipe.set("meetup_access_token", token_res.access_token().secret());
-                        pipe.query_async(con).compat().await
+        // let token_res = &token_res;
+        lib::redis::closure_type_helper(
+            move |con: &mut redis::aio::Connection, mut pipe: redis::Pipeline| {
+                let token_res = token_res.clone();
+                async move {
+                    match token_res.refresh_token() {
+                        Some(refresh_token) => {
+                            pipe.set("meetup_access_token", token_res.access_token().secret())
+                                .set("meetup_refresh_token", refresh_token.secret());
+                            pipe.query_async(con).await
+                        }
+                        None => {
+                            // Don't delete the (possibly existing) old refresh token
+                            pipe.set("meetup_access_token", token_res.access_token().secret());
+                            pipe.query_async(con).await
+                        }
                     }
                 }
-            }
-        }
+                .boxed()
+            },
+        )
     };
-    let (_redis_connection, _): (_, ()) = lib::redis::async_redis_transaction(
+    let _: () = lib::redis::async_redis_transaction(
         redis_connection,
         &["meetup_access_token", "meetup_refresh_token"],
         transaction_fn,
@@ -327,7 +318,7 @@ async fn handle_authorize_redirect(
 }
 
 async fn handle_link(
-    redis_connection: redis::aio::Connection,
+    redis_connection: &mut redis::aio::Connection,
     oauth2_link_client: &BasicClient,
     linking_id: &str,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
@@ -336,8 +327,7 @@ async fn handle_link(
     let redis_key = format!("meetup_linking:{}:discord_user", linking_id);
     let mut pipe = redis::pipe();
     pipe.expire(&redis_key, 600).ignore().get(&redis_key);
-    let (redis_connection, (discord_id,)): (_, (Option<u64>,)) =
-        pipe.query_async(redis_connection).compat().await?;
+    let (discord_id,): (Option<u64>,) = pipe.query_async(redis_connection).await?;
     if discord_id.is_none() {
         return Ok((
             lib::strings::OAUTH2_LINK_EXPIRED_TITLE,
@@ -373,8 +363,7 @@ async fn handle_link(
         .url();
     // Store the generated CSRF token so we can compare it to the one
     // returned by Meetup later
-    let (_redis_connection, csrf_cookie) =
-        generate_csrf_cookie(redis_connection, csrf_state.secret()).await?;
+    let csrf_cookie = generate_csrf_cookie(redis_connection, csrf_state.secret()).await?;
     let linking_template = LinkingTemplate {
         authorize_url: authorize_url_rsvp.as_str(),
     };
@@ -386,7 +375,7 @@ async fn handle_link(
 }
 
 async fn handle_link_redirect(
-    redis_connection: redis::aio::Connection,
+    redis_connection: &mut redis::aio::Connection,
     oauth2_link_client: &BasicClient,
     bot_name: &str,
     path: &str,
@@ -401,8 +390,7 @@ async fn handle_link_redirect(
     // This is a one-time use link. Expire it now.
     let mut pipe = redis::pipe();
     pipe.get(&redis_key).del(&redis_key);
-    let (redis_connection, (discord_id, _)): (_, (Option<u64>, u32)) =
-        pipe.query_async(redis_connection).compat().await?;
+    let (discord_id, _): (Option<u64>, u32) = pipe.query_async(redis_connection).await?;
     let discord_id = match discord_id {
         Some(id) => id,
         None => {
@@ -417,7 +405,7 @@ async fn handle_link_redirect(
         if error == "access_denied" {
             // The user did not grant access
             // Give them the chance to do it again
-            let (_redis_connection, linking_url) =
+            let linking_url =
                 lib::meetup::oauth2::generate_meetup_linking_link(redis_connection, discord_id)
                     .await?;
             return Ok(super::server::HandlerResponse::Message {
@@ -436,8 +424,7 @@ async fn handle_link_redirect(
     }
     // Compare the CSRF state that was returned by Meetup to the one
     // we have saved
-    let (redis_connection, csrf_is_valid) =
-        check_csrf_cookie(redis_connection, headers, &query.state).await?;
+    let csrf_is_valid = check_csrf_cookie(redis_connection, headers, &query.state).await?;
     if !csrf_is_valid {
         return Ok((
             "CSRF check failed",
@@ -467,11 +454,7 @@ async fn handle_link_redirect(
     let redis_key_d2m = format!("discord_user:{}:meetup_user", discord_id);
     let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_user.id);
     // Check that the Discord ID has not been linked yet
-    let (redis_connection, existing_meetup_id): (_, Option<u64>) = redis::cmd("GET")
-        .arg(&redis_key_d2m)
-        .query_async(redis_connection)
-        .compat()
-        .await?;
+    let existing_meetup_id: Option<u64> = redis_connection.get(&redis_key_d2m).await?;
     match existing_meetup_id {
         Some(existing_meetup_id) => {
             if existing_meetup_id == meetup_user.id {
@@ -491,11 +474,7 @@ async fn handle_link_redirect(
         _ => (),
     }
     // Check that the Meetup ID has not been linked to some other Discord ID yet
-    let (redis_connection, existing_discord_id): (_, Option<u64>) = redis::cmd("GET")
-        .arg(&redis_key_m2d)
-        .query_async(redis_connection)
-        .compat()
-        .await?;
+    let existing_discord_id: Option<u64> = redis_connection.get(&redis_key_m2d).await?;
     match existing_discord_id {
         Some(_) => {
             return Ok((
@@ -507,9 +486,8 @@ async fn handle_link_redirect(
         _ => (),
     }
     // Create the link between the Discord and the Meetup ID
-    let successful = AtomicBool::new(false);
-    let (_redis_connection, _): (_, ()) = {
-        let mut redis_connection = redis_connection;
+    let successful = Arc::new(Mutex::new(false));
+    let _: () = {
         // If the "rsvp" scope is part of the token result, store the tokens as well
         if with_rsvp_scope {
             if let Some(refresh_token) = token_res.refresh_token() {
@@ -525,49 +503,45 @@ async fn handle_link_redirect(
                     "refresh_token",
                     refresh_token.secret(),
                 );
-                let (new_redis_connection, _): (_, ()) =
-                    pipe.query_async(redis_connection).compat().await?;
-                redis_connection = new_redis_connection;
+                let _: () = pipe.query_async(redis_connection).await?;
             }
         }
         let transaction_fn = {
-            let redis_key_d2m = &redis_key_d2m;
-            let redis_key_m2d = &redis_key_m2d;
+            let redis_key_d2m = redis_key_d2m.clone();
+            let redis_key_m2d = redis_key_m2d.clone();
             let meetup_user_id = meetup_user.id;
-            let successful = &successful;
-            move |con: redis::aio::Connection, mut pipe: redis::Pipeline| {
-                async move {
-                    let (con, linked_meetup_id): (_, Option<u64>) = redis::cmd("GET")
-                        .arg(redis_key_d2m)
-                        .query_async(con)
-                        .compat()
-                        .await?;
-                    let (con, linked_discord_id): (_, Option<u64>) = redis::cmd("GET")
-                        .arg(redis_key_m2d)
-                        .query_async(con)
-                        .compat()
-                        .await?;
-                    if linked_meetup_id.is_some() || linked_discord_id.is_some() {
-                        // The meetup id was linked in the meantime, abort
-                        successful.store(false, Ordering::Release);
-                        // Execute empty transaction just to get out of the closure
-                        pipe.query_async(con).compat().await
-                    } else {
-                        pipe.sadd("meetup_users", meetup_user_id)
-                            .sadd("discord_users", discord_id)
-                            .set(redis_key_d2m, meetup_user_id)
-                            .set(redis_key_m2d, discord_id);
-                        successful.store(true, Ordering::Release);
-                        pipe.query_async(con).compat().await
+            let successful = successful.clone();
+            lib::redis::closure_type_helper(
+                move |con: &mut redis::aio::Connection, mut pipe: redis::Pipeline| {
+                    let redis_key_d2m = redis_key_d2m.clone();
+                    let redis_key_m2d = redis_key_m2d.clone();
+                    let successful = successful.clone();
+                    async move {
+                        let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m).await?;
+                        let linked_discord_id: Option<u64> = con.get(&redis_key_m2d).await?;
+                        if linked_meetup_id.is_some() || linked_discord_id.is_some() {
+                            // The meetup id was linked in the meantime, abort
+                            *successful.lock().await = false;
+                            // Execute empty transaction just to get out of the closure
+                            pipe.query_async(con).await
+                        } else {
+                            pipe.sadd("meetup_users", meetup_user_id)
+                                .sadd("discord_users", discord_id)
+                                .set(&redis_key_d2m, meetup_user_id)
+                                .set(&redis_key_m2d, discord_id);
+                            *successful.lock().await = true;
+                            pipe.query_async(con).await
+                        }
                     }
-                }
-            }
+                    .boxed()
+                },
+            )
         };
         let transaction_keys = &[&redis_key_d2m, &redis_key_m2d];
         lib::redis::async_redis_transaction(redis_connection, transaction_keys, transaction_fn)
             .await?
     };
-    if !successful.load(Ordering::Acquire) {
+    if !*successful.lock().await {
         return Ok((
             "Linking Failure",
             "Could not assign meetup id (timing error)",

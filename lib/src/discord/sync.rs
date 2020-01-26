@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use redis::{self, Commands, PipelineCommands};
+use redis::{self, Commands};
 use serenity::{
     http::CacheHttp,
     model::{

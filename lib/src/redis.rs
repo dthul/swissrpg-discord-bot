@@ -1,52 +1,57 @@
-use futures_util::compat::Future01CompatExt;
-use redis::{Commands, PipelineCommands};
+use futures_util::FutureExt;
+use redis::{AsyncCommands, Commands};
 use std::future::Future;
+use std::pin::Pin;
+
+pub fn closure_type_helper<
+    T: redis::FromRedisValue + Send + 'static,
+    F: for<'c> FnMut(
+        &'c mut redis::aio::Connection,
+        redis::Pipeline,
+    ) -> Pin<Box<dyn Future<Output = redis::RedisResult<Option<T>>> + Send + 'c>>,
+>(
+    func: F,
+) -> F {
+    func
+}
 
 // A direct translation of redis::transaction for the async case
 pub async fn async_redis_transaction<
     K: redis::ToRedisArgs,
     T: redis::FromRedisValue + Send + 'static,
-    R: Future<Output = Result<(redis::aio::Connection, Option<T>), redis::RedisError>>,
-    F: FnMut(redis::aio::Connection, redis::Pipeline) -> R,
+    F: for<'c> FnMut(
+        &'c mut redis::aio::Connection,
+        redis::Pipeline,
+    ) -> Pin<Box<dyn Future<Output = redis::RedisResult<Option<T>>> + Send + 'c>>,
 >(
-    mut con: redis::aio::Connection,
+    con: &mut redis::aio::Connection,
     keys: &[K],
     mut func: F,
-) -> Result<(redis::aio::Connection, T), redis::RedisError> {
+) -> redis::RedisResult<T> {
     loop {
-        let (newcon, ()) = redis::cmd("WATCH")
-            .arg(keys)
-            .query_async(con)
-            .compat()
-            .await?;
-        con = newcon;
+        let () = redis::cmd("WATCH").arg(keys).query_async(con).await?;
         let mut p = redis::pipe();
         p.atomic();
-        let (newcon, response): (_, Option<T>) = func(con, p).await?;
-        con = newcon;
+        let response: Option<T> = func(con, p).await?;
         match response {
             None => continue,
             Some(response) => {
                 // make sure no watch is left in the connection, even if
                 // someone forgot to use the pipeline.
-                let (con, ()) = redis::cmd("UNWATCH").query_async(con).compat().await?;
-                return Ok((con, response));
+                let () = redis::cmd("UNWATCH").query_async(con).await?;
+                return Ok(response);
             }
         }
     }
 }
 
 pub async fn delete_event(
-    con: redis::aio::Connection,
+    con: &mut redis::aio::Connection,
     event_id: &str,
 ) -> Result<(), redis::RedisError> {
     // Figure out which series this event belongs to
     let redis_event_series_key = format!("meetup_event:{}:event_series", &event_id);
-    let (con, series_id): (_, Option<String>) = redis::cmd("GET")
-        .arg(&redis_event_series_key)
-        .query_async(con)
-        .compat()
-        .await?;
+    let series_id: Option<String> = con.get(&redis_event_series_key).await?;
     let redis_events_key = "meetup_events";
     let redis_event_users_key = format!("meetup_event:{}:meetup_users", &event_id);
     let redis_event_hosts_key = format!("meetup_event:{}:meetup_hosts", &event_id);
@@ -63,7 +68,18 @@ pub async fn delete_event(
     if let Some(key) = &redis_series_events_key {
         keys_to_watch.push(&key);
     }
-    let transaction_fn = |con, mut pipe: redis::Pipeline| {
+    // let transaction_fn = |con, mut pipe: redis::Pipeline| {
+    //     pipe.del(&redis_event_series_key)
+    //         .del(&redis_event_users_key)
+    //         .del(&redis_event_hosts_key)
+    //         .del(&redis_event_key)
+    //         .srem(redis_events_key, event_id);
+    //     if let Some(redis_series_events_key) = &redis_series_events_key {
+    //         pipe.srem(redis_series_events_key, event_id);
+    //     }
+    //     async { pipe.query_async(con).await }
+    // };
+    let () = async_redis_transaction(con, &keys_to_watch, |con, mut pipe: redis::Pipeline| {
         pipe.del(&redis_event_series_key)
             .del(&redis_event_users_key)
             .del(&redis_event_hosts_key)
@@ -72,9 +88,9 @@ pub async fn delete_event(
         if let Some(redis_series_events_key) = &redis_series_events_key {
             pipe.srem(redis_series_events_key, event_id);
         }
-        async { pipe.query_async(con).compat().await }
-    };
-    let (_, ()) = async_redis_transaction(con, &keys_to_watch, transaction_fn).await?;
+        async move { pipe.query_async(con).await }.boxed()
+    })
+    .await?;
     Ok(())
 }
 

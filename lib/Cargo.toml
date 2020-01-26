@@ -19,14 +19,14 @@ chrono = "0.4"
 failure = "0.1" # Just for oauth2 reqwest async client
 failure_derive = "0.1" # Just for oauth2 reqwest async client
 futures = "0.3"
-futures-util = { version = "0.3", features = ["compat"] }
+futures-util = { version = "0.3" }
 http = "0.1" # Just for oauth2 reqwest async client
 hyper = "0.13"
 itertools = "0.8"
 lazy_static = "1.4"
 oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03"] }
 rand = "0.7"
-redis = "0.12"
+redis = "0.15"
 regex = "1"
 reqwest = { version = "0.10", features = ["blocking", "json"] }
 serde = "1.0"

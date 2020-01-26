@@ -1,6 +1,7 @@
-use futures_util::{compat::Future01CompatExt, lock::Mutex, stream::StreamExt};
+use futures_util::FutureExt;
+use futures_util::{lock::Mutex, stream::StreamExt};
 use lazy_static::lazy_static;
-use redis::{self, Commands, PipelineCommands};
+use redis::{self, AsyncCommands};
 use simple_error::SimpleError;
 use std::sync::Arc;
 
@@ -30,7 +31,7 @@ lazy_static! {
 // every time we want to use the client)
 pub async fn sync_task(
     meetup_client: Arc<Mutex<Option<Arc<super::api::AsyncClient>>>>,
-    mut redis_client: redis::Client,
+    redis_connection: &mut redis::aio::Connection,
 ) -> Result<(), super::Error> {
     let meetup_client = {
         let guard = meetup_client.lock().await;
@@ -47,16 +48,16 @@ pub async fn sync_task(
     while let Some(event) = upcoming_events.next().await {
         match event {
             Err(err) => eprintln!("Couldn't query upcoming event: {}", err),
-            Ok(event) => match sync_event(event, &mut redis_client).await {
+            Ok(event) => match sync_event(event, redis_connection).await {
                 Err(err) => eprintln!("Event sync failed: {}", err),
                 _ => (),
             },
         }
     }
     // Sync event series
-    let event_series: Vec<String> = redis_client.smembers("event_series")?;
+    let event_series: Vec<String> = redis_connection.smembers("event_series").await?;
     for series_id in event_series {
-        match sync_event_series(series_id, meetup_client.as_ref(), &mut redis_client).await {
+        match sync_event_series(series_id, meetup_client.as_ref(), redis_connection).await {
             Err(err) => eprintln!("Series sync failed: {}", err),
             _ => (),
         };
@@ -70,7 +71,7 @@ pub async fn sync_task(
 // event is fine.
 pub async fn sync_event(
     event: super::api::Event,
-    redis_client: &mut redis::Client,
+    redis_connection: &mut redis::aio::Connection,
 ) -> Result<(), super::Error> {
     let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(&event.description);
     let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(&event.description);
@@ -126,7 +127,7 @@ pub async fn sync_event(
         let redis_series_event_series_key =
             format!("meetup_event:{}:event_series", series_event_id);
         let event_series_id: redis::RedisResult<Option<String>> =
-            redis_client.get(&redis_series_event_series_key);
+            redis_connection.get(&redis_series_event_series_key).await;
         let event_series_id = match event_series_id {
             Ok(id) => match id {
                 Some(id) => Some(id),
@@ -175,16 +176,22 @@ pub async fn sync_event(
         let redis_event_series_key = &redis_event_series_key;
         let redis_event_key = &redis_event_key;
         let redis_channel_series_key = &redis_channel_series_key;
-        move |con, mut pipe: redis::Pipeline| {
-            async move {
+        crate::redis::closure_type_helper(move |con, mut pipe: redis::Pipeline| {
+            let event = event.clone();
+            let indicated_event_series_id = indicated_event_series_id.clone();
+            let redis_event_hosts_key = redis_event_hosts_key.clone();
+            let redis_event_series_key = redis_event_series_key.clone();
+            let redis_event_key = redis_event_key.clone();
+            let redis_channel_series_key = redis_channel_series_key.clone();
+            let fut = async move {
                 let mut query = redis::pipe();
                 query
-                    .get(redis_event_series_key)
-                    .get(redis_channel_series_key);
-                let (con, (existing_series_id, indicated_channel_series)): (
-                    redis::aio::Connection,
-                    (Option<String>, Option<String>),
-                ) = query.query_async(con).compat().await?;
+                    .get(&redis_event_series_key)
+                    .get(&redis_channel_series_key);
+                let (existing_series_id, indicated_channel_series): (
+                    Option<String>,
+                    Option<String>,
+                ) = query.query_async(con).await?;
                 if existing_series_id.is_none() {
                     // If this event has no series ID yet but also
                     // doesn't indicate that it is the start of a
@@ -192,7 +199,7 @@ pub async fn sync_event(
                     if !(is_new_adventure || is_new_campaign || indicated_event_series_id.is_some())
                     {
                         println!("Syncing task: Ignoring event \"{}\"", event.name);
-                        return pipe.query_async(con).compat().await;
+                        return pipe.query_async(con).await;
                     }
                     // If this event has no series ID yet, but the channel
                     // it wants to be associated with does, then something is fishy
@@ -202,7 +209,7 @@ pub async fn sync_event(
                              channel already belongs to an event series",
                             event.name
                         );
-                        return pipe.query_async(con).compat().await;
+                        return pipe.query_async(con).await;
                     }
                 }
                 // Use the existing series ID or create a new one
@@ -212,24 +219,24 @@ pub async fn sync_event(
 
                         // If this event's series ID does not match the channel's series ID, something is fishy
                         if let Some(channel_series) = indicated_channel_series {
-                            if channel_series != existing_series_id {
+                            if &channel_series != &existing_series_id {
                                 eprintln!(
                                     "Event \"{}\" wants to be associated with a certain channel \
                                      but that channel already belongs to a different event series",
                                     event.name
                                 );
-                                return pipe.query_async(con).compat().await;
+                                return pipe.query_async(con).await;
                             }
                         }
                         // If this event's series ID does not match the indicated event series ID, issue a warning
                         if let Some(indicated_event_series_id) = indicated_event_series_id {
-                            if &existing_series_id != indicated_event_series_id {
+                            if &existing_series_id != &indicated_event_series_id {
                                 eprintln!(
                                     "Warning: Event \"{}\" indicates event series {} but is \
                                      already associated with event series {}.",
                                     event.name, indicated_event_series_id, existing_series_id
                                 );
-                                return pipe.query_async(con).compat().await;
+                                return pipe.query_async(con).await;
                             }
                         }
                         existing_series_id
@@ -251,7 +258,7 @@ pub async fn sync_event(
                                          event series",
                                         event.name
                                     );
-                                    return pipe.query_async(con).compat().await;
+                                    return pipe.query_async(con).await;
                                 } else {
                                     // The event wants to be associated with a channel and that channel is not
                                     // associated to anything else yet, looking good!
@@ -262,7 +269,7 @@ pub async fn sync_event(
                                     let redis_series_channel_key =
                                         format!("event_series:{}:discord_channel", &new_series_id);
                                     pipe.sadd("discord_channels", channel_id);
-                                    pipe.set(redis_channel_series_key, &new_series_id);
+                                    pipe.set(&redis_channel_series_key, &new_series_id);
                                     pipe.set(&redis_series_channel_key, channel_id);
                                 }
                             }
@@ -275,7 +282,7 @@ pub async fn sync_event(
                                 "Syncing task: internal error (event has no series id yet, but is \
                                  neither a new adventure/campaign nor does it belong to a session"
                             );
-                            return pipe.query_async(con).compat().await;
+                            return pipe.query_async(con).await;
                         }
                     }
                 };
@@ -305,25 +312,29 @@ pub async fn sync_event(
                 }
                 pipe.sadd(redis_events_key, &event.id)
                     .sadd(redis_series_key, &series_id)
-                    .sadd(redis_event_hosts_key, host_user_ids)
-                    .set(redis_event_series_key, &series_id)
+                    .sadd(&redis_event_hosts_key, host_user_ids)
+                    .set(&redis_event_series_key, &series_id)
                     .sadd(&redis_series_events_key, &event.id);
                 for &(field, value) in event_hash {
                     // Do not use hset_multiple, it deletes existing fields!
-                    pipe.hset(redis_event_key, field, value);
+                    pipe.hset(&redis_event_key, field, value);
                 }
-                pipe.query_async(con).compat().await
-            }
-        }
+                pipe.query_async(con).await
+            };
+            fut.boxed()
+        })
     };
-    let con = redis_client.get_async_connection().compat().await?;
     let transaction_keys = &[
         &redis_event_series_key,
         &redis_event_key,
         &redis_channel_series_key,
     ];
-    crate::redis::async_redis_transaction::<_, (), _, _>(con, transaction_keys, transaction_fn)
-        .await?;
+    crate::redis::async_redis_transaction::<_, (), _>(
+        redis_connection,
+        transaction_keys,
+        transaction_fn,
+    )
+    .await?;
     println!("Event syncing task: Synced event \"{}\"", event_name);
     Ok(())
 }
@@ -331,10 +342,10 @@ pub async fn sync_event(
 async fn sync_event_series(
     series_id: String,
     meetup_client: &super::api::AsyncClient,
-    redis_client: &mut redis::Client,
+    redis_connection: &mut redis::aio::Connection,
 ) -> Result<(), super::Error> {
     // Get all events belonging to this event series
-    let events = super::util::get_events_for_series(redis_client, &series_id)?;
+    let events = super::util::get_events_for_series(redis_connection, &series_id).await?;
     // Filter past events
     let now = chrono::Utc::now();
     let mut upcoming: Vec<_> = events
@@ -362,7 +373,6 @@ async fn sync_event_series(
                     "Event {} was deleted from Meetup, removing from database...",
                     &next_event.id
                 );
-                let redis_connection = redis_client.get_async_connection().compat().await?;
                 crate::redis::delete_event(redis_connection, &next_event.id).await?;
                 eprintln!("Removed event {} from database", &next_event.id);
                 continue;
@@ -372,7 +382,7 @@ async fn sync_event_series(
         };
         // Sync the RSVPs
         println!("Syncing task: Found {} RSVPs", rsvps.len());
-        return sync_rsvps(&next_event_id, rsvps, redis_client).await;
+        return sync_rsvps(&next_event_id, rsvps, redis_connection).await;
     }
     Ok(())
 }
@@ -380,7 +390,7 @@ async fn sync_event_series(
 pub async fn sync_rsvps(
     event_id: &str,
     rsvps: Vec<super::api::RSVP>,
-    redis_client: &mut redis::Client,
+    redis_connection: &mut redis::aio::Connection,
 ) -> Result<(), super::Error> {
     let rsvp_yes_user_ids: Vec<_> = rsvps
         .iter()
@@ -402,7 +412,6 @@ pub async fn sync_rsvps(
         })
         .collect();
     let redis_event_users_key = format!("meetup_event:{}:meetup_users", event_id);
-    let con = redis_client.get_async_connection().compat().await?;
     let mut pipe = redis::pipe();
     if rsvp_yes_user_ids.len() > 0 {
         pipe.sadd(&redis_event_users_key, rsvp_yes_user_ids);
@@ -410,6 +419,6 @@ pub async fn sync_rsvps(
     if rsvp_no_user_ids.len() > 0 {
         pipe.srem(&redis_event_users_key, rsvp_no_user_ids);
     }
-    let _: (_, ()) = pipe.query_async(con).compat().await?;
+    let _: () = pipe.query_async(redis_connection).await?;
     Ok(())
 }

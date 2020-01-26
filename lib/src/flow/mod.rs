@@ -1,6 +1,6 @@
-use futures_util::{compat::Future01CompatExt, FutureExt};
+use futures_util::FutureExt;
 use rand::Rng;
-use redis::{Commands, PipelineCommands};
+use redis::AsyncCommands;
 
 pub struct ScheduleSessionFlow {
     pub id: u64,
@@ -27,24 +27,23 @@ impl ScheduleSessionFlow {
     }
 
     pub async fn retrieve(
-        redis_connection: redis::aio::Connection,
+        redis_connection: &mut redis::aio::Connection,
         id: u64,
-    ) -> Result<(redis::aio::Connection, Option<Self>), crate::meetup::Error> {
+    ) -> Result<Option<Self>, crate::meetup::Error> {
         let redis_key = format!("flow:schedule_session:{}", id);
         let mut pipe = redis::pipe();
         pipe.hget(&redis_key, "event_series_id");
-        let (redis_connection, (event_series_id,)): (_, (Option<String>,)) =
-            pipe.query_async(redis_connection).compat().await?;
+        let (event_series_id,): (Option<String>,) = pipe.query_async(redis_connection).await?;
         let flow = event_series_id.map(|event_series_id| ScheduleSessionFlow {
             id: id,
             event_series_id: event_series_id,
         });
-        Ok((redis_connection, flow))
+        Ok(flow)
     }
 
     pub async fn schedule(
         self,
-        redis_client: &mut redis::Client,
+        mut redis_connection: redis::aio::Connection,
         meetup_client: &crate::meetup::api::AsyncClient,
         oauth2_consumer: &crate::meetup::oauth2::OAuth2Consumer,
         date_time: chrono::DateTime<chrono::Utc>,
@@ -56,8 +55,11 @@ impl ScheduleSessionFlow {
         crate::meetup::Error,
     > {
         // Query the latest event in the series
-        let mut events =
-            crate::meetup::util::get_events_for_series(redis_client, &self.event_series_id)?;
+        let mut events = crate::meetup::util::get_events_for_series(
+            &mut redis_connection,
+            &self.event_series_id,
+        )
+        .await?;
         // Sort by time
         events.sort_unstable_by_key(|event| event.time);
         // Take the latest event as a template to copy from
@@ -85,7 +87,7 @@ impl ScheduleSessionFlow {
             &latest_event.urlname,
             &latest_event.id,
             &new_event.id,
-            redis_client,
+            &mut redis_connection,
             meetup_client,
             oauth2_consumer,
         )
@@ -98,16 +100,16 @@ impl ScheduleSessionFlow {
             }
         };
         let redis_key = format!("flow:schedule_session:{}", self.id);
-        let _: redis::RedisResult<()> = redis_client.del(&redis_key);
+        let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
         let sync_future = {
             let new_event = new_event.clone();
-            let mut redis_client = redis_client.clone();
             let rsvps = rsvp_result.as_ref().map(|res| res.cloned_rsvps.clone());
             async move {
                 let event_id = new_event.id.clone();
-                crate::meetup::sync::sync_event(new_event, &mut redis_client).await?;
+                crate::meetup::sync::sync_event(new_event, &mut redis_connection).await?;
                 if let Some(rsvps) = rsvps {
-                    crate::meetup::sync::sync_rsvps(&event_id, rsvps, &mut redis_client).await?;
+                    crate::meetup::sync::sync_rsvps(&event_id, rsvps, &mut redis_connection)
+                        .await?;
                 }
                 Ok::<_, crate::meetup::Error>(())
             }
@@ -122,15 +124,11 @@ impl ScheduleSessionFlow {
 
     pub async fn delete(
         self,
-        redis_connection: redis::aio::Connection,
-    ) -> Result<redis::aio::Connection, crate::meetup::Error> {
+        redis_connection: &mut redis::aio::Connection,
+    ) -> Result<(), crate::meetup::Error> {
         let redis_key = format!("flow:schedule_session:{}", self.id);
-        let (redis_connection, ()) = redis::cmd("DEL")
-            .arg(&redis_key)
-            .query_async(redis_connection)
-            .compat()
-            .await?;
-        Ok(redis_connection)
+        let () = redis_connection.del(&redis_key).await?;
+        Ok(())
     }
 
     pub fn new_event_hook(

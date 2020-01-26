@@ -10,6 +10,7 @@ use simple_error::SimpleError;
 use std::num::ParseIntError;
 use stripe::Error as StripeError;
 use tokio::task::JoinError;
+use tokio::time::Elapsed;
 use url::ParseError as UrlParseError;
 
 #[derive(Debug)]
@@ -149,6 +150,24 @@ impl From<StripeError> for BoxedError {
         let simple_error = SimpleError::new(format!("{:#?}", err));
         BoxedError {
             inner: Box::new(simple_error),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
+impl From<Elapsed> for BoxedError {
+    fn from(err: Elapsed) -> Self {
+        BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
+impl From<crate::meetup::Error> for BoxedError {
+    fn from(err: crate::meetup::Error) -> Self {
+        BoxedError {
+            inner: Box::new(err),
             backtrace: Backtrace::new(),
         }
     }

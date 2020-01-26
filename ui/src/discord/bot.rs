@@ -290,19 +290,22 @@ impl EventHandler for Handler {
                     .clone();
                 (async_meetup_client, redis_client, future_spawner)
             };
-            let sync_task = Box::new(
+            let sync_task = Box::new({
+                let task = async move {
+                    let mut redis_connection = redis_client.get_async_connection().await?;
+                    lib::meetup::sync::sync_task(async_meetup_client, &mut redis_connection).await
+                };
+                // Wrap the task in a timeout
                 tokio::time::timeout(
-                    Duration::from_secs(60),
-                    lib::meetup::sync::sync_task(async_meetup_client, redis_client).unwrap_or_else(
-                        |err| {
-                            eprintln!("Syncing task failed: {}", err);
-                        },
-                    ),
+                    Duration::from_secs(5 * 60),
+                    task.unwrap_or_else(|err| {
+                        eprintln!("Syncing task failed: {}", err);
+                    }),
                 )
                 .unwrap_or_else(|err| {
                     eprintln!("Syncing task timed out: {}", err);
-                }),
-            );
+                })
+            });
             // Send the syncing future to the executor
             match future_spawner.try_send(sync_task) {
                 Ok(()) => {

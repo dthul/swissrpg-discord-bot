@@ -1,6 +1,6 @@
-use futures_util::{compat::Future01CompatExt, lock::Mutex as AsyncMutex};
+use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
-use redis::{Commands, PipelineCommands};
+use redis::Commands;
 use regex::Regex;
 use serenity::{
     model::{channel, channel::Message, id::UserId, user::User},
@@ -347,10 +347,11 @@ impl super::bot::Handler {
             return Ok(());
         }
         // TODO: creates a new Redis connection. Not optimal...
-        let (_, url) = lib::ASYNC_RUNTIME.enter(|| {
+        let url = lib::ASYNC_RUNTIME.enter(|| {
             futures::executor::block_on(async {
-                let redis_connection = redis_client.get_async_connection().compat().await?;
-                lib::meetup::oauth2::generate_meetup_linking_link(redis_connection, user_id).await
+                let mut redis_connection = redis_client.get_async_connection().await?;
+                lib::meetup::oauth2::generate_meetup_linking_link(&mut redis_connection, user_id)
+                    .await
             })
         })?;
         let dm = msg.author.direct_message(ctx, |message| {
@@ -867,7 +868,7 @@ impl super::bot::Handler {
         ctx: &Context,
         msg: &Message,
         user_id: UserId,
-        mut redis_client: redis::Client,
+        redis_client: redis::Client,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
         // Look up the Meetup ID for this user
@@ -895,10 +896,15 @@ impl super::bot::Handler {
             }
         };
         let res = lib::ASYNC_RUNTIME.enter(|| {
-            futures::executor::block_on(oauth2_consumer.refresh_oauth_tokens(
-                lib::meetup::oauth2::TokenType::User(meetup_id),
-                &mut redis_client,
-            ))
+            futures::executor::block_on(async {
+                let mut redis_connection = redis_client.get_async_connection().await?;
+                oauth2_consumer
+                    .refresh_oauth_tokens(
+                        lib::meetup::oauth2::TokenType::User(meetup_id),
+                        &mut redis_connection,
+                    )
+                    .await
+            })
         });
         match res {
             Ok(_) => {
@@ -922,7 +928,7 @@ impl super::bot::Handler {
         msg: &Message,
         urlname: &str,
         meetup_event_id: &str,
-        mut redis_client: redis::Client,
+        redis_client: redis::Client,
         async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
@@ -955,11 +961,12 @@ impl super::bot::Handler {
             )
             .await?;
             // Try to transfer the RSVPs to the new event
+            let mut redis_connection = redis_client.get_async_connection().await?;
             if let Err(_) = lib::meetup::util::clone_rsvps(
                 urlname,
                 meetup_event_id,
                 &new_event.id,
-                &mut redis_client,
+                &mut redis_connection,
                 client.as_ref(),
                 oauth2_consumer.as_ref(),
             )
@@ -995,7 +1002,7 @@ impl super::bot::Handler {
         user_id: UserId,
         urlname: &str,
         meetup_event_id: &str,
-        mut redis_client: redis::Client,
+        redis_client: redis::Client,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
         // Look up the Meetup ID for this user
@@ -1024,13 +1031,17 @@ impl super::bot::Handler {
         };
         // Try to RSVP the user
         match lib::ASYNC_RUNTIME.enter(|| {
-            futures::executor::block_on(lib::meetup::util::rsvp_user_to_event(
-                meetup_id,
-                urlname,
-                meetup_event_id,
-                &mut redis_client,
-                oauth2_consumer.as_ref(),
-            ))
+            futures::executor::block_on(async {
+                let mut redis_connection = redis_client.get_async_connection().await?;
+                lib::meetup::util::rsvp_user_to_event(
+                    meetup_id,
+                    urlname,
+                    meetup_event_id,
+                    &mut redis_connection,
+                    oauth2_consumer.as_ref(),
+                )
+                .await
+            })
         }) {
             Ok(rsvp) => {
                 let _ = msg.react(ctx, "\u{2705}");

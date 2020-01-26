@@ -1,5 +1,4 @@
-use futures_util::compat::Future01CompatExt;
-use redis::{Commands, PipelineCommands};
+use redis::AsyncCommands;
 use std::{
     future::Future,
     io::{self, Write},
@@ -12,19 +11,15 @@ async fn try_with_token_refresh<
 >(
     f: F,
     user_id: u64,
-    redis_client: &mut redis::Client,
+    redis_connection: &mut redis::aio::Connection,
     oauth2_consumer: &super::oauth2::OAuth2Consumer,
 ) -> Result<T, super::Error> {
-    let redis_connection = redis_client.get_async_connection().compat().await?;
     // Look up the Meetup access token for this user
     println!("Looking up the oauth access token");
     io::stdout().flush().unwrap();
     let redis_meetup_user_oauth_tokens_key = format!("meetup_user:{}:oauth2_tokens", user_id);
-    let (_redis_connection, access_token): (_, Option<String>) = redis::cmd("HGET")
-        .arg(&redis_meetup_user_oauth_tokens_key)
-        .arg("access_token")
-        .query_async(redis_connection)
-        .compat()
+    let access_token: Option<String> = redis_connection
+        .hget(&redis_meetup_user_oauth_tokens_key, "access_token")
         .await?;
     let access_token = match access_token {
         Some(access_token) => access_token,
@@ -32,8 +27,8 @@ async fn try_with_token_refresh<
             // There is no access token: try to obtain a new one
             println!("No access token, calling oauth2_consumer.refresh_oauth_tokens");
             io::stdout().flush().unwrap();
-            let (_, access_token) = oauth2_consumer
-                .refresh_oauth_tokens(super::oauth2::TokenType::User(user_id), redis_client)
+            let access_token = oauth2_consumer
+                .refresh_oauth_tokens(super::oauth2::TokenType::User(user_id), redis_connection)
                 .await?;
             println!("Got an access token!");
             io::stdout().flush().unwrap();
@@ -53,8 +48,8 @@ async fn try_with_token_refresh<
                 // Try to obtain a new access token and re-run the provided function.
                 println!("Calling oauth2_consumer.refresh_oauth_tokens");
                 io::stdout().flush().unwrap();
-                let (_, access_token) = oauth2_consumer
-                    .refresh_oauth_tokens(super::oauth2::TokenType::User(user_id), redis_client)
+                let access_token = oauth2_consumer
+                    .refresh_oauth_tokens(super::oauth2::TokenType::User(user_id), redis_connection)
                     .await?;
                 println!("Got an access token!");
                 io::stdout().flush().unwrap();
@@ -79,13 +74,13 @@ pub async fn rsvp_user_to_event(
     user_id: u64,
     urlname: &str,
     event_id: &str,
-    redis_client: &mut redis::Client,
+    redis_connection: &mut redis::aio::Connection,
     oauth2_consumer: &super::oauth2::OAuth2Consumer,
 ) -> Result<super::api::RSVP, super::Error> {
     let rsvp_fun = |async_meetup_user_client: super::api::AsyncClient| {
         async move { async_meetup_user_client.rsvp(urlname, event_id, true).await }
     };
-    try_with_token_refresh(rsvp_fun, user_id, redis_client, oauth2_consumer).await
+    try_with_token_refresh(rsvp_fun, user_id, redis_connection, oauth2_consumer).await
 }
 
 pub async fn clone_event<'a>(
@@ -142,7 +137,7 @@ pub async fn clone_rsvps(
     urlname: &str,
     src_event_id: &str,
     dst_event_id: &str,
-    redis_client: &mut redis::Client,
+    redis_connection: &mut redis::aio::Connection,
     meetup_client: &super::api::AsyncClient,
     oauth2_consumer: &super::oauth2::OAuth2Consumer,
 ) -> Result<CloneRSVPResult, super::Error> {
@@ -165,7 +160,7 @@ pub async fn clone_rsvps(
             rsvp.member.id,
             urlname,
             dst_event_id,
-            redis_client,
+            redis_connection,
             oauth2_consumer,
         )
         .await
@@ -199,56 +194,50 @@ pub struct Event {
 // Queries all events belonging to the specified series from Redis,
 // ignoring errors that might arise querying specific events
 // (and not returning them instead)
-pub fn get_events_for_series(
-    redis_client: &mut redis::Client,
+pub async fn get_events_for_series(
+    redis_connection: &mut redis::aio::Connection,
     series_id: &str,
 ) -> Result<Vec<Event>, super::Error> {
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     // Get all events belonging to this event series
-    let event_ids: Vec<String> = redis_client.smembers(&redis_series_events_key)?;
-    let events: Vec<_> = event_ids
-        .into_iter()
-        .filter_map(|event_id| {
-            let redis_event_key = format!("meetup_event:{}", event_id);
-            let res: redis::RedisResult<(String, String, String, String)> =
-                redis_client.hget(&redis_event_key, &["time", "name", "link", "urlname"]);
-            if let Ok((time, name, link, urlname)) = res {
-                match chrono::DateTime::parse_from_rfc3339(&time) {
-                    Ok(time) => Some(Event {
-                        id: event_id,
-                        name: name,
-                        time: time.with_timezone(&chrono::Utc),
-                        link: link,
-                        urlname: urlname,
-                    }),
-                    _ => None,
-                }
-            } else {
-                None
+    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key).await?;
+    let mut events = vec![];
+    for event_id in event_ids {
+        let redis_event_key = format!("meetup_event:{}", event_id);
+        let res: redis::RedisResult<(String, String, String, String)> = redis_connection
+            .hget(&redis_event_key, &["time", "name", "link", "urlname"])
+            .await;
+        if let Ok((time, name, link, urlname)) = res {
+            if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
+                events.push(Event {
+                    id: event_id,
+                    name: name,
+                    time: time.with_timezone(&chrono::Utc),
+                    link: link,
+                    urlname: urlname,
+                });
             }
-        })
-        .collect();
+        }
+    }
     Ok(events)
 }
 
 pub async fn get_events_for_series_async(
-    redis_connection: redis::aio::Connection,
+    redis_connection: &mut redis::aio::Connection,
     series_id: &str,
-) -> Result<(redis::aio::Connection, Vec<Event>), super::Error> {
+) -> Result<Vec<Event>, super::Error> {
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     // Get all events belonging to this event series
     let mut pipe = redis::pipe();
     pipe.smembers(&redis_series_events_key);
-    let (mut redis_connection, (event_ids,)): (_, (Vec<String>,)) =
-        pipe.query_async(redis_connection).compat().await?;
+    let (event_ids,): (Vec<String>,) = pipe.query_async(redis_connection).await?;
     let mut events = Vec::with_capacity(event_ids.len());
     for event_id in event_ids {
         let redis_event_key = format!("meetup_event:{}", event_id);
         let mut pipe = redis::pipe();
         pipe.hget(&redis_event_key, &["time", "name", "link", "urlname"]);
-        let (con, ((time, name, link, urlname),)): (_, ((String, String, String, String),)) =
-            pipe.query_async(redis_connection).compat().await?;
-        redis_connection = con;
+        let ((time, name, link, urlname),): ((String, String, String, String),) =
+            pipe.query_async(redis_connection).await?;
         if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
             let event = Event {
                 id: event_id,
@@ -260,7 +249,7 @@ pub async fn get_events_for_series_async(
             events.push(event);
         }
     }
-    Ok((redis_connection, events))
+    Ok(events)
 }
 
 pub async fn get_group_profiles(

@@ -2,7 +2,7 @@ use super::server::HandlerResponse;
 use askama::Template;
 use chrono::{offset::TimeZone, Datelike, Timelike};
 use chrono_tz::Europe;
-use futures_util::{compat::Future01CompatExt, lock::Mutex, TryFutureExt};
+use futures_util::{lock::Mutex, TryFutureExt};
 use std::{collections::HashMap, sync::Arc};
 use warp::Filter;
 
@@ -20,12 +20,11 @@ pub fn create_routes(
             .and_then(move |flow_id| {
                 let redis_client = redis_client.clone();
                 async move {
-                    let redis_connection = redis_client
+                    let mut redis_connection = redis_client
                         .get_async_connection()
-                        .compat()
                         .err_into::<lib::meetup::Error>()
                         .await?;
-                    handle_schedule_session(redis_connection, flow_id)
+                    handle_schedule_session(&mut redis_connection, flow_id)
                         .err_into::<warp::Rejection>()
                         .await
                 }
@@ -137,18 +136,17 @@ pub mod filters {
 }
 
 async fn handle_schedule_session(
-    redis_connection: redis::aio::Connection,
+    redis_connection: &mut redis::aio::Connection,
     flow_id: u64,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
     eprintln!("Retrieving flow...");
-    let (redis_connection, flow) =
-        lib::flow::ScheduleSessionFlow::retrieve(redis_connection, flow_id).await?;
+    let flow = lib::flow::ScheduleSessionFlow::retrieve(redis_connection, flow_id).await?;
     let flow = match flow {
         Some(flow) => flow,
         None => return Ok(("Link expired", "Please request a new link").into()),
     };
     eprintln!("... got it!\nRetrieving events...");
-    let (_redis_connection, mut events) =
+    let mut events =
         lib::meetup::util::get_events_for_series_async(redis_connection, &flow.event_series_id)
             .await?;
     eprintln!("... got them!");
@@ -196,20 +194,20 @@ async fn handle_schedule_session_post(
     flow_id: u64,
     form_data: HashMap<String, String>,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
-    let redis_connection = redis_client
+    let mut redis_connection = redis_client
         .get_async_connection()
-        .compat()
         .err_into::<lib::meetup::Error>()
         .await?;
-    let (redis_connection, flow) =
-        lib::flow::ScheduleSessionFlow::retrieve(redis_connection, flow_id).await?;
+    let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
         Some(flow) => flow,
         None => return Ok(("Link expired", "Please request a new link").into()),
     };
-    let (redis_connection, mut events) =
-        lib::meetup::util::get_events_for_series_async(redis_connection, &flow.event_series_id)
-            .await?;
+    let mut events = lib::meetup::util::get_events_for_series_async(
+        &mut redis_connection,
+        &flow.event_series_id,
+    )
+    .await?;
     // Sort by date
     events.sort_unstable_by_key(|event| event.time);
     // Check that the form contains all necessary data
@@ -252,25 +250,25 @@ async fn handle_schedule_session_post(
     ) {
         (Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute)) => {
             match chrono::NaiveDate::from_ymd_opt(year, month, day) {
-                Some(date) => match date.and_hms_opt(hour, minute, 0) {
-                    Some(naive_date_time) => {
-                        match Europe::Zurich.from_local_datetime(&naive_date_time) {
-                            chrono::LocalResult::Single(date_time) => date_time,
-                            _ => {
-                                return Ok((
+                Some(date) => {
+                    match date.and_hms_opt(hour, minute, 0) {
+                        Some(naive_date_time) => {
+                            match Europe::Zurich.from_local_datetime(&naive_date_time) {
+                                chrono::LocalResult::Single(date_time) => date_time,
+                                _ => return Ok((
                                     "Invalid data",
                                     "Seems like the specified time is ambiguous or non-existent",
                                 )
-                                    .into())
+                                    .into()),
                             }
                         }
+                        _ => {
+                            return Ok(
+                                ("Invalid data", "Seems like the specified time is invalid").into()
+                            )
+                        }
                     }
-                    _ => {
-                        return Ok(
-                            ("Invalid data", "Seems like the specified time is invalid").into()
-                        )
-                    }
-                },
+                }
                 _ => return Ok(("Invalid data", "Seems like the specified date is invalid").into()),
             }
         }
@@ -312,7 +310,7 @@ async fn handle_schedule_session_post(
             Ok(new_event) => new_event,
         };
         // Delete the flow, ignoring errors
-        if let Err(err) = flow.delete(redis_connection).await {
+        if let Err(err) = flow.delete(&mut redis_connection).await {
             eprintln!(
                 "Encountered an error when trying to delete a schedule session flow:\n{:#?}",
                 err
@@ -324,7 +322,7 @@ async fn handle_schedule_session_post(
                 &event.urlname,
                 &event.id,
                 &new_event.id,
-                redis_client,
+                &mut redis_connection,
                 &meetup_client,
                 oauth2_consumer.as_ref(),
             )
@@ -352,7 +350,7 @@ async fn handle_schedule_session_post(
         };
         // Announce the new session in the Discord channel
         // TODO: remove this superfluous Redis connection once the new async API is available
-        if let Ok(redis_connection) = redis_client.get_async_connection().compat().await {
+        if let Ok(mut redis_connection) = redis_client.get_async_connection().await {
             let message = format!(
                 "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
                  the treasure, or whatever shenanigans you like to get into.",
@@ -361,7 +359,7 @@ async fn handle_schedule_session_post(
             if let Err(err) = lib::discord::util::say_in_event_channel(
                 &event.id,
                 &message,
-                redis_connection,
+                &mut redis_connection,
                 discord_cache_http,
             )
             .await
