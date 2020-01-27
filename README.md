@@ -10,6 +10,9 @@ First, create a Docker image called `swissrpg-bot` that contains the necessary b
 
 `$ docker build --tag swissrpg-bot ./docker`
 
+For Windows, additionally create the container (done automatically on Linux and Mac):
+`$ docker create -it --volume ${pwd}:/opt --name=swissrpg-compile-container swissrpg-bot`
+
 Then, run the compile script which will create a Docker container (or reuse an existing one) and build the project.
 
 `$ ./docker/compile.sh`
