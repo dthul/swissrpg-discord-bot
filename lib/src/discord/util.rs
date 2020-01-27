@@ -11,6 +11,7 @@ pub async fn say_in_event_series_channel(
     // Find the channel for this series id
     let redis_series_channel_key = format!("event_series:{}:discord_channel", series_id);
     let channel_id: u64 = redis_connection.get(&redis_series_channel_key).await?;
+    // TODO: blocking
     ChannelId(channel_id).say(&discord_cache_http.http, message)?;
     Ok(())
 }
@@ -27,6 +28,7 @@ pub async fn say_in_event_channel(
     // Then, find the channel for this series id
     let redis_series_channel_key = format!("event_series:{}:discord_channel", &series_id);
     let channel_id: u64 = redis_connection.get(&redis_series_channel_key).await?;
+    // TODO: blocking
     ChannelId(channel_id).say(&discord_cache_http.http, message)?;
     Ok(())
 }
