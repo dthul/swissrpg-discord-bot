@@ -16,7 +16,6 @@ pub fn create_routes(
         let redis_client = redis_client.clone();
         warp::get()
             .and(warp::path!("schedule_session" / u64))
-            .and(warp::path::end())
             .and_then(move |flow_id| {
                 let redis_client = redis_client.clone();
                 async move {
@@ -34,7 +33,6 @@ pub fn create_routes(
     let get_route = {
         let get_test_route = warp::get()
             .and(warp::path!("schedule_session" / "test"))
-            .and(warp::path::end())
             .and_then(|| {
                 let local_time = chrono::Utc::now().with_timezone(&Europe::Zurich);
                 let template = ScheduleSessionTemplate {
@@ -55,7 +53,6 @@ pub fn create_routes(
             });
         let get_test_success_route = warp::get()
             .and(warp::path!("schedule_session" / "test" / "success"))
-            .and(warp::path::end())
             .and_then(|| {
                 let template = ScheduleSessionSuccessTemplate {
                     title: "Test event",
@@ -77,7 +74,6 @@ pub fn create_routes(
         let discord_cache_http = discord_cache_http.clone();
         warp::post()
             .and(warp::path!("schedule_session" / u64))
-            .and(warp::path::end())
             .and(warp::body::content_length_limit(32 * 1024))
             .and(warp::body::form())
             .and_then(move |flow_id, form_data: HashMap<String, String>| {

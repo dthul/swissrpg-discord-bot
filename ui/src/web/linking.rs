@@ -51,7 +51,6 @@ pub fn create_routes(
         let async_meetup_client = async_meetup_client.clone();
         warp::get()
             .and(warp::path!("authorize" / "redirect"))
-            .and(warp::path::end())
             .and(warp::query())
             .and(warp::header::headers_cloned())
             .and_then(move |query: LinkQuery, headers| {
@@ -80,7 +79,6 @@ pub fn create_routes(
         let oauth2_consumer = oauth2_consumer.clone();
         warp::get()
             .and(warp::path!("link" / String))
-            .and(warp::path::end())
             .and_then(move |linking_id: String| {
                 let redis_client = redis_client.clone();
                 let oauth2_consumer = oauth2_consumer.clone();
@@ -104,7 +102,7 @@ pub fn create_routes(
         let oauth2_consumer = oauth2_consumer.clone();
         let bot_name = bot_name.clone();
         warp::get()
-            .and(warp::path!("link" / String))
+            .and(warp::path!("link" / String / ..))
             .and(
                 warp::path("rsvp")
                     .map(|| true)
