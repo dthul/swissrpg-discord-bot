@@ -68,17 +68,6 @@ pub async fn delete_event(
     if let Some(key) = &redis_series_events_key {
         keys_to_watch.push(&key);
     }
-    // let transaction_fn = |con, mut pipe: redis::Pipeline| {
-    //     pipe.del(&redis_event_series_key)
-    //         .del(&redis_event_users_key)
-    //         .del(&redis_event_hosts_key)
-    //         .del(&redis_event_key)
-    //         .srem(redis_events_key, event_id);
-    //     if let Some(redis_series_events_key) = &redis_series_events_key {
-    //         pipe.srem(redis_series_events_key, event_id);
-    //     }
-    //     async { pipe.query_async(con).await }
-    // };
     let () = async_redis_transaction(con, &keys_to_watch, |con, mut pipe: redis::Pipeline| {
         pipe.del(&redis_event_series_key)
             .del(&redis_event_users_key)

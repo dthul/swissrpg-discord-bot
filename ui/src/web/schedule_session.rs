@@ -77,13 +77,17 @@ pub fn create_routes(
             .and(warp::body::content_length_limit(32 * 1024))
             .and(warp::body::form())
             .and_then(move |flow_id, form_data: HashMap<String, String>| {
-                let mut redis_client = redis_client.clone();
+                let redis_client = redis_client.clone();
                 let meetup_client = meetup_client.clone();
                 let oauth2_consumer = oauth2_consumer.clone();
                 let discord_cache_http = discord_cache_http.clone();
                 async move {
+                    let mut redis_connection = redis_client
+                        .get_async_connection()
+                        .err_into::<lib::meetup::Error>()
+                        .await?;
                     handle_schedule_session_post(
-                        &mut redis_client,
+                        &mut redis_connection,
                         &meetup_client,
                         oauth2_consumer,
                         &discord_cache_http,
@@ -183,27 +187,21 @@ async fn handle_schedule_session(
 }
 
 async fn handle_schedule_session_post(
-    redis_client: &mut redis::Client,
+    redis_connection: &mut redis::aio::Connection,
     meetup_client: &Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     discord_cache_http: &lib::discord::CacheAndHttp,
     flow_id: u64,
     form_data: HashMap<String, String>,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
-    let mut redis_connection = redis_client
-        .get_async_connection()
-        .err_into::<lib::meetup::Error>()
-        .await?;
-    let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
+    let flow = lib::flow::ScheduleSessionFlow::retrieve(redis_connection, flow_id).await?;
     let flow = match flow {
         Some(flow) => flow,
         None => return Ok(("Link expired", "Please request a new link").into()),
     };
-    let mut events = lib::meetup::util::get_events_for_series_async(
-        &mut redis_connection,
-        &flow.event_series_id,
-    )
-    .await?;
+    let mut events =
+        lib::meetup::util::get_events_for_series_async(redis_connection, &flow.event_series_id)
+            .await?;
     // Sort by date
     events.sort_unstable_by_key(|event| event.time);
     // Check that the form contains all necessary data
@@ -306,7 +304,7 @@ async fn handle_schedule_session_post(
             Ok(new_event) => new_event,
         };
         // Delete the flow, ignoring errors
-        if let Err(err) = flow.delete(&mut redis_connection).await {
+        if let Err(err) = flow.delete(redis_connection).await {
             eprintln!(
                 "Encountered an error when trying to delete a schedule session flow:\n{:#?}",
                 err
@@ -318,7 +316,7 @@ async fn handle_schedule_session_post(
                 &event.urlname,
                 &event.id,
                 &new_event.id,
-                &mut redis_connection,
+                redis_connection,
                 &meetup_client,
                 oauth2_consumer.as_ref(),
             )
@@ -345,27 +343,24 @@ async fn handle_schedule_session_post(
             true
         };
         // Announce the new session in the Discord channel
-        // TODO: remove this superfluous Redis connection once the new async API is available
-        if let Ok(mut redis_connection) = redis_client.get_async_connection().await {
-            let message = format!(
-                "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
-                 the treasure, or whatever shenanigans you like to get into.",
-                link = &new_event.link
+        let message = format!(
+            "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
+             the treasure, or whatever shenanigans you like to get into.",
+            link = &new_event.link
+        );
+        if let Err(err) = lib::discord::util::say_in_event_channel(
+            &event.id,
+            &message,
+            redis_connection,
+            discord_cache_http,
+        )
+        .await
+        {
+            eprintln!(
+                "Encountered an error when trying to announce the new session in the \
+                 channel:\n{:#?}",
+                err
             );
-            if let Err(err) = lib::discord::util::say_in_event_channel(
-                &event.id,
-                &message,
-                &mut redis_connection,
-                discord_cache_http,
-            )
-            .await
-            {
-                eprintln!(
-                    "Encountered an error when trying to announce the new session in the \
-                     channel:\n{:#?}",
-                    err
-                );
-            }
         }
         // If RSVPs were not transferred, announce the new session in the bot alerts channel
         if !transfer_rsvps {

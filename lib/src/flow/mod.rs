@@ -31,9 +31,8 @@ impl ScheduleSessionFlow {
         id: u64,
     ) -> Result<Option<Self>, crate::meetup::Error> {
         let redis_key = format!("flow:schedule_session:{}", id);
-        let mut pipe = redis::pipe();
-        pipe.hget(&redis_key, "event_series_id");
-        let (event_series_id,): (Option<String>,) = pipe.query_async(redis_connection).await?;
+        let event_series_id: Option<String> =
+            redis_connection.hget(&redis_key, "event_series_id").await?;
         let flow = event_series_id.map(|event_series_id| ScheduleSessionFlow {
             id: id,
             event_series_id: event_series_id,

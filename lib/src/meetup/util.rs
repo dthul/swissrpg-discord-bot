@@ -228,16 +228,13 @@ pub async fn get_events_for_series_async(
 ) -> Result<Vec<Event>, super::Error> {
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     // Get all events belonging to this event series
-    let mut pipe = redis::pipe();
-    pipe.smembers(&redis_series_events_key);
-    let (event_ids,): (Vec<String>,) = pipe.query_async(redis_connection).await?;
+    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key).await?;
     let mut events = Vec::with_capacity(event_ids.len());
     for event_id in event_ids {
         let redis_event_key = format!("meetup_event:{}", event_id);
-        let mut pipe = redis::pipe();
-        pipe.hget(&redis_event_key, &["time", "name", "link", "urlname"]);
-        let ((time, name, link, urlname),): ((String, String, String, String),) =
-            pipe.query_async(redis_connection).await?;
+        let (time, name, link, urlname): (String, String, String, String) = redis_connection
+            .hget(&redis_event_key, &["time", "name", "link", "urlname"])
+            .await?;
         if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
             let event = Event {
                 id: event_id,
