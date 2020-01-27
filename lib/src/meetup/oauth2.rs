@@ -177,7 +177,7 @@ pub async fn refresh_oauth_tokens(
     let refresh_token = oauth2::RefreshToken::new(refresh_token);
     let refresh_token_response = oauth2_client
         .exchange_refresh_token(&refresh_token)
-        .request_async(super::oauth2_async_http_client::async_http_client)
+        .request_async(oauth2::reqwest::async_http_client)
         .await?;
     // Store the new tokens in Redis
     let mut pipe = redis::pipe();

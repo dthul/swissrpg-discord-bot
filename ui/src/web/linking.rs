@@ -254,7 +254,7 @@ async fn handle_authorize_redirect(
     let async_meetup_client = async_meetup_client.clone();
     let token_res = oauth2_authorization_client
         .exchange_code(code)
-        .request_async(lib::meetup::oauth2_async_http_client::async_http_client)
+        .request_async(oauth2::reqwest::async_http_client)
         .await?;
     // Check that this token belongs to an organizer of all our Meetup groups
     let new_async_meetup_client =
@@ -439,7 +439,7 @@ async fn handle_link_redirect(
         .clone()
         .set_redirect_url(redirect_url)
         .exchange_code(code)
-        .request_async(lib::meetup::oauth2_async_http_client::async_http_client)
+        .request_async(oauth2::reqwest::async_http_client)
         .await?;
     // Get the user's Meetup ID
     let async_user_meetup_client =

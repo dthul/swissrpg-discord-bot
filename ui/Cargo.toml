@@ -22,7 +22,7 @@ futures-channel = "0.3"
 futures-util = { version = "0.3" }
 hyper = "0.13"
 num-traits = "0.2"
-oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03"] }
+oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03", "reqwest-010"] }
 rand = "0.7"
 redis = "0.15"
 regex = "1"
