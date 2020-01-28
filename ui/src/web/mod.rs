@@ -1,6 +1,7 @@
 pub mod linking;
 pub mod schedule_session;
 pub mod server;
+pub mod stripe_webhook_endpoint;
 
 use askama::Template;
 

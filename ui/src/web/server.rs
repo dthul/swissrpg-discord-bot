@@ -2,7 +2,7 @@ use askama::Template;
 use futures_util::lock::Mutex;
 use hyper::{Body, Response};
 use std::{borrow::Cow, future::Future, sync::Arc};
-use warp::Filter;
+use warp::{filters::BoxedFilter, Filter, Reply};
 
 pub enum HandlerResponse {
     Response(Response<Body>),
@@ -103,6 +103,7 @@ pub fn create_server(
     async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
     discord_cache_http: lib::discord::CacheAndHttp,
     bot_name: String,
+    stripe_webhook_secret: Option<String>,
 ) -> impl Future<Output = ()> + Send + 'static {
     let linking_routes = super::linking::create_routes(
         redis_client.clone(),
@@ -123,6 +124,21 @@ pub fn create_server(
     };
     #[cfg(not(feature = "bottest"))]
     let combined_routes = linking_routes.or(schedule_session_routes);
+    let combined_routes: BoxedFilter<(Box<dyn Reply>,)> =
+        if let Some(stripe_webhook_secret) = stripe_webhook_secret {
+            let stripe_webhook_routes = super::stripe_webhook_endpoint::create_routes(
+                discord_cache_http.clone(),
+                stripe_webhook_secret,
+            );
+            combined_routes
+                .or(stripe_webhook_routes)
+                .map(|reply| Box::new(reply) as Box<dyn Reply>)
+                .boxed()
+        } else {
+            combined_routes
+                .map(|reply| Box::new(reply) as Box<dyn Reply>)
+                .boxed()
+        };
     let server = warp::serve(combined_routes);
     async move { server.bind(addr).await }
 }
