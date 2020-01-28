@@ -26,6 +26,10 @@ fn main() {
     let discord_token = env::var("DISCORD_TOKEN").expect("Found no DISCORD_TOKEN in environment");
     let stripe_client_secret =
         env::var("STRIPE_CLIENT_SECRET").expect("Found no STRIPE_CLIENT_SECRET in environment");
+    let stripe_webhook_signing_secret = env::var("STRIPE_WEBHOOK_SIGNING_SECRET").ok();
+    if stripe_webhook_signing_secret.is_none() {
+        eprintln!("No Stripe webhook signing secret set. Will not listen to Stripe webhooks.");
+    }
 
     // Connect to the local Redis server
     let redis_url = if cfg!(feature = "bottest") {
@@ -107,6 +111,7 @@ fn main() {
             .get::<ui::discord::bot::BotNameKey>()
             .expect("Bot name was not set")
             .clone(),
+            stripe_webhook_signing_secret,
     );
 
     // Check Redis for a refresh time. If there is one, use that

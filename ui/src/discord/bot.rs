@@ -815,6 +815,19 @@ impl EventHandler for Handler {
                 lib::tasks::subscription_roles::update_roles(&discord_api, &stripe_client).await
             });
             let _ = msg.channel_id.say(&ctx.http, "Copy that");
+        } else if regexes.num_cached_members.is_match(&msg.content) {
+            if let Some(guild) = msg.guild(&ctx) {
+                let num_cached_members = guild.read().members.len();
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    format!(
+                        "I have {} members cached for this guild",
+                        num_cached_members
+                    ),
+                );
+            } else {
+                let _ = msg.channel_id.say(&ctx.http, "No guild associated with this message (use the command from a guild channel instead of a direct message).");
+            }
         } else {
             eprintln!("Unrecognized command: {}", &msg.content);
             let _ = msg

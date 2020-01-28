@@ -44,6 +44,7 @@ pub struct Regexes {
     pub list_players_mention: Regex,
     pub list_stripe_subscriptions: Regex,
     pub sync_stripe_subscriptions: Regex,
+    pub num_cached_members: Regex,
 }
 
 impl Regexes {
@@ -231,6 +232,10 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         r"^{bot_mention}\s+(?i)sync\s+subscriptions\s*$",
         bot_mention = bot_mention,
     );
+    let num_cached_members = format!(
+        r"^{bot_mention}\s+(?i)numcached\s*$",
+        bot_mention = bot_mention,
+    );
     Regexes {
         bot_mention: Regex::new(&format!("^{}", bot_mention)).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -266,6 +271,7 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         list_players_mention: Regex::new(list_players_mention.as_str()).unwrap(),
         list_stripe_subscriptions: Regex::new(list_stripe_subscriptions.as_str()).unwrap(),
         sync_stripe_subscriptions: Regex::new(sync_stripe_subscriptions.as_str()).unwrap(),
+        num_cached_members: Regex::new(num_cached_members.as_str()).unwrap(),
     }
 }
 
