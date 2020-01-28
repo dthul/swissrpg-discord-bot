@@ -71,48 +71,21 @@ pub async fn update_roles(
     // Now, check which Discord users already have the Champion and Insider roles
     let mut current_champions = vec![];
     let mut current_insiders = vec![];
-    for member_result in crate::discord::sync::ids::GUILD_ID.members_iter(&discord_api.http) {
-        let member = match member_result {
-            Err(err) => {
-                eprintln!("Error when querying Discord member:\n{:#?}", err);
-                continue;
-            }
-            Ok(member) => member,
-        };
-        let user = member.user.read();
-        let is_champion = match user.has_role(
-            discord_api,
-            crate::discord::sync::ids::GUILD_ID,
-            ids::CHAMPION_ID,
-        ) {
-            Ok(has_role) => has_role,
-            Err(err) => {
-                eprintln!(
-                    "Error when querying whether Discord user {} has the Champion role:\n{:#?}",
-                    user.id, err
-                );
-                false
-            }
-        };
-        let is_insider = match user.has_role(
-            discord_api,
-            crate::discord::sync::ids::GUILD_ID,
-            ids::INSIDER_ID,
-        ) {
-            Ok(has_role) => has_role,
-            Err(err) => {
-                eprintln!(
-                    "Error when querying whether Discord user {} has the Insider role:\n{:#?}",
-                    user.id, err
-                );
-                false
-            }
-        };
+    // TODO: blocking
+    let guild = discord_api
+        .cache
+        .read()
+        .guild(crate::discord::sync::ids::GUILD_ID)
+        .ok_or_else(|| simple_error::SimpleError::new("Did not find guild in cache"))?;
+    // TODO: blocking
+    for (&user_id, member) in &guild.read().members {
+        let is_champion = member.roles.contains(&ids::CHAMPION_ID);
+        let is_insider = member.roles.contains(&ids::INSIDER_ID);
         if is_champion {
-            current_champions.push(user.id);
+            current_champions.push(user_id);
         }
         if is_insider {
-            current_insiders.push(user.id);
+            current_insiders.push(user_id);
         }
     }
     // Assign the role(s) to users which earned it but don't have it yet and
