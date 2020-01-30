@@ -18,7 +18,7 @@ pub mod ids {
     pub const GUILD_ID: GuildId = GuildId(601070848446824509);
     pub const BOT_ADMIN_ID: RoleId = RoleId(606829075226689536);
     pub const PUBLISHER_ID: RoleId = RoleId(613769364990066699);
-    pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(606913167439822987));
+    pub const GAME_MASTER_ID: RoleId = RoleId(606913167439822987);
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561808429056042)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561949651402772)];
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650656330390175764));
@@ -31,7 +31,7 @@ pub mod ids {
     pub const GUILD_ID: GuildId = GuildId(401856510709202945);
     pub const BOT_ADMIN_ID: RoleId = RoleId(610541498852966436);
     pub const PUBLISHER_ID: RoleId = RoleId(611290948395073585);
-    pub const GAME_MASTER_ID: Option<RoleId> = Some(RoleId(412946716892069888));
+    pub const GAME_MASTER_ID: RoleId = RoleId(412946716892069888);
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(562607292176924694)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] =
         &[ChannelId(414074722259828736), ChannelId(651006290998329354)];
@@ -799,60 +799,56 @@ fn sync_game_master_role(
     redis_connection: &mut redis::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
-    if let Some(game_master_role) = GAME_MASTER_ID {
-        // First, find all events belonging to this event series
-        let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
-        let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
-        if event_ids.is_empty() {
-            return Ok(());
-        }
-        // Then, find all Meetup host of those events
-        let redis_event_hosts_keys: Vec<_> = event_ids
-            .iter()
-            .map(|event_id| format!("meetup_event:{}:meetup_hosts", event_id))
-            .collect();
-        let (meetup_host_ids,): (Vec<u64>,) = redis::pipe()
-            .sunion(redis_event_hosts_keys)
-            .query(redis_connection)?;
-        // Now, try to associate the hosts with Discord users
-        let redis_meetup_host_discord_keys: Vec<_> = meetup_host_ids
-            .into_iter()
-            .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
-            .collect();
-        let discord_host_ids: Vec<Option<u64>> = redis::cmd("MGET")
-            .arg(redis_meetup_host_discord_keys)
-            .query(redis_connection)?;
-        // Filter the None values
-        let discord_host_ids: Vec<_> = discord_host_ids.into_iter().filter_map(|id| id).collect();
-        // Lastly, actually assign the Game Master role to the hosts
-        for host_id in discord_host_ids {
-            match UserId(host_id).to_user(discord_api) {
-                Ok(user) => match user.has_role(discord_api, GUILD_ID, game_master_role) {
-                    Ok(has_role) => {
-                        if !has_role {
-                            match discord_api.http().add_member_role(
-                                GUILD_ID.0,
-                                host_id,
-                                game_master_role.0,
-                            ) {
-                                Ok(_) => {
-                                    println!("Assigned user {} to the game master role", host_id)
-                                }
-                                Err(err) => eprintln!(
-                                    "Could not assign user {} to the game master role: {}",
-                                    host_id, err
-                                ),
-                            }
+    // First, find all events belonging to this event series
+    let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
+    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
+    if event_ids.is_empty() {
+        return Ok(());
+    }
+    // Then, find all Meetup host of those events
+    let redis_event_hosts_keys: Vec<_> = event_ids
+        .iter()
+        .map(|event_id| format!("meetup_event:{}:meetup_hosts", event_id))
+        .collect();
+    let (meetup_host_ids,): (Vec<u64>,) = redis::pipe()
+        .sunion(redis_event_hosts_keys)
+        .query(redis_connection)?;
+    // Now, try to associate the hosts with Discord users
+    let redis_meetup_host_discord_keys: Vec<_> = meetup_host_ids
+        .into_iter()
+        .map(|meetup_id| format!("meetup_user:{}:discord_user", meetup_id))
+        .collect();
+    let discord_host_ids: Vec<Option<u64>> = redis::cmd("MGET")
+        .arg(redis_meetup_host_discord_keys)
+        .query(redis_connection)?;
+    // Filter the None values
+    let discord_host_ids: Vec<_> = discord_host_ids.into_iter().filter_map(|id| id).collect();
+    // Lastly, actually assign the Game Master role to the hosts
+    for host_id in discord_host_ids {
+        match UserId(host_id).to_user(discord_api) {
+            Ok(user) => match user.has_role(discord_api, GUILD_ID, GAME_MASTER_ID) {
+                Ok(has_role) => {
+                    if !has_role {
+                        match discord_api.http().add_member_role(
+                            GUILD_ID.0,
+                            host_id,
+                            GAME_MASTER_ID.0,
+                        ) {
+                            Ok(_) => println!("Assigned user {} to the game master role", host_id),
+                            Err(err) => eprintln!(
+                                "Could not assign user {} to the game master role: {}",
+                                host_id, err
+                            ),
                         }
                     }
-                    Err(err) => eprintln!(
-                        "Could not figure out whether the user {} already has the game master \
-                         role: {}",
-                        user.id, err
-                    ),
-                },
-                Err(err) => eprintln!("Could not find the host user {}: {}", host_id, err),
-            }
+                }
+                Err(err) => eprintln!(
+                    "Could not figure out whether the user {} already has the game master \
+                     role: {}",
+                    user.id, err
+                ),
+            },
+            Err(err) => eprintln!("Could not find the host user {}: {}", host_id, err),
         }
     }
     Ok(())

@@ -20,6 +20,7 @@ pub mod ids {
     // Test server:
     pub const CHAMPION_ID: RoleId = RoleId(670250507436294144);
     pub const INSIDER_ID: RoleId = RoleId(670250754422079488);
+    pub const GM_CHAMPION_ID: RoleId = RoleId(671107703703207940);
 }
 
 #[cfg(not(feature = "bottest"))]
@@ -28,6 +29,7 @@ pub mod ids {
     // SwissRPG server:
     pub const CHAMPION_ID: RoleId = RoleId(670197555166052362);
     pub const INSIDER_ID: RoleId = RoleId(670201953883783169);
+    pub const GM_CHAMPION_ID: RoleId = RoleId(671111220119470093);
 }
 
 pub async fn update_roles(
@@ -70,7 +72,9 @@ pub async fn update_roles(
     let new_insiders = discord_usernames_to_ids(discord_api, &new_insiders)?;
     // Now, check which Discord users already have the Champion and Insider roles
     let mut current_champions = vec![];
+    let mut current_gm_champions = vec![];
     let mut current_insiders = vec![];
+    let mut current_gms = vec![];
     // TODO: blocking
     let guild = discord_api
         .cache
@@ -80,12 +84,22 @@ pub async fn update_roles(
     // TODO: blocking
     for (&user_id, member) in &guild.read().members {
         let is_champion = member.roles.contains(&ids::CHAMPION_ID);
+        let is_gm_champion = member.roles.contains(&ids::GM_CHAMPION_ID);
         let is_insider = member.roles.contains(&ids::INSIDER_ID);
+        let is_gm = member
+            .roles
+            .contains(&crate::discord::sync::ids::GAME_MASTER_ID);
         if is_champion {
             current_champions.push(user_id);
         }
+        if is_gm_champion {
+            current_gm_champions.push(user_id);
+        }
         if is_insider {
             current_insiders.push(user_id);
+        }
+        if is_gm {
+            current_gms.push(user_id);
         }
     }
     // Assign the role(s) to users which earned it but don't have it yet and
@@ -100,6 +114,9 @@ pub async fn update_roles(
             // Assign champion role
             add_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await?;
         }
+        if current_gms.contains(new_champion) && !current_gm_champions.contains(new_champion) {
+            add_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID).await?;
+        }
     }
     for new_insider in &new_insiders {
         if !current_insiders.contains(new_insider) {
@@ -111,6 +128,19 @@ pub async fn update_roles(
         if !new_champions.contains(current_champion) {
             // Remove champion role
             remove_member_role(discord_api.clone(), *current_champion, ids::CHAMPION_ID).await?;
+        }
+    }
+    for current_gm_champion in &current_gm_champions {
+        if !new_champions.contains(current_gm_champion)
+            || !current_gms.contains(current_gm_champion)
+        {
+            // Remove GM champion role
+            remove_member_role(
+                discord_api.clone(),
+                *current_gm_champion,
+                ids::GM_CHAMPION_ID,
+            )
+            .await?;
         }
     }
     for current_insider in &current_insiders {
