@@ -122,7 +122,7 @@ pub async fn update_roles(
     Ok(())
 }
 
-async fn get_customer_and_product(
+pub async fn get_customer_and_product(
     client: &stripe::Client,
     subscription: &stripe::Subscription,
 ) -> Result<(stripe::Customer, stripe::Product), crate::meetup::Error> {
@@ -160,7 +160,7 @@ async fn get_customer_and_product(
     }
 }
 
-fn discord_usernames_to_ids(
+pub fn discord_usernames_to_ids(
     discord_api: &crate::discord::CacheAndHttp,
     usernames: &[String],
 ) -> Result<Vec<UserId>, crate::meetup::Error> {
@@ -190,7 +190,8 @@ fn discord_usernames_to_ids(
     Ok(discord_ids)
 }
 
-async fn add_member_role(
+// TODO: move to discord utils
+pub async fn add_member_role(
     discord_api: crate::discord::CacheAndHttp,
     user_id: UserId,
     role_id: RoleId,
@@ -215,6 +216,7 @@ async fn add_member_role(
     Ok(())
 }
 
+// TODO: move to discord utils
 async fn remove_member_role(
     discord_api: crate::discord::CacheAndHttp,
     user_id: UserId,

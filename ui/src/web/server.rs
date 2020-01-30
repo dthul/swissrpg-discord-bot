@@ -104,6 +104,7 @@ pub fn create_server(
     discord_cache_http: lib::discord::CacheAndHttp,
     bot_name: String,
     stripe_webhook_secret: Option<String>,
+    stripe_client: Arc<stripe::Client>,
 ) -> impl Future<Output = ()> + Send + 'static {
     let linking_routes = super::linking::create_routes(
         redis_client.clone(),
@@ -128,6 +129,7 @@ pub fn create_server(
         if let Some(stripe_webhook_secret) = stripe_webhook_secret {
             let stripe_webhook_routes = super::stripe_webhook_endpoint::create_routes(
                 discord_cache_http.clone(),
+                stripe_client,
                 stripe_webhook_secret,
             );
             combined_routes

@@ -62,7 +62,7 @@ fn main() {
     // Create a Stripe client
     let stripe_client = Arc::new(stripe::Client::new(&stripe_client_secret).with_headers(
         stripe::Headers {
-            stripe_version: Some(stripe::ApiVersion::V2019_03_14),
+            // stripe_version: Some(stripe::ApiVersion::V2019_03_14),
             ..Default::default()
         },
     ));
@@ -111,7 +111,8 @@ fn main() {
             .get::<ui::discord::bot::BotNameKey>()
             .expect("Bot name was not set")
             .clone(),
-            stripe_webhook_signing_secret,
+        stripe_webhook_signing_secret,
+        stripe_client,
     );
 
     // Check Redis for a refresh time. If there is one, use that
