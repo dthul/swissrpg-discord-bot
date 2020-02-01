@@ -105,6 +105,7 @@ pub fn create_server(
     bot_name: String,
     stripe_webhook_secret: Option<String>,
     stripe_client: Arc<stripe::Client>,
+    api_key: Option<String>,
 ) -> impl Future<Output = ()> + Send + 'static {
     let linking_routes = super::linking::create_routes(
         redis_client.clone(),
@@ -141,6 +142,15 @@ pub fn create_server(
                 .map(|reply| Box::new(reply) as Box<dyn Reply>)
                 .boxed()
         };
+    let combined_routes = if let Some(api_key) = api_key {
+        let api_routes = super::api::create_routes(discord_cache_http.clone(), api_key);
+        combined_routes
+            .or(api_routes)
+            .map(|reply| Box::new(reply) as Box<dyn Reply>)
+            .boxed()
+    } else {
+        combined_routes
+    };
     let server = warp::serve(combined_routes);
     async move { server.bind(addr).await }
 }

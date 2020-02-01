@@ -30,6 +30,10 @@ fn main() {
     if stripe_webhook_signing_secret.is_none() {
         eprintln!("No Stripe webhook signing secret set. Will not listen to Stripe webhooks.");
     }
+    let api_key = env::var("API_KEY").ok();
+    if api_key.is_none() {
+        eprintln!("No API key set. Will not listen to API requests.");
+    }
 
     // Connect to the local Redis server
     let redis_url = if cfg!(feature = "bottest") {
@@ -113,6 +117,7 @@ fn main() {
             .clone(),
         stripe_webhook_signing_secret,
         stripe_client,
+        api_key,
     );
 
     // Check Redis for a refresh time. If there is one, use that

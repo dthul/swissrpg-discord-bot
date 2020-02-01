@@ -1,3 +1,4 @@
+pub mod api;
 pub mod linking;
 pub mod schedule_session;
 pub mod server;
