@@ -110,12 +110,26 @@ pub async fn update_roles(
     let current_champions: HashSet<_> = current_champions.into_iter().collect();
     let current_insiders: HashSet<_> = current_insiders.into_iter().collect();
     for new_champion in &new_champions {
-        if !current_champions.contains(new_champion) {
-            // Assign champion role
-            add_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await?;
-        }
-        if current_gms.contains(new_champion) && !current_gm_champions.contains(new_champion) {
-            add_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID).await?;
+        if current_gms.contains(new_champion) {
+            // Is also a GM
+            if !current_gm_champions.contains(new_champion) {
+                // Assign GM champion role
+                add_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID).await?;
+            }
+            if current_champions.contains(new_champion) {
+                // Remove (non-GM) champion role
+                remove_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await?;
+            }
+        } else {
+            // Is not also a GM
+            if !current_champions.contains(new_champion) {
+                // Assign champion role
+                add_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await?;
+            }
+            if current_gm_champions.contains(new_champion) {
+                // Remove GM champion role
+                remove_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID).await?;
+            }
         }
     }
     for new_insider in &new_insiders {
@@ -190,6 +204,7 @@ pub async fn get_customer_and_product(
     }
 }
 
+// TODO: move to discord utils
 pub fn discord_usernames_to_ids(
     discord_api: &crate::discord::CacheAndHttp,
     usernames: &[String],

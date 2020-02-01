@@ -87,6 +87,8 @@ async fn handle_new_subscription(
             &[username.clone()],
         )?;
         if let Some(discord_id) = ids.first() {
+            // TODO: might block
+            let discord_user = discord_id.to_user(discord_api)?;
             let is_champion_product = product.name.as_ref().map_or(false, |name| {
                 lib::tasks::subscription_roles::CHAMPION_PRODUCT_REGEX.is_match(name)
             });
@@ -94,13 +96,27 @@ async fn handle_new_subscription(
                 lib::tasks::subscription_roles::INSIDER_PRODUCT_REGEX.is_match(name)
             });
             if is_champion_product {
-                println!("Adding Champion role");
-                lib::tasks::subscription_roles::add_member_role(
-                    discord_api.clone(),
-                    *discord_id,
-                    lib::tasks::subscription_roles::ids::CHAMPION_ID,
-                )
-                .await?;
+                if let Ok(true) = discord_user.has_role(
+                    discord_api,
+                    lib::discord::sync::ids::GUILD_ID,
+                    lib::discord::sync::ids::GAME_MASTER_ID,
+                ) {
+                    println!("Adding GM Champion role");
+                    lib::tasks::subscription_roles::add_member_role(
+                        discord_api.clone(),
+                        *discord_id,
+                        lib::tasks::subscription_roles::ids::GM_CHAMPION_ID,
+                    )
+                    .await?;
+                } else {
+                    println!("Adding Champion role");
+                    lib::tasks::subscription_roles::add_member_role(
+                        discord_api.clone(),
+                        *discord_id,
+                        lib::tasks::subscription_roles::ids::CHAMPION_ID,
+                    )
+                    .await?;
+                }
             }
             if is_insider_product {
                 println!("Adding Insider role");
