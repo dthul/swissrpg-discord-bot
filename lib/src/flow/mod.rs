@@ -148,27 +148,47 @@ impl ScheduleSessionFlow {
             description.push_str(&format!("\n[campaign {}]", old_event_id));
         }
         // Increase the Session number
-        let mut name = new_event.name.clone();
+        let name = new_event.name.clone();
         let title_captures = crate::meetup::sync::SESSION_REGEX.captures_iter(&new_event.name);
-        // Match the rightmost occurence of "Session X" in the title
-        if let Some(capture) = title_captures.last() {
+        // Match the rightmost occurence of " Session X" in the event name.
+        // Returns the event name without the session number (title_only) and
+        // the current session number
+        let (title_only, session_number) = if let Some(capture) = title_captures.last() {
             // If there is a match, increase the number
             // Extract the current number from the title
             let session_number = capture.name("number").unwrap().as_str();
             // Try to parse the session number
             let session_number = session_number.parse::<i32>()?;
-            // Find the range of the "Session X" match
+            // Find the range of the " Session X" match and remove it from the string
             let session_x_match = capture.get(0).unwrap();
-            // Replace the text "Session X" by "Session X+1"
-            name.replace_range(
-                session_x_match.start()..session_x_match.end(),
-                &format!("Session {}", session_number + 1),
-            );
+            let mut title_only = name;
+            title_only.truncate(session_x_match.start());
+            (title_only, session_number)
         } else {
-            // If there is no match, append a Session number
-            name.push_str(&format!(" Session 2"));
-        }
-        new_event.name = name;
+            // If there is no match, return the whole name and Session number 1
+            (name, 1)
+        };
+        // Create a new " Session X+1" suffix
+        let new_session_suffix = format!(" Session {}", session_number + 1);
+        // Check if the concatenation of event title and session suffix is short enough
+        let new_event_name = if title_only.encode_utf16().count()
+            + new_session_suffix.encode_utf16().count()
+            <= crate::meetup::MAX_EVENT_NAME_UTF16_LEN
+        {
+            title_only + &new_session_suffix
+        } else {
+            // Event title and session prefix together are too long.
+            // Shorten the event title and add an ellipsis.
+            let ellipsis = "…";
+            let ellipsis_utf16_len = ellipsis.encode_utf16().count();
+            let max_title_utf16_len = crate::meetup::MAX_EVENT_NAME_UTF16_LEN
+                - new_session_suffix.encode_utf16().count()
+                - ellipsis_utf16_len;
+            let shortened_title =
+                crate::meetup::util::truncate_str(title_only, max_title_utf16_len);
+            shortened_title + ellipsis + &new_session_suffix
+        };
+        new_event.name = new_event_name;
         new_event.description = description;
         new_event.time = new_date_time;
         Ok(new_event)

@@ -3,6 +3,7 @@ use std::{
     future::Future,
     io::{self, Write},
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 async fn try_with_token_refresh<
     T,
@@ -77,8 +78,8 @@ pub async fn rsvp_user_to_event(
     redis_connection: &mut redis::aio::Connection,
     oauth2_consumer: &super::oauth2::OAuth2Consumer,
 ) -> Result<super::api::RSVP, super::Error> {
-    let rsvp_fun = |async_meetup_user_client: super::api::AsyncClient| {
-        async move { async_meetup_user_client.rsvp(urlname, event_id, true).await }
+    let rsvp_fun = |async_meetup_user_client: super::api::AsyncClient| async move {
+        async_meetup_user_client.rsvp(urlname, event_id, true).await
     };
     try_with_token_refresh(rsvp_fun, user_id, redis_connection, oauth2_consumer).await
 }
@@ -258,4 +259,28 @@ pub async fn get_group_profiles(
         profiles.push(user);
     }
     Ok(profiles)
+}
+
+// Truncates the string to the given maximum length.
+// The "length" of a Unicode string is no well-defined concept. Meetup (at least
+// the form on the website) seems to use the number of UTF-16 code units as the
+// length of the string, so this is what this method uses (see
+// https://hsivonen.fi/string-length/ for some details Unicode string lengths).
+pub fn truncate_str(mut string: String, max_len: usize) -> String {
+    // Count the number of characters that are allowed
+    let mut utf16_length = 0;
+    let mut utf8_length = 0;
+    for grapheme in UnicodeSegmentation::graphemes(string.as_str(), /*extended*/ true) {
+        // Compute the length of this grapheme in UTF-16
+        let grapheme_utf16_length = grapheme.encode_utf16().count();
+        if utf16_length + grapheme_utf16_length <= max_len {
+            utf16_length += grapheme_utf16_length;
+            utf8_length += grapheme.len();
+        } else {
+            // We have reached the maximum length
+            break;
+        }
+    }
+    string.truncate(utf8_length);
+    string
 }

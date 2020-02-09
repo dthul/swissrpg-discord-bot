@@ -10,7 +10,7 @@ pub const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)[\[\(]\s*new\s*campaign\s*[
 pub const EVENT_SERIES_PATTERN: &'static str =
     r"(?i)[\[\(]\s*campaign\s*(?P<event_id>[a-zA-Z0-9]+)\s*[\]\)]";
 pub const CHANNEL_PATTERN: &'static str = r"(?i)[\[\(]\s*channel\s*(?P<channel_id>[0-9]+)\s*[\]\)]";
-pub const SESSION_PATTERN: &'static str = r"(?i)session\s*(?P<number>[0-9]+)";
+pub const SESSION_PATTERN: &'static str = r"(?i)\s*session\s*(?P<number>[0-9]+)";
 pub const ONLINE_PATTERN: &'static str = r"(?i)[\[\(]\s*online\s*[\]\)]";
 
 lazy_static! {
