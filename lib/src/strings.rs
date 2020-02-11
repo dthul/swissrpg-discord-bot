@@ -210,6 +210,9 @@ pub const CHANNEL_NOT_YET_CLOSEABLE: &'static str = "Too soon mate. Please wait 
                                                      for deletion first. This is to avoid \
                                                      accidental deletion of channels :grimacing:";
 
+pub const CHANNEL_NO_EXPIRATION: &'static str =
+    "This channel has no expiration date, so I will not close it.";
+
 pub const CHANNEL_MARKED_FOR_CLOSING: &'static str =
     "Roger that. I've marked this channel to be closed in the next 24 hours.\nThanks for playing \
      and hope to see you at another game soon.";

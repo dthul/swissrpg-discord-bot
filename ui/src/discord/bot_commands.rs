@@ -638,13 +638,19 @@ impl super::bot::Handler {
             .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
             .transpose()?
             .map(|t| t.with_timezone(&chrono::Utc));
-        if let Some(expiration_time) = expiration_time {
-            if expiration_time > chrono::Utc::now() {
-                let _ = msg
-                    .channel_id
-                    .say(&ctx.http, strings::CHANNEL_NOT_YET_CLOSEABLE);
-                return Ok(());
-            }
+        let expiration_time = if let Some(expiration_time) = expiration_time {
+            expiration_time
+        } else {
+            let _ = msg
+                .channel_id
+                .say(&ctx.http, strings::CHANNEL_NO_EXPIRATION);
+            return Ok(());
+        };
+        if expiration_time > chrono::Utc::now() {
+            let _ = msg
+                .channel_id
+                .say(&ctx.http, strings::CHANNEL_NOT_YET_CLOSEABLE);
+            return Ok(());
         }
         // Schedule this channel for deletion
         // TODO: in 24 hours
@@ -658,7 +664,8 @@ impl super::bot::Handler {
             .transpose()?
             .map(|t| t.with_timezone(&chrono::Utc));
         if let Some(current_deletion_time) = current_deletion_time {
-            if new_deletion_time > current_deletion_time {
+            if new_deletion_time > current_deletion_time && current_deletion_time > expiration_time
+            {
                 let _ = msg
                     .channel_id
                     .say(&ctx.http, strings::CHANNEL_ALREADY_MARKED_FOR_CLOSING);
