@@ -28,7 +28,7 @@ function validate_form($result, $value, $form, $field)
         }
         // Check if the specified Discord user is a member of our Discord server
         $response = wp_remote_get(
-            'https://bottest.swissrpg.ch/api/check_discord_username',
+            'https://bot.swissrpg.ch/api/check_discord_username',
             array(
                 'timeout' => 3,
                 'headers' => array(
