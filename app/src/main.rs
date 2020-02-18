@@ -28,12 +28,22 @@ fn main() {
         env::var("STRIPE_CLIENT_SECRET").expect("Found no STRIPE_CLIENT_SECRET in environment");
     let stripe_webhook_signing_secret = env::var("STRIPE_WEBHOOK_SIGNING_SECRET").ok();
     if stripe_webhook_signing_secret.is_none() {
-        eprintln!("No Stripe webhook signing secret set. Will not listen to Stripe webhooks.");
+        tracing::warn!("No Stripe webhook signing secret set. Will not listen to Stripe webhooks.");
     }
     let api_key = env::var("API_KEY").ok();
     if api_key.is_none() {
-        eprintln!("No API key set. Will not listen to API requests.");
+        tracing::warn!("No API key set. Will not listen to API requests.");
     }
+
+    // Set up instrumentation
+    let tracing_subscriber = tracing_subscriber::FmtSubscriber::builder()
+        // all spans/events with a level higher than DEBUG (e.g, debug, info, warn, etc.)
+        // will be written to stdout.
+        .with_max_level(tracing::Level::DEBUG)
+        // builds the subscriber.
+        .finish();
+    tracing::subscriber::set_global_default(tracing_subscriber)
+        .expect("Unable to set global default tracing subscriber");
 
     // Connect to the local Redis server
     let redis_url = if cfg!(feature = "bottest") {
@@ -191,6 +201,6 @@ fn main() {
 
     // Finally, start the Discord bot
     if let Err(why) = bot.start() {
-        println!("Client error: {:?}", why);
+        tracing::error!("Client error: {:#?}", why);
     }
 }

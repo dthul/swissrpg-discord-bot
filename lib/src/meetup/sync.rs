@@ -29,15 +29,20 @@ lazy_static! {
 // an Arc<Mutex<Option<MeetupClient>>> internally and has the same
 // methods as MeetupClient (so we don't need to match on the Option
 // every time we want to use the client)
+#[tracing::instrument(target = "Meetup syncing task", skip(meetup_client, redis_connection))]
 pub async fn sync_task(
     meetup_client: Arc<Mutex<Option<Arc<super::api::AsyncClient>>>>,
     redis_connection: &mut redis::aio::Connection,
 ) -> Result<(), super::Error> {
+    tracing::debug!("Started syncing task");
     let meetup_client = {
         let guard = meetup_client.lock().await;
         match *guard {
             Some(ref meetup_client) => meetup_client.clone(),
-            None => return Err(SimpleError::new("Meetup API unavailable").into()),
+            None => {
+                tracing::warn!("Meetup API unavailable");
+                return Err(SimpleError::new("Meetup API unavailable").into());
+            }
         }
         // The Mutex guard will be dropped here
     };
@@ -47,9 +52,9 @@ pub async fn sync_task(
     // For loops for streams not supported (yet?)
     while let Some(event) = upcoming_events.next().await {
         match event {
-            Err(err) => eprintln!("Couldn't query upcoming event: {}", err),
+            Err(err) => tracing::warn!("Couldn't query upcoming event: {}", err),
             Ok(event) => match sync_event(event, redis_connection).await {
-                Err(err) => eprintln!("Event sync failed: {}", err),
+                Err(err) => tracing::warn!("Event sync failed: {:#?}", err),
                 _ => (),
             },
         }
@@ -58,7 +63,7 @@ pub async fn sync_task(
     let event_series: Vec<String> = redis_connection.smembers("event_series").await?;
     for series_id in event_series {
         match sync_event_series(series_id, meetup_client.as_ref(), redis_connection).await {
-            Err(err) => eprintln!("Series sync failed: {}", err),
+            Err(err) => tracing::warn!("Series sync failed: {:#?}", err),
             _ => (),
         };
         // Add a 250ms delay between each item as a naive rate limit for the Meetup API
@@ -69,6 +74,7 @@ pub async fn sync_task(
 
 // This function is supposed to be idempotent, so calling it with the same
 // event is fine.
+#[tracing::instrument(skip(event, redis_connection))]
 pub async fn sync_event(
     event: super::api::Event,
     redis_connection: &mut redis::aio::Connection,
@@ -76,6 +82,14 @@ pub async fn sync_event(
     let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(&event.description);
     let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(&event.description);
     let is_online = ONLINE_REGEX.is_match(&event.description);
+    tracing::info!(
+        %event.id,
+        is_new_adventure,
+        is_new_campaign,
+        is_online,
+        "Syncing event {}",
+        event.name
+    );
     let event_series_captures = EVENT_SERIES_REGEX.captures(&event.description);
     let channel_captures = CHANNEL_REGEX.captures(&event.description);
     let indicated_channel_id = match channel_captures {
@@ -98,15 +112,15 @@ pub async fn sync_event(
     }
     // Either: new adventure, new campaign, or continuation (event series)
     if !(is_new_adventure || is_new_campaign || event_series_captures.is_some()) {
-        println!("Syncing task: Ignoring event \"{}\"", event.name);
+        tracing::trace!("Syncing task: Ignoring event \"{}\"", event.name);
         return Ok(());
     } else {
-        println!("Syncing task: found event \"{}\"", event.name);
+        tracing::trace!("Syncing task: found event \"{}\"", event.name);
     }
     if event_series_captures.is_some()
         && (is_new_adventure || is_new_campaign || indicated_channel_id.is_some())
     {
-        eprintln!(
+        tracing::info!(
             "Syncing task: Event \"{}\" specifies a series as well as a new adventure/campaign \
              tag, ignoring",
             event.name
@@ -119,7 +133,7 @@ pub async fn sync_event(
         let series_event_id = match event_series_captures.name("event_id") {
             Some(id) => id.as_str(),
             None => {
-                eprintln!("Syncing task: error capturing event_id");
+                tracing::info!("Syncing task: error capturing event_id");
                 return Ok(());
             }
         };
@@ -132,16 +146,17 @@ pub async fn sync_event(
             Ok(id) => match id {
                 Some(id) => Some(id),
                 None => {
-                    eprintln!(
+                    tracing::info!(
                         "Event \"{}\" indicates that it wants to be in the same series as event \
                          {} but the latter does not belong to an event series yet",
-                        event.name, series_event_id
+                        event.name,
+                        series_event_id
                     );
                     return Ok(());
                 }
             },
             Err(err) => {
-                eprintln!(
+                tracing::warn!(
                     "Syncing task: error querying Redis for event series: {}",
                     err
                 );
@@ -198,13 +213,13 @@ pub async fn sync_event(
                     // new series or belongs to an existing series, do nothing
                     if !(is_new_adventure || is_new_campaign || indicated_event_series_id.is_some())
                     {
-                        println!("Syncing task: Ignoring event \"{}\"", event.name);
+                        tracing::info!("Syncing task: Ignoring event \"{}\"", event.name);
                         return pipe.query_async(con).await;
                     }
                     // If this event has no series ID yet, but the channel
                     // it wants to be associated with does, then something is fishy
                     if indicated_channel_series.is_some() {
-                        println!(
+                        tracing::info!(
                             "Event \"{}\" wants to be associated with a certain channel but that \
                              channel already belongs to an event series",
                             event.name
@@ -220,7 +235,7 @@ pub async fn sync_event(
                         // If this event's series ID does not match the channel's series ID, something is fishy
                         if let Some(channel_series) = indicated_channel_series {
                             if &channel_series != &existing_series_id {
-                                eprintln!(
+                                tracing::info!(
                                     "Event \"{}\" wants to be associated with a certain channel \
                                      but that channel already belongs to a different event series",
                                     event.name
@@ -231,10 +246,12 @@ pub async fn sync_event(
                         // If this event's series ID does not match the indicated event series ID, issue a warning
                         if let Some(indicated_event_series_id) = indicated_event_series_id {
                             if &existing_series_id != &indicated_event_series_id {
-                                eprintln!(
+                                tracing::info!(
                                     "Warning: Event \"{}\" indicates event series {} but is \
                                      already associated with event series {}.",
-                                    event.name, indicated_event_series_id, existing_series_id
+                                    event.name,
+                                    indicated_event_series_id,
+                                    existing_series_id
                                 );
                                 return pipe.query_async(con).await;
                             }
@@ -252,7 +269,7 @@ pub async fn sync_event(
                                 // If this event wants to be associated with a channel but that channel already
                                 // has an event series ID, something is fishy
                                 if indicated_channel_series.is_some() {
-                                    eprintln!(
+                                    tracing::info!(
                                         "Event \"{}\" wants to be associated with a certain \
                                          channel but that channel already belongs to a different \
                                          event series",
@@ -262,9 +279,10 @@ pub async fn sync_event(
                                 } else {
                                     // The event wants to be associated with a channel and that channel is not
                                     // associated to anything else yet, looking good!
-                                    println!(
+                                    tracing::info!(
                                         "Associating event \"{}\" with Discord channel {}",
-                                        event.name, channel_id
+                                        event.name,
+                                        channel_id
                                     );
                                     let redis_series_channel_key =
                                         format!("event_series:{}:discord_channel", &new_series_id);
@@ -278,7 +296,7 @@ pub async fn sync_event(
                             indicated_event_series_id.clone()
                         } else {
                             // Something went wrong
-                            eprintln!(
+                            tracing::warn!(
                                 "Syncing task: internal error (event has no series id yet, but is \
                                  neither a new adventure/campaign nor does it belong to a session"
                             );
@@ -335,7 +353,7 @@ pub async fn sync_event(
         transaction_fn,
     )
     .await?;
-    println!("Event syncing task: Synced event \"{}\"", event_name);
+    tracing::info!("Event syncing task: Synced event \"{}\"", event_name);
     Ok(())
 }
 
@@ -361,7 +379,7 @@ async fn sync_event_series(
         let next_event_id = next_event.id.clone();
         let next_event_name = &next_event.name;
         let group_urlname = &next_event.urlname;
-        println!(
+        tracing::trace!(
             "Syncing task: Querying RSVPs for event \"{}\"",
             next_event_name
         );
@@ -369,19 +387,19 @@ async fn sync_event_series(
         let rsvps = match meetup_client.get_rsvps(group_urlname, &next_event_id).await {
             Err(super::api::Error::ResourceNotFound) => {
                 // Remove this event from Redis
-                eprintln!(
+                tracing::info!(
                     "Event {} was deleted from Meetup, removing from database...",
                     &next_event.id
                 );
                 crate::redis::delete_event(redis_connection, &next_event.id).await?;
-                eprintln!("Removed event {} from database", &next_event.id);
+                tracing::trace!("Removed event {} from database", &next_event.id);
                 continue;
             }
             Err(err) => return Err(err.into()),
             Ok(rsvps) => rsvps,
         };
         // Sync the RSVPs
-        println!("Syncing task: Found {} RSVPs", rsvps.len());
+        tracing::trace!("Syncing task: Found {} RSVPs", rsvps.len());
         return sync_rsvps(&next_event_id, rsvps, redis_connection).await;
     }
     Ok(())

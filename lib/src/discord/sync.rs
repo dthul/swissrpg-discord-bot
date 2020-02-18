@@ -63,7 +63,7 @@ pub fn create_sync_discord_task(
     move |_ctx| {
         let next_sync_time = match sync_discord(&redis_client, &discord_api, bot_id) {
             Err(err) => {
-                eprintln!("Discord syncing task failed: {}", err);
+                tracing::warn!("Discord syncing task failed: {}", err);
                 // Retry in a minute
                 white_rabbit::Utc::now() + white_rabbit::Duration::minutes(1)
             }
@@ -92,7 +92,7 @@ pub fn sync_discord(
     for series in &event_series {
         if let Err(err) = sync_event_series(series, &mut con, discord_api, bot_id) {
             some_failed = true;
-            eprintln!("Discord event series syncing task failed: {}", err);
+            tracing::warn!("Discord event series syncing task failed: {}", err);
         }
     }
     if some_failed {
@@ -141,12 +141,12 @@ fn sync_event_series(
                         link: link,
                     }),
                     Err(err) => {
-                        eprintln!("Error parsing event time for event {}: {}", time, err);
+                        tracing::warn!("Error parsing event time for event {}: {}", time, err);
                         None
                     }
                 },
                 Err(err) => {
-                    eprintln!("Redis error when querying event time: {}", err);
+                    tracing::warn!("Redis error when querying event time: {}", err);
                     None
                 }
             }
@@ -176,7 +176,7 @@ fn sync_event_series(
     let next_event = match upcoming.first() {
         Some(event) => event,
         None => {
-            println!(
+            tracing::debug!(
                 "Event series \"{}\" seems to have no upcoming events associated with it, not \
                  syncing to Discord",
                 series_id
@@ -234,7 +234,7 @@ fn sync_event_series(
         .filter_map(|res| match res {
             Ok(user) => Some(user),
             Err(err) => {
-                eprintln!(
+                tracing::warn!(
                     "Error converting Discord host ID to Discord user object: {}",
                     err
                 );
@@ -416,9 +416,10 @@ fn sync_role_impl(
             .colour(serenity::utils::Colour::BLUE.0 as u64)
             .permissions(Permissions::empty())
     })?;
-    println!(
+    tracing::info!(
         "Discord event sync: created new temporary channel role {} \"{}\"",
-        temp_channel_role.id.0, &temp_channel_role.name
+        temp_channel_role.id.0,
+        &temp_channel_role.name
     );
     let redis_discord_roles_key = if is_host_role {
         "discord_host_roles"
@@ -458,29 +459,31 @@ fn sync_role_impl(
         Err(_) => true,
     };
     if delete_temp_role {
-        println!("Trying to delete temporary channel role");
+        tracing::info!("Trying to delete temporary channel role");
         match discord_api
             .http()
             .delete_role(GUILD_ID.0, temp_channel_role.id.0)
         {
-            Ok(_) => println!("Successfully deleted temporary channel role"),
+            Ok(_) => tracing::info!("Successfully deleted temporary channel role"),
             Err(_) => {
-                eprintln!(
+                tracing::warn!(
                     "Could not delete temporary channel role {}",
                     temp_channel_role.id.0
                 );
                 // Try to persist the information to Redis that we have an orphaned role now
                 match redis_connection.sadd("orphaned_discord_roles", temp_channel_role.id.0) {
-                    Err(_) => eprintln!(
+                    Err(_) => tracing::warn!(
                         "Could not record orphaned channel role {}",
                         temp_channel_role.id.0
                     ),
-                    Ok(()) => println!("Recorded orphaned channel role {}", temp_channel_role.id.0),
+                    Ok(()) => {
+                        tracing::info!("Recorded orphaned channel role {}", temp_channel_role.id.0)
+                    }
                 }
             }
         }
     } else {
-        println!("Persisted new channel role {}", temp_channel_role.id.0);
+        tracing::info!("Persisted new channel role {}", temp_channel_role.id.0);
     }
     // Return the channel role we got from Redis, no matter
     // if it was newly created or already existing
@@ -600,9 +603,10 @@ fn sync_channel_impl(
             .name(channel_name)
             .permissions(permission_overwrites)
     })?;
-    println!(
+    tracing::info!(
         "Discord event sync: created new temporary channel {} \"{}\"",
-        temp_channel.id.0, &temp_channel.name
+        temp_channel.id.0,
+        &temp_channel.name
     );
     let redis_discord_channels_key = "discord_channels";
     let redis_channel_series_key = format!("discord_channel:{}:event_series", temp_channel.id.0);
@@ -634,20 +638,22 @@ fn sync_channel_impl(
         Err(_) => true,
     };
     if delete_temp_channel {
-        println!("Trying to delete temporary channel");
+        tracing::info!("Trying to delete temporary channel");
         match discord_api.http().delete_channel(temp_channel.id.0) {
-            Ok(_) => println!("Successfully deleted temporary channel"),
+            Ok(_) => tracing::info!("Successfully deleted temporary channel"),
             Err(_) => {
-                eprintln!("Could not delete temporary channel {}", temp_channel.id.0);
+                tracing::warn!("Could not delete temporary channel {}", temp_channel.id.0);
                 // Try to persist the information to Redis that we have an orphaned channel now
                 match redis_connection.sadd("orphaned_discord_channels", temp_channel.id.0) {
-                    Err(_) => eprintln!("Could not record orphaned channel {}", temp_channel.id.0),
-                    Ok(()) => println!("Recorded orphaned channel {}", temp_channel.id.0),
+                    Err(_) => {
+                        tracing::warn!("Could not record orphaned channel {}", temp_channel.id.0)
+                    }
+                    Ok(()) => tracing::info!("Recorded orphaned channel {}", temp_channel.id.0),
                 }
             }
         }
     } else {
-        println!("Persisted new channel {}", temp_channel.id.0);
+        tracing::info!("Persisted new channel {}", temp_channel.id.0);
     }
     // Return the channel we got from Redis, no matter
     // if it was newly created or already existing
@@ -757,22 +763,26 @@ fn sync_user_role_assignments(
                             .add_member_role(GUILD_ID.0, user_id, role.0)
                         {
                             Ok(_) => {
-                                println!("Assigned user {} to role {}", user_id, role.0);
+                                tracing::info!("Assigned user {} to role {}", user_id, role.0);
                                 newly_added_user_ids.push(user_id);
                             }
-                            Err(err) => eprintln!(
+                            Err(err) => tracing::warn!(
                                 "Could not assign user {} to role {}: {}",
-                                user_id, role.0, err
+                                user_id,
+                                role.0,
+                                err
                             ),
                         }
                     }
                 }
-                Err(err) => eprintln!(
+                Err(err) => tracing::warn!(
                     "Could not figure out whether the user {} already has role {}: {}",
-                    user.id, role.0, err
+                    user.id,
+                    role.0,
+                    err
                 ),
             },
-            Err(err) => eprintln!("Could not find the user {}: {}", user_id, err),
+            Err(err) => tracing::warn!("Could not find the user {}: {}", user_id, err),
         }
     }
     // Announce the newly added users
@@ -785,9 +795,10 @@ fn sync_user_role_assignments(
                     .content(crate::strings::CHANNEL_ADDED_PLAYERS(&newly_added_user_ids))
             }
         }) {
-            eprintln!(
+            tracing::warn!(
                 "Could not announce new players in channel {}: {}",
-                channel.0, err
+                channel.0,
+                err
             );
         };
     }
@@ -834,21 +845,25 @@ fn sync_game_master_role(
                             host_id,
                             GAME_MASTER_ID.0,
                         ) {
-                            Ok(_) => println!("Assigned user {} to the game master role", host_id),
-                            Err(err) => eprintln!(
+                            Ok(_) => {
+                                tracing::info!("Assigned user {} to the game master role", host_id)
+                            }
+                            Err(err) => tracing::warn!(
                                 "Could not assign user {} to the game master role: {}",
-                                host_id, err
+                                host_id,
+                                err
                             ),
                         }
                     }
                 }
-                Err(err) => eprintln!(
+                Err(err) => tracing::warn!(
                     "Could not figure out whether the user {} already has the game master \
                      role: {}",
-                    user.id, err
+                    user.id,
+                    err
                 ),
             },
-            Err(err) => eprintln!("Could not find the host user {}: {}", host_id, err),
+            Err(err) => tracing::warn!("Could not find the host user {}: {}", host_id, err),
         }
     }
     Ok(())
@@ -869,7 +884,7 @@ fn sync_channel_topic_and_category(
         Some("campaign") => CAMPAIGN_CATEGORY_IDS,
         Some("adventure") => ONE_SHOT_CATEGORY_IDS,
         _ => {
-            eprintln!(
+            tracing::info!(
                 "Event series {} does not have a type of 'campaign' or 'adventure'",
                 series_id
             );

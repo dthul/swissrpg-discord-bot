@@ -2,6 +2,7 @@ use futures_util::FutureExt;
 use rand::Rng;
 use redis::AsyncCommands;
 
+#[derive(Debug, Clone)]
 pub struct ScheduleSessionFlow {
     pub id: u64,
     pub event_series_id: String,
@@ -40,6 +41,7 @@ impl ScheduleSessionFlow {
         Ok(flow)
     }
 
+    #[tracing::instrument(skip(redis_connection, meetup_client, oauth2_consumer))]
     pub async fn schedule(
         self,
         mut redis_connection: redis::aio::Connection,
@@ -94,7 +96,7 @@ impl ScheduleSessionFlow {
         {
             Ok(result) => Some(result),
             Err(err) => {
-                eprintln!("Could not transfer all RSVPs to the new event.\n{:#?}", err);
+                tracing::warn!("Could not transfer all RSVPs to the new event.\n{:#?}", err);
                 None
             }
         };
@@ -115,7 +117,7 @@ impl ScheduleSessionFlow {
         };
         crate::ASYNC_RUNTIME.spawn(sync_future.map(|res| {
             if let Err(err) = res {
-                eprintln!("Could not sync the newly scheduled event:\n{:#?}", err);
+                tracing::warn!("Could not sync the newly scheduled event:\n{:#?}", err);
             }
         }));
         Ok((new_event, rsvp_result))
@@ -130,6 +132,7 @@ impl ScheduleSessionFlow {
         Ok(())
     }
 
+    #[tracing::instrument(skip(new_event))]
     pub fn new_event_hook(
         mut new_event: crate::meetup::api::NewEvent,
         new_date_time: chrono::DateTime<chrono::Utc>,
@@ -145,6 +148,7 @@ impl ScheduleSessionFlow {
             .into_owned();
         // Add an event series shortcode if there is none yet
         if !crate::meetup::sync::EVENT_SERIES_REGEX.is_match(&description) {
+            tracing::debug!("Removing [campaign …] shortcode from event description");
             description.push_str(&format!("\n[campaign {}]", old_event_id));
         }
         // Increase the Session number
@@ -179,6 +183,10 @@ impl ScheduleSessionFlow {
         } else {
             // Event title and session prefix together are too long.
             // Shorten the event title and add an ellipsis.
+            tracing::debug!(
+                "Event title is too long and will be shortened. Old title: {}",
+                title_only
+            );
             let ellipsis = "…";
             let ellipsis_utf16_len = ellipsis.encode_utf16().count();
             let max_title_utf16_len = crate::meetup::MAX_EVENT_NAME_UTF16_LEN
@@ -188,6 +196,7 @@ impl ScheduleSessionFlow {
                 crate::meetup::util::truncate_str(title_only, max_title_utf16_len);
             shortened_title + ellipsis + &new_session_suffix
         };
+        tracing::debug!("New event title: {}", new_event_name);
         new_event.name = new_event_name;
         new_event.description = description;
         new_event.time = new_date_time;

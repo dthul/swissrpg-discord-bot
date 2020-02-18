@@ -3,7 +3,12 @@ use futures_util::lock::Mutex;
 use serenity::model::id::UserId;
 use std::sync::Arc;
 use tokio::time::{Duration, Instant};
+use tracing_futures::Instrument;
 
+#[tracing::instrument(
+    target = "Syncing Task",
+    skip(redis_client, meetup_client, discord_api, bot_id, task_scheduler)
+)]
 pub async fn create_recurring_syncing_task(
     redis_client: redis::Client,
     meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
@@ -23,32 +28,38 @@ pub async fn create_recurring_syncing_task(
         let discord_api = discord_api.clone();
         let meetup_client = meetup_client.clone();
         let task_scheduler = task_scheduler.clone();
-        lib::ASYNC_RUNTIME.spawn(async move {
-            let mut redis_connection = redis_client.get_async_connection().await?;
-            tokio::time::timeout(
-                Duration::from_secs(360),
-                lib::meetup::sync::sync_task(meetup_client, &mut redis_connection).map_err(|err| {
-                    eprintln!("Syncing task failed: {}", err);
+        lib::ASYNC_RUNTIME.spawn(
+            async move {
+                tracing::debug!("Syncing task started");
+                let mut redis_connection = redis_client.get_async_connection().await?;
+                tokio::time::timeout(
+                    Duration::from_secs(360),
+                    lib::meetup::sync::sync_task(meetup_client, &mut redis_connection).map_err(
+                        |err| {
+                            tracing::warn!("Syncing task failed: {:#?}", err);
+                            err
+                        },
+                    ),
+                )
+                .map_err(|err| {
+                    tracing::warn!("Syncing task timed out: {:#?}", err);
                     err
-                }),
-            )
-            .map_err(|err| {
-                eprintln!("Syncing task timed out: {}", err);
-                err
-            })
-            .await??;
-            // Send the Discord syncing task to the scheduler
-            let mut guard = task_scheduler.lock().await;
-            guard.add_task_datetime(
-                white_rabbit::Utc::now(),
-                lib::discord::sync::create_sync_discord_task(
-                    redis_client,
-                    discord_api,
-                    bot_id.0,
-                    /*recurring*/ false,
-                ),
-            );
-            Ok::<_, lib::BoxedError>(())
-        });
+                })
+                .await??;
+                // Send the Discord syncing task to the scheduler
+                let mut guard = task_scheduler.lock().await;
+                guard.add_task_datetime(
+                    white_rabbit::Utc::now(),
+                    lib::discord::sync::create_sync_discord_task(
+                        redis_client,
+                        discord_api,
+                        bot_id.0,
+                        /*recurring*/ false,
+                    ),
+                );
+                Ok::<_, lib::BoxedError>(())
+            }
+            .instrument(tracing::info_span!("Syncing Task")),
+        );
     }
 }

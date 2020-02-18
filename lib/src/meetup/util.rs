@@ -5,6 +5,7 @@ use std::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
+#[tracing::instrument(skip(f, redis_connection, oauth2_consumer))]
 async fn try_with_token_refresh<
     T,
     Ret: Future<Output = Result<T, super::api::Error>>,
@@ -16,7 +17,7 @@ async fn try_with_token_refresh<
     oauth2_consumer: &super::oauth2::OAuth2Consumer,
 ) -> Result<T, super::Error> {
     // Look up the Meetup access token for this user
-    println!("Looking up the oauth access token");
+    tracing::trace!("Looking up the oauth access token");
     io::stdout().flush().unwrap();
     let redis_meetup_user_oauth_tokens_key = format!("meetup_user:{}:oauth2_tokens", user_id);
     let access_token: Option<String> = redis_connection
@@ -26,45 +27,43 @@ async fn try_with_token_refresh<
         Some(access_token) => access_token,
         None => {
             // There is no access token: try to obtain a new one
-            println!("No access token, calling oauth2_consumer.refresh_oauth_tokens");
+            tracing::info!("No access token, calling oauth2_consumer.refresh_oauth_tokens");
             io::stdout().flush().unwrap();
             let access_token = oauth2_consumer
                 .refresh_oauth_tokens(super::oauth2::TokenType::User(user_id), redis_connection)
                 .await?;
-            println!("Got an access token!");
+            tracing::trace!("Got an access token!");
             io::stdout().flush().unwrap();
             access_token.secret().clone()
         }
     };
     // Run the provided function
     let meetup_api_user_client = super::api::AsyncClient::new(&access_token);
-    println!("Running the provided function");
+    tracing::trace!("Running the provided function");
     io::stdout().flush().unwrap();
     match f(meetup_api_user_client).await {
         Err(err) => {
-            println!("Got an error");
             io::stdout().flush().unwrap();
             if let super::api::Error::AuthenticationFailure = err {
                 // The request seems to have failed due to invalid credentials.
                 // Try to obtain a new access token and re-run the provided function.
-                println!("Calling oauth2_consumer.refresh_oauth_tokens");
+                tracing::info!("Calling oauth2_consumer.refresh_oauth_tokens");
                 io::stdout().flush().unwrap();
                 let access_token = oauth2_consumer
                     .refresh_oauth_tokens(super::oauth2::TokenType::User(user_id), redis_connection)
                     .await?;
-                println!("Got an access token!");
+                tracing::trace!("Got an access token!");
                 io::stdout().flush().unwrap();
                 // Re-run the provided function one more time
                 let meetup_api_user_client = super::api::AsyncClient::new(access_token.secret());
                 f(meetup_api_user_client).await.map_err(Into::into)
             } else {
-                eprintln!("Meetup API error: {:#?}", err);
+                tracing::warn!("Meetup API error: {:#?}", err);
                 io::stdout().flush().unwrap();
                 return Err(err.into());
             }
         }
         Ok(t) => {
-            println!("Everything is fine!");
             io::stdout().flush().unwrap();
             Ok(t)
         }
@@ -171,9 +170,11 @@ pub async fn clone_rsvps(
                 result.num_success += 1;
             }
             Err(err) => {
-                eprintln!(
+                tracing::warn!(
                     "Could not RSVP user {} to event {}:\n{:#?}",
-                    rsvp.member.id, dst_event_id, err
+                    rsvp.member.id,
+                    dst_event_id,
+                    err
                 );
                 result.latest_error = Some(err);
                 result.num_failure += 1;

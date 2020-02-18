@@ -34,5 +34,7 @@ simple-error = "0.2"
 stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "dthul/list-fix", default-features = false, features = ["full", "webhook-events", "async"] }
 time = "0.1"
 tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "time"] }
+tracing = "0.1"
+tracing-futures = "0.2"
 warp = "0.2.1"
 white_rabbit = "0.1"

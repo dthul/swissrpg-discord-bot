@@ -45,6 +45,7 @@ pub async fn async_redis_transaction<
     }
 }
 
+#[tracing::instrument(skip(con))]
 pub async fn delete_event(
     con: &mut redis::aio::Connection,
     event_id: &str,

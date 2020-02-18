@@ -95,7 +95,10 @@ impl OAuth2Consumer {
                     });
                 let (mut redis_connection, new_access_token) = match refresh_result {
                     Err(err) => {
-                        eprintln!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
+                        tracing::warn!(
+                            "Could not refresh the organizer's oauth2 token:\n{}\n",
+                            err
+                        );
                         // Try to refresh again in an hour
                         return white_rabbit::DateResult::Repeat(
                             white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
@@ -112,7 +115,7 @@ impl OAuth2Consumer {
                 drop(async_meetup_guard);
                 // Refresh the access token in two days from now
                 let next_refresh = white_rabbit::Utc::now() + white_rabbit::Duration::days(2);
-                println!(
+                tracing::info!(
                     "Refreshed the organizer's Meetup OAuth token. Next refresh @ {}",
                     next_refresh.to_rfc3339()
                 );
@@ -143,16 +146,19 @@ impl OAuth2Consumer {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum TokenType {
     User(u64),
     Organizer,
 }
 
+#[tracing::instrument(skip(oauth2_client, redis_connection))]
 pub async fn refresh_oauth_tokens(
     token_type: TokenType,
     oauth2_client: Arc<BasicClient>,
     redis_connection: &mut redis::aio::Connection,
 ) -> Result<oauth2::AccessToken, super::Error> {
+    tracing::debug!("Trying to refresh token");
     // Try to get the refresh token from Redis
     let refresh_token: Option<String> = match token_type {
         TokenType::Organizer => redis_connection.get("meetup_refresh_token").await?,
@@ -166,11 +172,12 @@ pub async fn refresh_oauth_tokens(
     let refresh_token: String = match refresh_token {
         Some(refresh_token) => refresh_token,
         None => {
+            tracing::warn!("No refresh token available");
             return Err(SimpleError::new(
                 "Could not refresh the Meetup access token since there is no refresh token \
                  available",
             )
-            .into())
+            .into());
         }
     };
     // Try to exchange the refresh token for fresh access and refresh tokens
@@ -179,6 +186,7 @@ pub async fn refresh_oauth_tokens(
         .exchange_refresh_token(&refresh_token)
         .request_async(oauth2::reqwest::async_http_client)
         .await?;
+    tracing::debug!("Acquired new tokens");
     // Store the new tokens in Redis
     let mut pipe = redis::pipe();
     match token_type {

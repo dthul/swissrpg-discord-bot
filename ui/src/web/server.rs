@@ -2,6 +2,7 @@ use askama::Template;
 use futures_util::lock::Mutex;
 use hyper::{Body, Response};
 use std::{borrow::Cow, future::Future, sync::Arc};
+use tracing_futures::Instrument;
 use warp::{filters::BoxedFilter, Filter, Reply};
 
 pub enum HandlerResponse {
@@ -152,5 +153,8 @@ pub fn create_server(
         combined_routes
     };
     let server = warp::serve(combined_routes);
-    async move { server.bind(addr).await }
+    // We must only call bind from a Tokio runtime context, so we delay the call
+    // by enclosing it in an async block.
+    let server_future = async move { server.bind(addr).await };
+    server_future.instrument(tracing::info_span!("Web Server"))
 }
