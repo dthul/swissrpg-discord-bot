@@ -63,8 +63,8 @@ See `discord_voice_channel:{}:event_series` for the inverse relationship.
 `event_series:{}:type`: string\
 'campaign' or 'adventure'. Should probably be part of the `event_series:{}` hash instead
 
-`event_series:{}`: hash\
-* `is_online`: bool. `true` for online campaigns, non-existent or "falsy" otherwise
+`event_series:{}:is_online`: bool\
+`true` for online campaigns, non-existent or "falsy" otherwise
 
 ## Discord Channels
 

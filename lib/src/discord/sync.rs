@@ -185,7 +185,12 @@ fn sync_event_series(
         }
     };
     let event_name = &next_event.name;
-    // Step 0: Figure out the title of this event series
+    // Check whether this is an online event series
+    let redis_series_is_online_key = format!("event_series:{}:is_online", &series_id);
+    let is_online: Option<bool> = redis_connection.get(&redis_series_is_online_key)?;
+    let is_online = is_online.unwrap_or(false);
+
+    // Figure out the title of this event series
     // Parse the series name from the event title
     let series_name = match EVENT_NAME_REGEX.captures(event_name) {
         Some(captures) => captures.name("name").unwrap().as_str(),
@@ -227,6 +232,9 @@ fn sync_event_series(
         .into_iter()
         .filter_map(|id_mapping| id_mapping.1)
         .collect();
+
+    // Step 0: Make sure that event hosts have the guild's game master role
+    sync_game_master_role(series_id, redis_connection, discord_api)?;
     // Convert host IDs to user objects
     let discord_hosts: Vec<_> = discord_host_ids
         .iter()
@@ -300,17 +308,14 @@ fn sync_event_series(
         redis_connection,
         discord_api,
     )?;
-    // Step 6: Make sure that event hosts have the guild's game master role
-    sync_game_master_role(series_id, redis_connection, discord_api)?;
-    // Step 7: Keep the channel's topic up-to-date
+    // Step 6: Keep the channel's topic up-to-date
     sync_channel_topic_and_category(
         series_id,
         channel_id,
-        &next_event,
+        next_event,
         redis_connection,
         discord_api,
     )?;
-    Ok(())
 }
 
 fn sync_role(
@@ -489,7 +494,14 @@ fn sync_role_impl(
         .map_err(|err| err.into())
 }
 
+#[derive(PartialEq, Eq, Debug, Hash)]
+enum ChannelType {
+    Text,
+    Voice,
+}
+
 fn sync_channel(
+    channel_type: ChannelType,
     channel_name: &str,
     event_series_id: &str,
     bot_id: u64,
@@ -504,6 +516,7 @@ fn sync_channel(
         }
         current_num_try += 1;
         let channel = sync_channel_impl(
+            channel_type,
             channel_name,
             event_series_id,
             bot_id,
@@ -534,10 +547,20 @@ fn sync_channel(
         if !channel_exists {
             // This channel does not exist on Discord
             // Delete it from Redis and retry
-            let redis_discord_channels_key = "discord_channels";
-            let redis_channel_series_key = format!("discord_channel:{}:event_series", channel.0);
-            let redis_series_channel_key =
-                format!("event_series:{}:discord_channel", event_series_id);
+            let redis_discord_channels_key = match channel_type {
+                ChannelType::Text => "discord_channels",
+                ChannelType::Voice => "discord_voice_channels",
+            };
+            let redis_channel_series_key = match channel_type {
+                ChannelType::Text => format!("discord_channel:{}:event_series", channel.0),
+                ChannelType::Voice => format!("discord_voice_channel:{}:event_series", channel.0),
+            };
+            let redis_series_channel_key = match channel_type {
+                ChannelType::Text => format!("event_series:{}:discord_channel", event_series_id),
+                ChannelType::Voice => {
+                    format!("event_series:{}:discord_voice_channel", event_series_id)
+                }
+            };
             redis::transaction(
                 redis_connection,
                 &[&redis_series_channel_key],
@@ -565,13 +588,17 @@ fn sync_channel(
 }
 
 fn sync_channel_impl(
+    channel_type: ChannelType,
     channel_name: &str,
     event_series_id: &str,
     bot_id: u64,
     redis_connection: &mut redis::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<ChannelId, crate::meetup::Error> {
-    let redis_series_channel_key = format!("event_series:{}:discord_channel", event_series_id);
+    let redis_series_channel_key = match channel_type {
+        ChannelType::Text => format!("event_series:{}:discord_channel", event_series_id),
+        ChannelType::Voice => format!("event_series:{}:discord_voice_channel", event_series_id),
+    };
     // Check if the channel already exists
     {
         let channel: Option<u64> = redis_connection.get(&redis_series_channel_key)?;
@@ -583,29 +610,47 @@ fn sync_channel_impl(
     // The channel doesn't exist yet -> try to create it
     // The @everyone role has the same id as the guild
     let role_everyone_id = RoleId(GUILD_ID.0);
-    let permission_overwrites = vec![
-        PermissionOverwrite {
+    let permission_overwrites = match channel_type {
+        ChannelType::Text => vec![
+            PermissionOverwrite {
+                allow: Permissions::empty(),
+                deny: Permissions::READ_MESSAGES,
+                kind: PermissionOverwriteType::Role(role_everyone_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::READ_MESSAGES,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Member(UserId(bot_id)),
+            },
+        ],
+        ChannelType::Voice => vec![PermissionOverwrite {
             allow: Permissions::empty(),
-            deny: Permissions::READ_MESSAGES,
+            deny: Permissions::CONNECT,
             kind: PermissionOverwriteType::Role(role_everyone_id),
-        },
-        PermissionOverwrite {
-            allow: Permissions::READ_MESSAGES,
-            deny: Permissions::empty(),
-            kind: PermissionOverwriteType::Member(UserId(bot_id)),
-        },
-    ];
+        }],
+    };
     let temp_channel = GUILD_ID.create_channel(discord_api.http(), |channel_builder| {
+        let kind = match channel_type {
+            ChannelType::Text => serenity::model::channel::ChannelType::Text,
+            ChannelType::Voice => serenity::model::channel::ChannelType::Voice,
+        };
         channel_builder
             .name(channel_name)
+            .kind(kind)
             .permissions(permission_overwrites)
     })?;
     println!(
         "Discord event sync: created new temporary channel {} \"{}\"",
         temp_channel.id.0, &temp_channel.name
     );
-    let redis_discord_channels_key = "discord_channels";
-    let redis_channel_series_key = format!("discord_channel:{}:event_series", temp_channel.id.0);
+    let redis_discord_channels_key = match channel_type {
+        ChannelType::Text => "discord_channels",
+        ChannelType::Voice => "discord_voice_channels",
+    };
+    let redis_channel_series_key = match channel_type {
+        ChannelType::Text => format!("discord_channel:{}:event_series", temp_channel.id.0),
+        ChannelType::Voice => format!("discord_voice_channel:{}:event_series", temp_channel.id.0),
+    };
     let channel: redis::RedisResult<(u64,)> = redis::transaction(
         redis_connection,
         &[&redis_series_channel_key],
@@ -660,6 +705,7 @@ fn sync_channel_impl(
 // that the channel might have.
 fn sync_channel_permissions(
     channel_id: ChannelId,
+    channel_type: ChannelType,
     series_id: &str,
     role_id: RoleId,
     host_role_id: RoleId,
@@ -681,31 +727,50 @@ fn sync_channel_permissions(
             _ => false,
         }
     };
-    let mut permission_overwrites = vec![
-        PermissionOverwrite {
-            allow: Permissions::empty(),
-            deny: Permissions::READ_MESSAGES,
-            kind: PermissionOverwriteType::Role(role_everyone_id),
-        },
-        PermissionOverwrite {
-            allow: Permissions::READ_MESSAGES,
-            deny: Permissions::empty(),
-            kind: PermissionOverwriteType::Member(UserId(bot_id)),
-        },
-        PermissionOverwrite {
-            allow: Permissions::READ_MESSAGES,
-            deny: Permissions::empty(),
-            kind: PermissionOverwriteType::Role(role_id),
-        },
-        PermissionOverwrite {
-            allow: Permissions::READ_MESSAGES
-                | Permissions::MENTION_EVERYONE
-                | Permissions::MANAGE_MESSAGES,
-            deny: Permissions::empty(),
-            kind: PermissionOverwriteType::Role(host_role_id),
-        },
-    ];
-    if is_campaign {
+    let mut permission_overwrites = match channel_type {
+        ChannelType::Text => vec![
+            PermissionOverwrite {
+                allow: Permissions::empty(),
+                deny: Permissions::READ_MESSAGES,
+                kind: PermissionOverwriteType::Role(role_everyone_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::READ_MESSAGES,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Member(UserId(bot_id)),
+            },
+            PermissionOverwrite {
+                allow: Permissions::READ_MESSAGES,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(role_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::READ_MESSAGES
+                    | Permissions::MENTION_EVERYONE
+                    | Permissions::MANAGE_MESSAGES,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(host_role_id),
+            },
+        ],
+        ChannelType::Voice => vec![
+            PermissionOverwrite {
+                allow: Permissions::empty(),
+                deny: Permissions::CONNECT,
+                kind: PermissionOverwriteType::Role(role_everyone_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::CONNECT,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(role_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::CONNECT,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(host_role_id),
+            },
+        ],
+    };
+    if is_campaign && channel_type == ChannelType::Text {
         // Grant the publisher role access to campaign channels
         permission_overwrites.push(PermissionOverwrite {
             allow: Permissions::READ_MESSAGES | Permissions::MENTION_EVERYONE,
