@@ -629,6 +629,17 @@ impl super::bot::Handler {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
             return Ok(());
         }
+        // Figure out whether there is an associated voice channel
+        let voice_channel_id = {
+            let series_id: Option<String> = redis_connection
+                .get(format!("discord_channel:{}:event_series", msg.channel_id.0))?;
+            let voice_channel_id: Option<u64> = match series_id {
+                Some(ref series_id) => redis_connection
+                    .get(format!("event_series:{}:discord_voice_channel", series_id))?,
+                None => None,
+            };
+            voice_channel_id
+        };
         // Check if there is a channel expiration time in the future
         let redis_channel_expiration_key =
             format!("discord_channel:{}:expiration_time", msg.channel_id.0);
@@ -653,8 +664,7 @@ impl super::bot::Handler {
             return Ok(());
         }
         // Schedule this channel for deletion
-        // TODO: in 24 hours
-        let new_deletion_time = chrono::Utc::now();
+        let new_deletion_time = chrono::Utc::now() + chrono::Duration::hours(8);
         let redis_channel_deletion_key =
             format!("discord_channel:{}:deletion_time", msg.channel_id.0);
         let current_deletion_time: Option<String> =
@@ -672,8 +682,18 @@ impl super::bot::Handler {
                 return Ok(());
             }
         }
-        let _: () =
-            redis_connection.set(&redis_channel_deletion_key, new_deletion_time.to_rfc3339())?;
+        let mut pipe = redis::pipe();
+        pipe.set(&redis_channel_deletion_key, new_deletion_time.to_rfc3339());
+        // If there is an associated voice channel, mark it also for deletion
+        if let Some(voice_channel_id) = voice_channel_id {
+            let redis_voice_channel_deletion_key =
+                format!("discord_voice_channel:{}:deletion_time", voice_channel_id);
+            pipe.set(
+                &redis_voice_channel_deletion_key,
+                new_deletion_time.to_rfc3339(),
+            );
+        }
+        let _: () = pipe.query(&mut redis_connection)?;
         let _ = msg
             .channel_id
             .say(&ctx.http, strings::CHANNEL_MARKED_FOR_CLOSING);

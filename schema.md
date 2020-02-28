@@ -56,7 +56,7 @@ See `meetup_event:{}:event_series` for the inverse relationship.
 1:1 relationship between an event series and its bot controlled channel.\
 See `discord_channel:{}:event_series` for the inverse relationship.
 
-`event_series:{}:discord_voice_channel`: u64\
+`event_series:{}:discord_voice_channel`: u64, optional\
 1:1 relationship between an event series and its bot controlled voice channel.\
 See `discord_voice_channel:{}:event_series` for the inverse relationship.
 
@@ -92,6 +92,12 @@ Set of users (Discord ID) that have been manually removed from this channel. The
 `discord_channel:{}:expiration_time`: string\
 Expiration time of this channel
 
+`discord_channel:{}:last_expiration_reminder_time`: string\
+Time the channel was last reminded of its expiration
+
+`discord_channel:{}:deletion_time`: string\
+Time after which this channel will be deleted
+
 `orphaned_discord_channels`: set of u64\
 Set of Discord channels that were created by the bot but could not be successfully deleted in the past
 
@@ -105,6 +111,9 @@ Set of all bot controlled Discord voice channels
 `discord_voice_channel:{}:event_series`: string\
 1:1 relationship between a Discord voice channel and the event series it belongs to.\
 See `event_series:{}:discord_voice_channel` for the inverse relationship.
+
+`discord_voice_channel:{}:deletion_time`: string\
+Time after which this channel will be deleted
 
 `orphaned_discord_voice_channels`: set of u64\
 Set of Discord voice channels that were created by the bot but could not be successfully deleted in the past

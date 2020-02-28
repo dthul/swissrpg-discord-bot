@@ -290,7 +290,7 @@ pub async fn sync_event(
                 // the first event in the series), mark the series as online
                 if is_online {
                     let redis_series_online_key = format!("event_series:{}:is_online", &series_id);
-                    pipe.set(&redis_series_online_key, true);
+                    pipe.set(&redis_series_online_key, "true");
                 }
                 let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
                 let host_user_ids: Vec<_> = event.event_hosts.iter().map(|user| user.id).collect();

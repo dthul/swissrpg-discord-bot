@@ -187,8 +187,8 @@ fn sync_event_series(
     let event_name = &next_event.name;
     // Check whether this is an online event series
     let redis_series_is_online_key = format!("event_series:{}:is_online", &series_id);
-    let is_online: Option<bool> = redis_connection.get(&redis_series_is_online_key)?;
-    let is_online = is_online.unwrap_or(false);
+    let is_online: Option<String> = redis_connection.get(&redis_series_is_online_key)?;
+    let is_online = is_online.map(|v| v == "true").unwrap_or(false);
 
     // Figure out the title of this event series
     // Parse the series name from the event title
@@ -252,6 +252,7 @@ fn sync_event_series(
         .collect();
     // Step 1: Sync the channel
     let channel_id = sync_channel(
+        ChannelType::Text,
         series_name,
         series_id,
         bot_id,
@@ -284,6 +285,7 @@ fn sync_event_series(
     // Step 4: Sync the channel permissions
     sync_channel_permissions(
         channel_id,
+        ChannelType::Text,
         series_id,
         channel_role_id,
         channel_host_role_id,
@@ -316,6 +318,28 @@ fn sync_event_series(
         redis_connection,
         discord_api,
     )?;
+    // Step 7: If this is an online campaign, also create a voice channel
+    if is_online {
+        let voice_channel_id = sync_channel(
+            ChannelType::Voice,
+            series_name,
+            series_id,
+            bot_id,
+            redis_connection,
+            discord_api,
+        )?;
+        sync_channel_permissions(
+            voice_channel_id,
+            ChannelType::Voice,
+            series_id,
+            channel_role_id,
+            channel_host_role_id,
+            bot_id,
+            redis_connection,
+            discord_api,
+        )?;
+    }
+    Ok(())
 }
 
 fn sync_role(
@@ -494,8 +518,8 @@ fn sync_role_impl(
         .map_err(|err| err.into())
 }
 
-#[derive(PartialEq, Eq, Debug, Hash)]
-enum ChannelType {
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub(crate) enum ChannelType {
     Text,
     Voice,
 }
@@ -623,11 +647,18 @@ fn sync_channel_impl(
                 kind: PermissionOverwriteType::Member(UserId(bot_id)),
             },
         ],
-        ChannelType::Voice => vec![PermissionOverwrite {
-            allow: Permissions::empty(),
-            deny: Permissions::CONNECT,
-            kind: PermissionOverwriteType::Role(role_everyone_id),
-        }],
+        ChannelType::Voice => vec![
+            PermissionOverwrite {
+                allow: Permissions::empty(),
+                deny: Permissions::CONNECT,
+                kind: PermissionOverwriteType::Role(role_everyone_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::CONNECT,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Member(UserId(bot_id)),
+            },
+        ],
     };
     let temp_channel = GUILD_ID.create_channel(discord_api.http(), |channel_builder| {
         let kind = match channel_type {
@@ -685,7 +716,11 @@ fn sync_channel_impl(
             Err(_) => {
                 eprintln!("Could not delete temporary channel {}", temp_channel.id.0);
                 // Try to persist the information to Redis that we have an orphaned channel now
-                match redis_connection.sadd("orphaned_discord_channels", temp_channel.id.0) {
+                let redis_orphaned_channels_key = match channel_type {
+                    ChannelType::Text => "orphaned_discord_channels",
+                    ChannelType::Voice => "orphaned_discord_voice_channels",
+                };
+                match redis_connection.sadd(redis_orphaned_channels_key, temp_channel.id.0) {
                     Err(_) => eprintln!("Could not record orphaned channel {}", temp_channel.id.0),
                     Ok(()) => println!("Recorded orphaned channel {}", temp_channel.id.0),
                 }
@@ -757,6 +792,11 @@ fn sync_channel_permissions(
                 allow: Permissions::empty(),
                 deny: Permissions::CONNECT,
                 kind: PermissionOverwriteType::Role(role_everyone_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::CONNECT,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Member(UserId(bot_id)),
             },
             PermissionOverwrite {
                 allow: Permissions::CONNECT,
