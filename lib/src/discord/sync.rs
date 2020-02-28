@@ -809,7 +809,11 @@ fn sync_channel_permissions(
                 kind: PermissionOverwriteType::Role(role_id),
             },
             PermissionOverwrite {
-                allow: Permissions::CONNECT,
+                allow: Permissions::CONNECT
+                    | Permissions::MUTE_MEMBERS
+                    | Permissions::DEAFEN_MEMBERS
+                    | Permissions::MOVE_MEMBERS
+                    | Permissions::PRIORITY_SPEAKER,
                 deny: Permissions::empty(),
                 kind: PermissionOverwriteType::Role(host_role_id),
             },
