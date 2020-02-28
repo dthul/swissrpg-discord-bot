@@ -21,6 +21,7 @@ pub mod ids {
     pub const GAME_MASTER_ID: RoleId = RoleId(606913167439822987);
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561808429056042)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561949651402772)];
+    pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(601070848446824512);
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650656330390175764));
 }
 
@@ -35,6 +36,7 @@ pub mod ids {
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(562607292176924694)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] =
         &[ChannelId(414074722259828736), ChannelId(651006290998329354)];
+    pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(401856511233753110);
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
 }
 
@@ -665,6 +667,9 @@ fn sync_channel_impl(
             ChannelType::Text => serenity::model::channel::ChannelType::Text,
             ChannelType::Voice => serenity::model::channel::ChannelType::Voice,
         };
+        if channel_type == ChannelType::Voice {
+            channel_builder.category(VOICE_CHANNELS_CATEGORY_ID);
+        }
         channel_builder
             .name(channel_name)
             .kind(kind)
