@@ -12,9 +12,9 @@ default = []
 bottest = []
 
 [dependencies]
-askama = "0.8"
+askama = "0.9"
 backtrace = "0.3"
-base64 = "0.10"
+base64 = "0.11"
 chrono = "0.4"
 futures = "0.3"
 futures-util = { version = "0.3" }
@@ -31,7 +31,6 @@ serde_json = "1.0"
 serenity = "0.8"
 simple-error = "0.2"
 stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "dthul/list-fix", default-features = false, features = ["full", "webhook-events", "async"] }
-time = "0.1"
 tokio = { version = "0.2", default-features = false, features = ["blocking", "rt-threaded", "time"] }
 unicode-segmentation = "1.6.0"
 url = "2.1"

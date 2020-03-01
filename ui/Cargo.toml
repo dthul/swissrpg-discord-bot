@@ -13,11 +13,11 @@ bottest = ["lib/bottest"]
 
 [dependencies]
 lib = { path = "../lib", package = "swissrpg-lib" }
-askama = "0.8"
+askama = "0.9"
 bytes = "0.5"
 chrono = "0.4"
 chrono-tz = "0.5"
-cookie = "0.12"
+cookie = "0.13"
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = { version = "0.3" }
@@ -32,7 +32,7 @@ serde_json = "1.0"
 serenity = "0.8"
 simple-error = "0.2"
 stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "dthul/list-fix", default-features = false, features = ["full", "webhook-events", "async"] }
-time = "0.1"
+time = "0.2"
 tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "time"] }
 warp = "0.2.1"
 white_rabbit = "0.1"
