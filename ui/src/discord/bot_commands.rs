@@ -579,10 +579,30 @@ impl super::bot::Handler {
         channel_id: u64,
         redis_connection: &mut redis::Connection,
     ) -> Result<Option<ChannelRoles>, lib::meetup::Error> {
+        // Figure out whether this is a game channel or a managed channel
+        let is_game_channel = {
+            let is_game_channel: bool =
+                redis_connection.sismember("discord_channels", channel_id)?;
+            let is_managed_channel: bool =
+                redis_connection.sismember("managed_discord_channels", channel_id)?;
+            match (is_game_channel, is_managed_channel) {
+                (true, false) => true,
+                (false, true) => false,
+                (false, false) => return Ok(None),
+                (true, true) => return Err(SimpleError::new("Inconsistent channel state").into()),
+            }
+        };
         // Check that this message came from a bot controlled channel
-        let redis_channel_role_key = format!("discord_channel:{}:discord_role", channel_id);
-        let redis_channel_host_role_key =
-            format!("discord_channel:{}:discord_host_role", channel_id);
+        let redis_channel_role_key = if is_game_channel {
+            format!("discord_channel:{}:discord_role", channel_id)
+        } else {
+            format!("managed_discord_channel:{}:discord_role", channel_id)
+        };
+        let redis_channel_host_role_key = if is_game_channel {
+            format!("discord_channel:{}:discord_host_role", channel_id)
+        } else {
+            format!("managed_discord_channel:{}:discord_host_role", channel_id)
+        };
         let channel_roles: redis::RedisResult<(Option<u64>, Option<u64>)> = redis::pipe()
             .get(redis_channel_role_key)
             .get(redis_channel_host_role_key)
@@ -591,6 +611,7 @@ impl super::bot::Handler {
             Ok((Some(role), Some(host_role))) => Ok(Some(ChannelRoles {
                 user: role,
                 host: host_role,
+                is_game_channel,
             })),
             Ok((None, None)) => Ok(None),
             Ok(_) => {
@@ -750,10 +771,13 @@ impl super::bot::Handler {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
             return Ok(());
         }
-        // Only bot admins can add users
-        if !is_bot_admin && add {
-            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-            return Ok(());
+        // Game channel specific rules
+        if channel_roles.is_game_channel {
+            // Only bot admins can add users
+            if !is_bot_admin && add {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return Ok(());
+            }
         }
         if add {
             // Try to add the user to the channel
@@ -829,14 +853,16 @@ impl super::bot::Handler {
                 }
             }
             // Remember which users were removed manually
-            if as_host {
-                let redis_channel_removed_hosts_key =
-                    format!("discord_channel:{}:removed_hosts", msg.channel_id.0);
-                redis_connection.sadd(redis_channel_removed_hosts_key, discord_id)?;
-            } else {
-                let redis_channel_removed_users_key =
-                    format!("discord_channel:{}:removed_users", msg.channel_id.0);
-                redis_connection.sadd(redis_channel_removed_users_key, discord_id)?
+            if channel_roles.is_game_channel {
+                if as_host {
+                    let redis_channel_removed_hosts_key =
+                        format!("discord_channel:{}:removed_hosts", msg.channel_id.0);
+                    redis_connection.sadd(redis_channel_removed_hosts_key, discord_id)?;
+                } else {
+                    let redis_channel_removed_users_key =
+                        format!("discord_channel:{}:removed_users", msg.channel_id.0);
+                    redis_connection.sadd(redis_channel_removed_users_key, discord_id)?
+                }
             }
             Ok(())
         }
@@ -1574,7 +1600,8 @@ impl super::bot::Handler {
         redis_client: &redis::Client,
         bot_id: UserId,
     ) -> Result<(), lib::meetup::Error> {
-        use serenity::model::channel::Channel;
+        use serenity::model::channel::{Channel, PermissionOverwrite, PermissionOverwriteType};
+        use serenity::model::Permissions;
         let mut redis_connection = redis_client.get_connection()?;
         let channel_id = msg.channel_id;
         // Step 1: Try to mark this channel as managed
@@ -1614,7 +1641,7 @@ impl super::bot::Handler {
             &mut redis_connection,
             &discord_api,
         )?;
-        let _discord_host_role = lib::discord::sync::sync_role(
+        let discord_host_role = lib::discord::sync::sync_role(
             &host_role_name,
             /*is_host_role*/ true,
             channel_id,
@@ -1630,18 +1657,28 @@ impl super::bot::Handler {
         // Step 4: Adjust the channel permissions
         channel.read().create_permission(
             ctx,
-            &serenity::model::channel::PermissionOverwrite {
-                allow: serenity::model::Permissions::READ_MESSAGES,
-                deny: serenity::model::Permissions::empty(),
-                kind: serenity::model::channel::PermissionOverwriteType::Member(bot_id),
+            &PermissionOverwrite {
+                allow: Permissions::READ_MESSAGES,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Member(bot_id),
             },
         )?;
         channel.read().create_permission(
             ctx,
-            &serenity::model::channel::PermissionOverwrite {
-                allow: serenity::model::Permissions::READ_MESSAGES,
-                deny: serenity::model::Permissions::empty(),
-                kind: serenity::model::channel::PermissionOverwriteType::Role(discord_user_role),
+            &PermissionOverwrite {
+                allow: Permissions::READ_MESSAGES,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(discord_user_role),
+            },
+        )?;
+        channel.read().create_permission(
+            ctx,
+            &PermissionOverwrite {
+                allow: Permissions::READ_MESSAGES
+                    | Permissions::MANAGE_MESSAGES
+                    | Permissions::MENTION_EVERYONE,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(discord_host_role),
             },
         )?;
         Ok(())
@@ -1651,4 +1688,5 @@ impl super::bot::Handler {
 struct ChannelRoles {
     user: u64,
     host: u64,
+    is_game_channel: bool, // managed channel if false
 }
