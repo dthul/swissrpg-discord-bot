@@ -19,7 +19,7 @@ chrono = "0.4"
 futures = "0.3"
 futures-util = { version = "0.3" }
 hyper = "0.13"
-itertools = "0.8"
+itertools = "0.9"
 lazy_static = "1.4"
 oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03", "reqwest-010"] }
 rand = "0.7"
@@ -34,5 +34,5 @@ stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "dthul/list
 tokio = { version = "0.2", default-features = false, features = ["blocking", "rt-threaded", "time"] }
 unicode-segmentation = "1.6.0"
 url = "2.1"
-warp = "0.2.1"
+warp = "0.2"
 white_rabbit = "0.1"
