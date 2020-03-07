@@ -828,6 +828,30 @@ impl EventHandler for Handler {
             } else {
                 let _ = msg.channel_id.say(&ctx.http, "No guild associated with this message (use the command from a guild channel instead of a direct message).");
             }
+        } else if regexes.manage_channel_mention.is_match(&msg.content) {
+            // This is only for bot_admins
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    lib::discord::sync::ids::GUILD_ID,
+                    lib::discord::sync::ids::BOT_ADMIN_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return;
+            }
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            if let Err(err) = Self::manage_channel(&ctx, &msg, &redis_client, bot_id) {
+                eprintln!("Something went wrong in manage_channel:\n{:#?}", err);
+                let _ = msg.channel_id.say(&ctx, "Something went wrong");
+            }
         } else {
             eprintln!("Unrecognized command: {}", &msg.content);
             let _ = msg

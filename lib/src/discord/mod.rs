@@ -26,3 +26,12 @@ impl serenity::http::CacheHttp for &CacheAndHttp {
         &self.http
     }
 }
+
+impl From<&serenity::client::Context> for CacheAndHttp {
+    fn from(ctx: &serenity::client::Context) -> Self {
+        CacheAndHttp {
+            cache: ctx.cache.clone(),
+            http: ctx.http.clone(),
+        }
+    }
+}

@@ -272,6 +272,7 @@ fn sync_event_series(
         &guest_role_name,
         /*is_host_role*/ false,
         channel_id,
+        /*is_managed_channel*/ false,
         redis_connection,
         discord_api,
     )?;
@@ -281,6 +282,7 @@ fn sync_event_series(
         &host_role_name,
         /*is_host_role*/ true,
         channel_id,
+        /*is_managed_channel*/ false,
         redis_connection,
         discord_api,
     )?;
@@ -344,10 +346,11 @@ fn sync_event_series(
     Ok(())
 }
 
-fn sync_role(
+pub fn sync_role(
     role_name: &str,
     is_host_role: bool,
     channel_id: ChannelId,
+    is_managed_channel: bool,
     redis_connection: &mut redis::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
@@ -362,6 +365,7 @@ fn sync_role(
             role_name,
             is_host_role,
             channel_id,
+            is_managed_channel,
             redis_connection,
             discord_api,
         )?;
@@ -389,14 +393,30 @@ fn sync_role(
                 "discord_roles"
             };
             let redis_role_channel_key = if is_host_role {
-                format!("discord_host_role:{}:discord_channel", role.0)
+                if is_managed_channel {
+                    format!("discord_host_role:{}:managed_discord_channel", role.0)
+                } else {
+                    format!("discord_host_role:{}:discord_channel", role.0)
+                }
             } else {
-                format!("discord_role:{}:discord_channel", role.0)
+                if is_managed_channel {
+                    format!("discord_role:{}:managed_discord_channel", role.0)
+                } else {
+                    format!("discord_role:{}:discord_channel", role.0)
+                }
             };
             let redis_channel_role_key = if is_host_role {
-                format!("discord_channel:{}:discord_host_role", channel_id.0)
+                if is_managed_channel {
+                    format!("managed_discord_channel:{}:discord_host_role", channel_id.0)
+                } else {
+                    format!("discord_channel:{}:discord_host_role", channel_id.0)
+                }
             } else {
-                format!("discord_channel:{}:discord_role", channel_id.0)
+                if is_managed_channel {
+                    format!("managed_discord_channel:{}:discord_role", channel_id.0)
+                } else {
+                    format!("discord_channel:{}:discord_role", channel_id.0)
+                }
             };
             redis::transaction(redis_connection, &[&redis_channel_role_key], |con, pipe| {
                 let current_role: Option<u64> = con.get(&redis_channel_role_key)?;
@@ -424,13 +444,22 @@ fn sync_role_impl(
     role_name: &str,
     is_host_role: bool,
     channel_id: ChannelId,
+    is_managed_channel: bool,
     redis_connection: &mut redis::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
     let redis_channel_role_key = if is_host_role {
-        format!("discord_channel:{}:discord_host_role", channel_id.0)
+        if is_managed_channel {
+            format!("managed_discord_channel:{}:discord_host_role", channel_id.0)
+        } else {
+            format!("discord_channel:{}:discord_host_role", channel_id.0)
+        }
     } else {
-        format!("discord_channel:{}:discord_role", channel_id.0)
+        if is_managed_channel {
+            format!("managed_discord_channel:{}:discord_role", channel_id.0)
+        } else {
+            format!("discord_channel:{}:discord_role", channel_id.0)
+        }
     };
     // Check if the role already exists
     {
@@ -457,12 +486,26 @@ fn sync_role_impl(
         "discord_roles"
     };
     let redis_role_channel_key = if is_host_role {
-        format!(
-            "discord_host_role:{}:discord_channel",
-            temp_channel_role.id.0
-        )
+        if is_managed_channel {
+            format!(
+                "discord_host_role:{}:managed_discord_channel",
+                temp_channel_role.id.0
+            )
+        } else {
+            format!(
+                "discord_host_role:{}:discord_channel",
+                temp_channel_role.id.0
+            )
+        }
     } else {
-        format!("discord_role:{}:discord_channel", temp_channel_role.id.0)
+        if is_managed_channel {
+            format!(
+                "discord_role:{}:managed_discord_channel",
+                temp_channel_role.id.0
+            )
+        } else {
+            format!("discord_role:{}:discord_channel", temp_channel_role.id.0)
+        }
     };
     let channel_role: redis::RedisResult<(u64,)> =
         redis::transaction(redis_connection, &[&redis_channel_role_key], |con, pipe| {

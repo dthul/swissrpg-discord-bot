@@ -45,6 +45,7 @@ pub struct Regexes {
     pub list_stripe_subscriptions: Regex,
     pub sync_stripe_subscriptions: Regex,
     pub num_cached_members: Regex,
+    pub manage_channel_mention: Regex,
 }
 
 impl Regexes {
@@ -236,6 +237,11 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         r"^{bot_mention}\s+(?i)numcached\s*$",
         bot_mention = bot_mention,
     );
+    let manage_channel_mention = format!(
+        r"^{bot_mention}\s+(?i)manage\s+channel\s*$",
+        bot_mention = bot_mention,
+    );
+    // pub add_managed_host_mention: Regex,
     Regexes {
         bot_mention: Regex::new(&format!("^{}", bot_mention)).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -272,6 +278,7 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         list_stripe_subscriptions: Regex::new(list_stripe_subscriptions.as_str()).unwrap(),
         sync_stripe_subscriptions: Regex::new(sync_stripe_subscriptions.as_str()).unwrap(),
         num_cached_members: Regex::new(num_cached_members.as_str()).unwrap(),
+        manage_channel_mention: Regex::new(manage_channel_mention.as_str()).unwrap(),
     }
 }
 
@@ -1558,6 +1565,85 @@ impl super::bot::Handler {
         let _ = msg.author.direct_message(ctx, |message_builder| {
             message_builder.content(format!("Active subscriptions:\n{}", message))
         });
+        Ok(())
+    }
+
+    pub fn manage_channel(
+        ctx: &Context,
+        msg: &Message,
+        redis_client: &redis::Client,
+        bot_id: UserId,
+    ) -> Result<(), lib::meetup::Error> {
+        use serenity::model::channel::Channel;
+        let mut redis_connection = redis_client.get_connection()?;
+        let channel_id = msg.channel_id;
+        // Step 1: Try to mark this channel as managed
+        let mut is_game_channel = false;
+        redis::transaction(&mut redis_connection, &["discord_channels"], |con, pipe| {
+            // Make sure that this is not a game channel
+            is_game_channel = con.sismember("discord_channels", channel_id.0)?;
+            if is_game_channel {
+                // Do nothing
+                pipe.query(con)
+            } else {
+                // Mark as managed channel
+                pipe.sadd("managed_discord_channels", channel_id.0)
+                    .query(con)
+            }
+        })?;
+        if is_game_channel {
+            let _ = msg.channel_id.say(ctx, "Can not manage this channel");
+            return Ok(());
+        }
+        // Step 2: Create Discord roles for users and hosts
+        let channel = if let Some(Channel::Guild(channel)) = msg.channel(ctx) {
+            channel.clone()
+        } else {
+            let _ = msg.channel_id.say(ctx, "Can not manage this channel");
+            return Ok(());
+        };
+        let channel_name = channel.read().name.clone();
+        let user_role_name = format!("#channel: {}", &channel_name);
+        let host_role_name = format!("#channelhost: {}", &channel_name);
+        let discord_api: lib::discord::CacheAndHttp = ctx.into();
+        let discord_user_role = lib::discord::sync::sync_role(
+            &user_role_name,
+            /*is_host_role*/ false,
+            channel_id,
+            /*is_managed_channel*/ true,
+            &mut redis_connection,
+            &discord_api,
+        )?;
+        let _discord_host_role = lib::discord::sync::sync_role(
+            &host_role_name,
+            /*is_host_role*/ true,
+            channel_id,
+            /*is_managed_channel*/ true,
+            &mut redis_connection,
+            &discord_api,
+        )?;
+        // Step 3: Give all current users in the channel the user role
+        let mut current_channel_members = channel.read().members(&ctx)?;
+        for member in &mut current_channel_members {
+            member.add_role(ctx, discord_user_role)?;
+        }
+        // Step 4: Adjust the channel permissions
+        channel.read().create_permission(
+            ctx,
+            &serenity::model::channel::PermissionOverwrite {
+                allow: serenity::model::Permissions::READ_MESSAGES,
+                deny: serenity::model::Permissions::empty(),
+                kind: serenity::model::channel::PermissionOverwriteType::Member(bot_id),
+            },
+        )?;
+        channel.read().create_permission(
+            ctx,
+            &serenity::model::channel::PermissionOverwrite {
+                allow: serenity::model::Permissions::READ_MESSAGES,
+                deny: serenity::model::Permissions::empty(),
+                kind: serenity::model::channel::PermissionOverwriteType::Role(discord_user_role),
+            },
+        )?;
         Ok(())
     }
 }
