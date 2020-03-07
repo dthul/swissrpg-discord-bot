@@ -69,7 +69,7 @@ See `discord_voice_channel:{}:event_series` for the inverse relationship.
 ## Discord Channels
 
 `discord_channels`: set of u64\
-Set of all bot controlled Discord channels
+Set of all bot controlled Discord game channels
 
 `discord_channel:{}:event_series`: string\
 1:1 relationship between a Discord channel and the event series it belongs to.\
@@ -118,7 +118,25 @@ Time after which this channel will be deleted
 `orphaned_discord_voice_channels`: set of u64\
 Set of Discord voice channels that were created by the bot but could not be successfully deleted in the past
 
+## Managed Discord Channels
+
+These are channels managed by Hyperion but independent of Meetup events.
+
+`managed_discord_channels`: set of u64\
+Set of all bot managed Discord (non-game) channels
+
+`managed_discord_channel:{}:discord_role`: u64\
+1:1 relationship between a Discord channel and its Discord guest role.\
+See `discord_role:{}:managed_discord_channel` for the inverse relationship.
+
+`managed_discord_channel:{}:discord_host_role`: u64\
+1:1 relationship between a Discord channel and its Discord host role.\
+See `discord_host_role:{}:managed_discord_channel` for the inverse relationship.
+
 ## Discord Roles
+
+A role belongs either to a game channel (corresponding to a `discord_channel`
+or to a bot-managed channel `managed_discord_channel`).
 
 `discord_roles`: set of 64\
 Set of all bot controlled Discord guest roles
@@ -126,13 +144,21 @@ Set of all bot controlled Discord guest roles
 `discord_host_roles`: set of u64\
 Set of all bot controlled Discord host roles
 
-`discord_role:{}:discord_channel`: u64\
+`discord_role:{}:discord_channel`: u64, optional\
 1:1 relationship between a Discord guest role and the Discord channel it belongs to.\
 See `discord_channel:{}:discord_role` for the inverse relationship.
 
-`discord_host_role:{}:discord_channel`: u64\
+`discord_role:{}:managed_discord_channel`: u64, optional\
+1:1 relationship between a Discord role and the Discord channel it belongs to.\
+See `managed_discord_channel:{}:discord_role` for the inverse relationship.
+
+`discord_host_role:{}:discord_channel`: u64, optional\
 1:1 relationship between a Discord host role and the Discord channel it belongs to.\
 See `discord_channel:{}:discord_host_role` for the inverse relationship.
+
+`discord_host_role:{}:managed_discord_channel`: u64, optional\
+1:1 relationship between a Discord host role and the Discord channel it belongs to.\
+See `managed_discord_channel:{}:discord_host_role` for the inverse relationship.
 
 `orphaned_discord_roles`: set of u64\
 Set of Discord roles that were created by the bot but could not be successfully deleted in the past
