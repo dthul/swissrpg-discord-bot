@@ -82,12 +82,11 @@ pub const WELCOME_MESSAGE_PART1: &'static str =
      to get you started.
 
 **Got a question about SwissRPG?**
-Ask at the #tavern and someone will help you out. If you need help from an organiser, just hit \
-     them up with the \\@Organiser tag.
+Ask at the tavern and someone will help you out. If you need help, please reach out to our \\@Community Managers.
 
 **Are you a Game Master or aspire to be one?**
-- If you would like be a GM for our community, please get in touch with \\@Alp#5068. We offer \
-     great resources to our GMs like access to public venues, most D&D books and PDF adventures.
+- If you would like be a GM for our community, please get in touch directly with an \\@Organiser. We offer \
+     great resources to our GMs like access to public venues, most D&D books on DnDBeyond and a library of one shot adventures.
 - If you're interested in being a GM but don't feel ready, let us know. We've provided support to \
      many beginner GMs to get them started.
 
@@ -98,11 +97,11 @@ SwissRPG aims to enable people to play role playing games. If you find value in 
 
 **Basic rules of our community**
 **1.** If you would like to mention or link to an event, another tabletop group, a discord server \
-     etc. please ask an \\@Organiser first.
+     etc. please ask an \\@Admin first.
 **2.** Be inclusive and respectful of others and their differences.
 **3.** Stay positive and love each other. Life is good.
 
-**_Don’t forget to introduce yourself to our community in the #tavern channel. Don't be shy, we're \
+**_Don’t forget to introduce yourself to our community in the tavern channel. Don't be shy, we're \
      all very nice._**";
 
 pub const WELCOME_MESSAGE_PART2_EMBED_TITLE: &'static str = "**Get access to a game's channel**";
