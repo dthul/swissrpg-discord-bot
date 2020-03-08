@@ -171,7 +171,7 @@ pub async fn refresh_oauth_tokens(
     )
     .await?;
     match token_lock {
-        None => Err(SimpleError::new("Could not acquire token locks").into()),
+        None => Err(SimpleError::new("Could not acquire token lock").into()),
         Some(mut token_lock) => {
             let res = refresh_oauth_tokens_impl(token_type, oauth2_client, token_lock.con()).await;
             // Release the lock in any case

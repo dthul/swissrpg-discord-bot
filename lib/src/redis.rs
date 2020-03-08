@@ -234,7 +234,7 @@ impl<'a> AsyncLock<'a> {
                 }
             }
             // Sleep for a moment and re-try
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            tokio::time::delay_for(tokio::time::Duration::from_millis(1)).await;
         }
         Ok(None)
     }
