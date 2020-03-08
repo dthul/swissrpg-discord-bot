@@ -148,7 +148,40 @@ pub enum TokenType {
     Organizer,
 }
 
+// Wrapper around the actual implementation that takes care of locking.
+// This is necessary since there is no AsyncDrop yet that could release
+// the lock RAII style
 pub async fn refresh_oauth_tokens(
+    token_type: TokenType,
+    oauth2_client: Arc<BasicClient>,
+    redis_connection: &mut redis::aio::Connection,
+) -> Result<oauth2::AccessToken, super::Error> {
+    // Lock the oauth2 tokens
+    let lockname = match token_type {
+        TokenType::Organizer => "lock:meetup_refresh_token".to_string(),
+        TokenType::User(meetup_user_id) => {
+            format!("lock:meetup_user:{}:oauth2_tokens", meetup_user_id)
+        }
+    };
+    let token_lock = crate::redis::AsyncLock::acquire_with_timeout(
+        redis_connection,
+        &lockname,
+        std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(20),
+    )
+    .await?;
+    match token_lock {
+        None => Err(SimpleError::new("Could not acquire token locks").into()),
+        Some(mut token_lock) => {
+            let res = refresh_oauth_tokens_impl(token_type, oauth2_client, token_lock.con()).await;
+            // Release the lock in any case
+            let _ = token_lock.release().await;
+            res
+        }
+    }
+}
+
+async fn refresh_oauth_tokens_impl(
     token_type: TokenType,
     oauth2_client: Arc<BasicClient>,
     redis_connection: &mut redis::aio::Connection,
