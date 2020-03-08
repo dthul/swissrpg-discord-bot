@@ -1,4 +1,3 @@
-use futures_util::lock::Mutex;
 use oauth2::{
     basic::BasicClient, AsyncRefreshTokenRequest, AuthUrl, ClientId, ClientSecret, RedirectUrl,
     TokenResponse, TokenUrl,
@@ -67,79 +66,12 @@ impl OAuth2Consumer {
         })
     }
 
-    // TODO: move to tasks
-    // Refreshes the authorization token
-    pub fn organizer_token_refresh_task(
-        &self,
-        redis_client: redis::Client,
-        async_meetup_client: Arc<Mutex<Option<Arc<super::api::AsyncClient>>>>,
-    ) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static
-    {
-        let oauth2_client = self.authorization_client.clone();
-        let refresh_meetup_access_token_task =
-            move |_context: &mut white_rabbit::Context| -> white_rabbit::DateResult {
-                // Try to refresh the organizer oauth tokens
-                let refresh_result: Result<_, crate::meetup::Error> =
-                    crate::ASYNC_RUNTIME.enter(|| {
-                        futures::executor::block_on(async {
-                            // Get an async Redis connection
-                            let mut redis_connection = redis_client.get_async_connection().await?;
-                            let new_auth_token = refresh_oauth_tokens(
-                                TokenType::Organizer,
-                                oauth2_client.clone(),
-                                &mut redis_connection,
-                            )
-                            .await?;
-                            Ok((redis_connection, new_auth_token))
-                        })
-                    });
-                let (mut redis_connection, new_access_token) = match refresh_result {
-                    Err(err) => {
-                        eprintln!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
-                        // Try to refresh again in an hour
-                        return white_rabbit::DateResult::Repeat(
-                            white_rabbit::Utc::now() + white_rabbit::Duration::hours(1),
-                        );
-                    }
-                    Ok(res) => res,
-                };
-                let mut async_meetup_guard = crate::ASYNC_RUNTIME.enter(|| {
-                    futures::executor::block_on(async { async_meetup_client.lock().await })
-                });
-                *async_meetup_guard = Some(Arc::new(super::api::AsyncClient::new(
-                    new_access_token.secret(),
-                )));
-                drop(async_meetup_guard);
-                // Refresh the access token in two days from now
-                let next_refresh = white_rabbit::Utc::now() + white_rabbit::Duration::days(2);
-                println!(
-                    "Refreshed the organizer's Meetup OAuth token. Next refresh @ {}",
-                    next_refresh.to_rfc3339()
-                );
-                // Store refresh date in Redis, ignore failures
-                let _: redis::RedisResult<()> = crate::ASYNC_RUNTIME.enter(|| {
-                    futures::executor::block_on(redis_connection.set(
-                        "meetup_access_token_refresh_time",
-                        next_refresh.to_rfc3339(),
-                    ))
-                });
-                // Re-schedule this task
-                white_rabbit::DateResult::Repeat(next_refresh)
-            };
-        refresh_meetup_access_token_task
-    }
-
     pub async fn refresh_oauth_tokens(
         &self,
         token_type: TokenType,
         redis_connection: &mut redis::aio::Connection,
     ) -> Result<oauth2::AccessToken, super::Error> {
-        refresh_oauth_tokens(
-            token_type,
-            self.authorization_client.clone(),
-            redis_connection,
-        )
-        .await
+        refresh_oauth_tokens(token_type, &self.authorization_client, redis_connection).await
     }
 }
 
@@ -153,7 +85,7 @@ pub enum TokenType {
 // the lock RAII style
 pub async fn refresh_oauth_tokens(
     token_type: TokenType,
-    oauth2_client: Arc<BasicClient>,
+    oauth2_client: &BasicClient,
     redis_connection: &mut redis::aio::Connection,
 ) -> Result<oauth2::AccessToken, super::Error> {
     // Lock the oauth2 tokens
@@ -183,7 +115,7 @@ pub async fn refresh_oauth_tokens(
 
 async fn refresh_oauth_tokens_impl(
     token_type: TokenType,
-    oauth2_client: Arc<BasicClient>,
+    oauth2_client: &BasicClient,
     redis_connection: &mut redis::aio::Connection,
 ) -> Result<oauth2::AccessToken, super::Error> {
     // Try to get the refresh token from Redis

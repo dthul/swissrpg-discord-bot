@@ -120,29 +120,13 @@ fn main() {
         api_key,
     );
 
-    // Check Redis for a refresh time. If there is one, use that
-    // if it is in the future. Otherwise schedule the task now
-    let next_refresh_time: Option<String> = redis_connection
-        .get("meetup_access_token_refresh_time")
-        .expect("Could not query Redis for the next refresh time");
-    // Try to get the next scheduled refresh time from Redis, otherwise
-    // schedule a refresh immediately
-    let next_refresh_time = match next_refresh_time.and_then(|time_string| {
-        white_rabbit::DateTime::parse_from_rfc3339(&time_string)
-            .ok()
-            .map(|date_time| date_time.with_timezone(&white_rabbit::Utc))
-    }) {
-        Some(time) => time,
-        None => white_rabbit::Utc::now(),
-    };
-    let mut task_scheduler_guard =
-        lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(task_scheduler.lock()));
-    task_scheduler_guard.add_task_datetime(
-        next_refresh_time,
-        meetup_oauth2_consumer
-            .organizer_token_refresh_task(redis_client.clone(), async_meetup_client.clone()),
+    // Organizer OAuth2 token refresh task
+    let organizer_token_refresh_task = lib::tasks::token_refresh::organizer_token_refresh_task(
+        (*meetup_oauth2_consumer).clone(),
+        redis_client.clone(),
+        async_meetup_client.clone(),
     );
-    drop(task_scheduler_guard);
+
     // Schedule the end of game task
     let end_of_game_task = lib::tasks::end_of_game::create_end_of_game_task(
         redis_client.clone(),
@@ -181,10 +165,11 @@ fn main() {
     );
 
     lib::ASYNC_RUNTIME.spawn(lib::ASYNC_RUNTIME.enter(|| {
-        future::join3(
+        future::join4(
             meetup_oauth2_server,
             spawn_other_futures_future,
             syncing_task,
+            organizer_token_refresh_task,
         )
         .map(move |_| ())
     }));
