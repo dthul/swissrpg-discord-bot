@@ -34,6 +34,9 @@ See `discord_user:{}:meetup_user` for the inverse relationship.
 * `access_token`: string. OAuth2 access token for this Meetup user
 * `refresh_token`: string. OAuth2 refresh token for this Meetup user
 
+`meetup_user:{}:oauth2_tokens:last_refresh_time`: string, optional\
+The last time the tokens were refreshed.
+
 ## Discord Users
 
 `discord_users`: set of u64\

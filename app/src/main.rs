@@ -127,6 +127,12 @@ fn main() {
         async_meetup_client.clone(),
     );
 
+    // Users OAuth2 token refresh task
+    let users_token_refresh_task = lib::tasks::token_refresh::users_token_refresh_task(
+        (*meetup_oauth2_consumer).clone(),
+        redis_client.clone(),
+    );
+
     // Schedule the end of game task
     let end_of_game_task = lib::tasks::end_of_game::create_end_of_game_task(
         redis_client.clone(),
@@ -165,11 +171,12 @@ fn main() {
     );
 
     lib::ASYNC_RUNTIME.spawn(lib::ASYNC_RUNTIME.enter(|| {
-        future::join4(
+        future::join5(
             meetup_oauth2_server,
             spawn_other_futures_future,
             syncing_task,
             organizer_token_refresh_task,
+            users_token_refresh_task,
         )
         .map(move |_| ())
     }));
