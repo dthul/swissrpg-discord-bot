@@ -106,6 +106,7 @@ pub fn create_server(
     stripe_webhook_secret: Option<String>,
     stripe_client: Arc<stripe::Client>,
     api_key: Option<String>,
+    shutdown_signal: impl Future<Output = ()> + Send + 'static,
 ) -> impl Future<Output = ()> + Send + 'static {
     let linking_routes = super::linking::create_routes(
         redis_client.clone(),
@@ -152,5 +153,8 @@ pub fn create_server(
         combined_routes
     };
     let server = warp::serve(combined_routes);
-    async move { server.bind(addr).await }
+    async move {
+        let (_addr, server) = server.bind_with_graceful_shutdown(addr, shutdown_signal);
+        server.await
+    }
 }

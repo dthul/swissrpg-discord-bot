@@ -1,7 +1,7 @@
 mod sync_task;
 
 use futures::future;
-use futures_util::{future::FutureExt, stream::StreamExt};
+use futures_util::stream::StreamExt;
 use redis::Commands;
 use std::{env, pin::Pin, sync::Arc};
 
@@ -104,7 +104,11 @@ fn main() {
     } else {
         3000
     };
-    let meetup_oauth2_server = ui::web::server::create_server(
+    let (abort_web_server_tx, abort_web_server_rx) = tokio::sync::oneshot::channel::<()>();
+    let abort_web_server_signal = async {
+        abort_web_server_rx.await.ok();
+    };
+    let web_server = ui::web::server::create_server(
         meetup_oauth2_consumer.clone(),
         ([127, 0, 0, 1], port).into(),
         redis_client.clone(),
@@ -118,6 +122,7 @@ fn main() {
         stripe_webhook_signing_secret,
         stripe_client,
         api_key,
+        abort_web_server_signal,
     );
 
     // Organizer OAuth2 token refresh task
@@ -170,16 +175,36 @@ fn main() {
         task_scheduler.clone(),
     );
 
-    lib::ASYNC_RUNTIME.spawn(lib::ASYNC_RUNTIME.enter(|| {
-        future::join5(
-            meetup_oauth2_server,
-            spawn_other_futures_future,
-            syncing_task,
-            organizer_token_refresh_task,
-            users_token_refresh_task,
-        )
-        .map(move |_| ())
-    }));
+    // Wrap the long-running tasks in abortable Futures
+    let (organizer_token_refresh_task, abort_handle_organizer_token_refresh_task) =
+        future::abortable(organizer_token_refresh_task);
+    let (users_token_refresh_task, abort_handle_users_token_refresh_task) =
+        future::abortable(users_token_refresh_task);
+    let (spawn_other_futures_future, abort_handle_spawn_other_futures_future) =
+        future::abortable(spawn_other_futures_future);
+    let (syncing_task, abort_handle_syncing_task) = future::abortable(syncing_task);
+
+    // Register the signal handlers
+    let mut sigint_stream =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
+    let mut sigterm_stream =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
+    let signal_handling_task = async {
+        // Wait until we receive a SIGINT (Ctrl+C) or a SIGTERM (systemd stop)
+        tokio::select! {
+            _ = sigint_stream.recv() => {},
+            _ = sigterm_stream.recv() => {}
+        }
+    };
+
+    // Spawn all tasks onto the async runtime
+    lib::ASYNC_RUNTIME.enter(move || {
+        lib::ASYNC_RUNTIME.spawn(spawn_other_futures_future);
+        lib::ASYNC_RUNTIME.spawn(organizer_token_refresh_task);
+        lib::ASYNC_RUNTIME.spawn(users_token_refresh_task);
+        lib::ASYNC_RUNTIME.spawn(syncing_task);
+        lib::ASYNC_RUNTIME.spawn(web_server);
+    });
 
     // Finally, start the Discord bot
     if let Err(why) = bot.start() {

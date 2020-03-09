@@ -146,6 +146,8 @@ pub async fn users_token_refresh_task(
                         // Nothing to do
                     }
                 }
+                // Just to make sure that we are really interruptible
+                tokio::time::delay_for(tokio::time::Duration::from_millis(1)).await;
             }
             Ok(())
         })()
