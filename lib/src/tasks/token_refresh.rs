@@ -124,7 +124,6 @@ pub async fn users_token_refresh_task(
                 meetup_user_ids.len()
             );
             for user_id in meetup_user_ids {
-                println!("Starting user token refresh for Meetup user {}", user_id);
                 // Try to refresh the user's oauth tokens.
                 // We spawn this onto a new task, such that when this long-lived refresh task
                 // is aborted, the short-lived refresh task still has a chance to run to completion.

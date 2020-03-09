@@ -10,6 +10,7 @@ use serenity::{
     },
     prelude::*,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{sync::Arc, time::Duration};
 
 pub fn create_discord_client(
@@ -17,9 +18,10 @@ pub fn create_discord_client(
     redis_client: redis::Client,
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
     task_scheduler: Arc<AsyncMutex<white_rabbit::Scheduler>>,
-    futures_spawner: futures_channel::mpsc::Sender<lib::BoxedFuture<()>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     stripe_client: Arc<stripe::Client>,
+    async_runtime: Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>,
+    shutdown_signal: Arc<AtomicBool>,
 ) -> Result<Client, lib::meetup::Error> {
     let redis_connection = redis_client.get_connection()?;
 
@@ -50,9 +52,10 @@ pub fn create_discord_client(
         data.insert::<AsyncMeetupClientKey>(async_meetup_client);
         data.insert::<RedisClientKey>(redis_client);
         data.insert::<TaskSchedulerKey>(task_scheduler);
-        data.insert::<FuturesSpawnerKey>(futures_spawner);
         data.insert::<OAuth2ConsumerKey>(oauth2_consumer);
         data.insert::<StripeClientKey>(stripe_client);
+        data.insert::<AsyncRuntimeKey>(async_runtime);
+        data.insert::<ShutdownSignalKey>(shutdown_signal);
     }
 
     Ok(client)
@@ -93,11 +96,6 @@ impl TypeMapKey for TaskSchedulerKey {
     type Value = Arc<AsyncMutex<white_rabbit::Scheduler>>;
 }
 
-pub struct FuturesSpawnerKey;
-impl TypeMapKey for FuturesSpawnerKey {
-    type Value = futures_channel::mpsc::Sender<lib::BoxedFuture<()>>;
-}
-
 pub struct OAuth2ConsumerKey;
 impl TypeMapKey for OAuth2ConsumerKey {
     type Value = Arc<lib::meetup::oauth2::OAuth2Consumer>;
@@ -106,6 +104,16 @@ impl TypeMapKey for OAuth2ConsumerKey {
 pub struct StripeClientKey;
 impl TypeMapKey for StripeClientKey {
     type Value = Arc<stripe::Client>;
+}
+
+pub struct ShutdownSignalKey;
+impl TypeMapKey for ShutdownSignalKey {
+    type Value = Arc<AtomicBool>;
+}
+
+pub struct AsyncRuntimeKey;
+impl TypeMapKey for AsyncRuntimeKey {
+    type Value = Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>;
 }
 
 pub struct Handler;
@@ -117,14 +125,18 @@ impl EventHandler for Handler {
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
     fn message(&self, ctx: Context, msg: Message) {
-        let (bot_id, regexes) = {
+        let (bot_id, regexes, shutdown_signal) = {
             let data = ctx.data.read();
             let regexes = data
                 .get::<RegexesKey>()
                 .expect("Regexes were not compiled")
                 .clone();
             let bot_id = data.get::<BotIdKey>().expect("Bot ID was not set").clone();
-            (bot_id, regexes)
+            let shutdown_signal = data
+                .get::<ShutdownSignalKey>()
+                .expect("Shutdown signal was not set")
+                .load(Ordering::Acquire);
+            (bot_id, regexes, shutdown_signal)
         };
         // Ignore all messages written by the bot itself
         if msg.author.id == bot_id {
@@ -136,6 +148,13 @@ impl EventHandler for Handler {
             if guild_id != lib::discord::sync::ids::GUILD_ID {
                 return;
             }
+        }
+        if shutdown_signal {
+            let _ = msg.channel_id.say(
+                &ctx,
+                "Sorry, I can not help you right now. I am about to shut down!",
+            );
+            return;
         }
         let channel = match msg.channel_id.to_channel(&ctx) {
             Ok(channel) => channel,
@@ -274,7 +293,7 @@ impl EventHandler for Handler {
                 let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
-            let (async_meetup_client, redis_client, mut future_spawner) = {
+            let (async_meetup_client, redis_client, async_runtime) = {
                 let data = ctx.data.read();
                 let async_meetup_client = data
                     .get::<AsyncMeetupClientKey>()
@@ -284,13 +303,13 @@ impl EventHandler for Handler {
                     .get::<RedisClientKey>()
                     .expect("Redis client was not set")
                     .clone();
-                let future_spawner = data
-                    .get::<FuturesSpawnerKey>()
-                    .expect("Future spawner was not set")
+                let async_runtime = data
+                    .get::<AsyncRuntimeKey>()
+                    .expect("Async runtime was not set")
                     .clone();
-                (async_meetup_client, redis_client, future_spawner)
+                (async_meetup_client, redis_client, async_runtime)
             };
-            let sync_task = Box::new({
+            let sync_task = {
                 let task = async move {
                     let mut redis_connection = redis_client.get_async_connection().await?;
                     lib::meetup::sync::sync_task(async_meetup_client, &mut redis_connection).await
@@ -305,26 +324,20 @@ impl EventHandler for Handler {
                 .unwrap_or_else(|err| {
                     eprintln!("Syncing task timed out: {}", err);
                 })
-            });
+            };
             // Send the syncing future to the executor
-            match future_spawner.try_send(sync_task) {
-                Ok(()) => {
-                    let _ = msg.channel_id.say(
-                        &ctx.http,
-                        "Started asynchronous Meetup synchronization task",
-                    );
-                }
-                Err(err) => {
-                    let _ = msg.channel_id.say(
-                        &ctx.http,
-                        format!(
-                            "Could not submit asynchronous Meetup synchronization task to the \
-                             queue (full={}, disconnected={})",
-                            err.is_full(),
-                            err.is_disconnected()
-                        ),
-                    );
-                }
+            let runtime_guard = futures::executor::block_on(async_runtime.read());
+            if let Some(ref async_runtime) = *runtime_guard {
+                async_runtime.enter(move || tokio::spawn(sync_task));
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    "Started asynchronous Meetup synchronization task",
+                );
+            } else {
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    "Could not submit asynchronous Meetup synchronization task",
+                );
             }
         } else if regexes.sync_discord_mention.is_match(&msg.content) {
             // This is only for bot_admins
@@ -354,8 +367,7 @@ impl EventHandler for Handler {
                 (redis_client, bot_id, task_scheduler)
             };
             // Send the syncing task to the scheduler
-            let mut task_scheduler_guard =
-                lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(task_scheduler.lock()));
+            let mut task_scheduler_guard = futures::executor::block_on(task_scheduler.lock());
             task_scheduler_guard.add_task_datetime(
                 white_rabbit::Utc::now(),
                 lib::discord::sync::create_sync_discord_task(
@@ -403,8 +415,7 @@ impl EventHandler for Handler {
                 (redis_client, bot_id, task_scheduler)
             };
             // Send the syncing task to the scheduler
-            let mut task_scheduler_guard =
-                lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(task_scheduler.lock()));
+            let mut task_scheduler_guard = futures::executor::block_on(task_scheduler.lock());
             task_scheduler_guard.add_task_datetime(
                 white_rabbit::Utc::now(),
                 lib::tasks::end_of_game::create_end_of_game_task(
@@ -801,20 +812,32 @@ impl EventHandler for Handler {
                 let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return;
             }
-            let stripe_client = {
-                let data = ctx.data.read();
-                data.get::<StripeClientKey>()
+            let data = ctx.data.read();
+            let (stripe_client, async_runtime) = {
+                let stripe_client = data
+                    .get::<StripeClientKey>()
                     .expect("Stripe client was not set")
-                    .clone()
+                    .clone();
+                let async_runtime = data
+                    .get::<AsyncRuntimeKey>()
+                    .expect("Async runtime was not set")
+                    .clone();
+                (stripe_client, async_runtime)
             };
             let discord_api = lib::discord::CacheAndHttp {
                 cache: ctx.cache.clone(),
                 http: ctx.http.clone(),
             };
-            lib::ASYNC_RUNTIME.spawn(async move {
-                lib::tasks::subscription_roles::update_roles(&discord_api, &stripe_client).await
-            });
-            let _ = msg.channel_id.say(&ctx.http, "Copy that");
+            let runtime_guard = futures::executor::block_on(async_runtime.read());
+            if let Some(ref async_runtime) = *runtime_guard {
+                async_runtime.enter(|| {
+                    async_runtime.spawn(async move {
+                        lib::tasks::subscription_roles::update_roles(&discord_api, &stripe_client)
+                            .await
+                    })
+                });
+                let _ = msg.channel_id.say(&ctx.http, "Copy that");
+            }
         } else if regexes.num_cached_members.is_match(&msg.content) {
             if let Some(guild) = msg.guild(&ctx) {
                 let num_cached_members = guild.read().members.len();

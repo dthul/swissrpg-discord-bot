@@ -113,7 +113,7 @@ impl ScheduleSessionFlow {
                 Ok::<_, crate::meetup::Error>(())
             }
         };
-        crate::ASYNC_RUNTIME.spawn(sync_future.map(|res| {
+        tokio::spawn(sync_future.map(|res| {
             if let Err(err) = res {
                 eprintln!("Could not sync the newly scheduled event:\n{:#?}", err);
             }

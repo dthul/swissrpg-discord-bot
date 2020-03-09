@@ -289,7 +289,7 @@ impl super::bot::Handler {
         user_id: u64,
     ) -> Result<(), lib::meetup::Error> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
-        let (redis_client, redis_connection_mutex, meetup_client_mutex, bot_id) = {
+        let (redis_client, redis_connection_mutex, meetup_client_mutex, bot_id, async_runtime) = {
             let data = ctx.data.read();
             (
                 data.get::<super::bot::RedisClientKey>()
@@ -304,6 +304,9 @@ impl super::bot::Handler {
                 data.get::<super::bot::BotIdKey>()
                     .ok_or_else(|| SimpleError::new("Bot ID was not set"))?
                     .clone(),
+                data.get::<super::bot::AsyncRuntimeKey>()
+                    .ok_or_else(|| SimpleError::new("Async runtime was not set"))?
+                    .clone(),
             )
         };
         // Check if there is already a meetup id linked to this user
@@ -312,12 +315,17 @@ impl super::bot::Handler {
             let mut redis_connection = redis_connection_mutex.lock();
             redis_connection.get(&redis_key_d2m)?
         };
+        let runtime_guard = futures::executor::block_on(async_runtime.read());
+        let async_runtime = match *runtime_guard {
+            Some(ref async_runtime) => async_runtime,
+            None => return Ok(()),
+        };
         if let Some(linked_meetup_id) = linked_meetup_id {
             // Return value of the async block:
             // None = Meetup API unavailable
             // Some(None) = Meetup API available but no user found
             // Some(Some(user)) = User found
-            let meetup_user = lib::ASYNC_RUNTIME.enter(|| {
+            let meetup_user = async_runtime.enter(|| {
                 futures::executor::block_on(async {
                     let meetup_client = meetup_client_mutex.lock().await.clone();
                     match meetup_client {
@@ -360,7 +368,7 @@ impl super::bot::Handler {
             return Ok(());
         }
         // TODO: creates a new Redis connection. Not optimal...
-        let url = lib::ASYNC_RUNTIME.enter(|| {
+        let url = async_runtime.enter(|| {
             futures::executor::block_on(async {
                 let mut redis_connection = redis_client.get_async_connection().await?;
                 lib::meetup::oauth2::generate_meetup_linking_link(&mut redis_connection, user_id)
@@ -391,7 +399,7 @@ impl super::bot::Handler {
     ) -> Result<(), lib::meetup::Error> {
         let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
         let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
-        let (redis_connection_mutex, meetup_client_mutex) = {
+        let (redis_connection_mutex, meetup_client_mutex, async_runtime) = {
             let data = ctx.data.read();
             (
                 data.get::<super::bot::RedisConnectionKey>()
@@ -399,6 +407,9 @@ impl super::bot::Handler {
                     .clone(),
                 data.get::<super::bot::AsyncMeetupClientKey>()
                     .ok_or_else(|| SimpleError::new("Meetup client was not set"))?
+                    .clone(),
+                data.get::<super::bot::AsyncRuntimeKey>()
+                    .ok_or_else(|| SimpleError::new("Async runtime was not set"))?
                     .clone(),
             )
         };
@@ -453,7 +464,12 @@ impl super::bot::Handler {
         }
         // The user has not yet linked their meetup account.
         // Test whether the specified Meetup user actually exists.
-        let meetup_user = lib::ASYNC_RUNTIME.enter(|| {
+        let runtime_guard = futures::executor::block_on(async_runtime.read());
+        let async_runtime = match *runtime_guard {
+            Some(ref async_runtime) => async_runtime,
+            None => return Ok(()),
+        };
+        let meetup_user = async_runtime.enter(|| {
             futures::executor::block_on(async {
                 let meetup_client = meetup_client_mutex.lock().await.clone();
                 match meetup_client {
@@ -469,6 +485,7 @@ impl super::bot::Handler {
                 }
             })
         })?;
+        drop(runtime_guard);
         match meetup_user {
             None => {
                 let _ = msg.channel_id.say(
@@ -937,6 +954,12 @@ impl super::bot::Handler {
         redis_client: redis::Client,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
+        let async_runtime = {
+            let data = ctx.data.read();
+            data.get::<super::bot::AsyncRuntimeKey>()
+                .expect("Async runtime was not set")
+                .clone()
+        };
         // Look up the Meetup ID for this user
         let mut redis_connection = match redis_client.get_connection() {
             Ok(redis_connection) => redis_connection,
@@ -961,7 +984,12 @@ impl super::bot::Handler {
                 return;
             }
         };
-        let res = lib::ASYNC_RUNTIME.enter(|| {
+        let runtime_guard = futures::executor::block_on(async_runtime.read());
+        let async_runtime = match *runtime_guard {
+            Some(ref async_runtime) => async_runtime,
+            None => return,
+        };
+        let res = async_runtime.enter(|| {
             futures::executor::block_on(async {
                 let mut redis_connection = redis_client.get_async_connection().await?;
                 oauth2_consumer
@@ -998,6 +1026,12 @@ impl super::bot::Handler {
         async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
+        let async_runtime = {
+            let data = ctx.data.read();
+            data.get::<super::bot::AsyncRuntimeKey>()
+                .expect("Async runtime was not set")
+                .clone()
+        };
         let future = async {
             // Clone the async meetup client
             let guard = async_meetup_client.lock().await;
@@ -1044,7 +1078,12 @@ impl super::bot::Handler {
             }
             Ok(new_event)
         };
-        match lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(future)) {
+        let runtime_guard = futures::executor::block_on(async_runtime.read());
+        let async_runtime = match *runtime_guard {
+            Some(ref async_runtime) => async_runtime,
+            None => return,
+        };
+        match async_runtime.enter(|| futures::executor::block_on(future)) {
             Ok(new_event) => {
                 let _ = msg.react(ctx, "\u{2705}");
                 let _ = msg.channel_id.say(
@@ -1071,6 +1110,12 @@ impl super::bot::Handler {
         redis_client: redis::Client,
         oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     ) {
+        let async_runtime = {
+            let data = ctx.data.read();
+            data.get::<super::bot::AsyncRuntimeKey>()
+                .expect("Async runtime was not set")
+                .clone()
+        };
         // Look up the Meetup ID for this user
         let mut redis_connection = match redis_client.get_connection() {
             Ok(redis_connection) => redis_connection,
@@ -1096,7 +1141,12 @@ impl super::bot::Handler {
             }
         };
         // Try to RSVP the user
-        match lib::ASYNC_RUNTIME.enter(|| {
+        let runtime_guard = futures::executor::block_on(async_runtime.read());
+        let async_runtime = match *runtime_guard {
+            Some(ref async_runtime) => async_runtime,
+            None => return,
+        };
+        match async_runtime.enter(|| {
             futures::executor::block_on(async {
                 let mut redis_connection = redis_client.get_async_connection().await?;
                 lib::meetup::util::rsvp_user_to_event(
@@ -1524,6 +1574,12 @@ impl super::bot::Handler {
         msg: &Message,
         stripe_client: &stripe::Client,
     ) -> Result<(), lib::meetup::Error> {
+        let async_runtime = {
+            let data = ctx.data.read();
+            data.get::<super::bot::AsyncRuntimeKey>()
+                .expect("Async runtime was not set")
+                .clone()
+        };
         // This is only for bot_admins
         let is_bot_admin = msg
             .author
@@ -1540,7 +1596,12 @@ impl super::bot::Handler {
         let _ = msg.author.direct_message(ctx, |message_builder| {
             message_builder.content("Sure! This might take a moment...")
         });
-        let subscriptions = lib::ASYNC_RUNTIME.enter(|| {
+        let runtime_guard = futures::executor::block_on(async_runtime.read());
+        let async_runtime = match *runtime_guard {
+            Some(ref async_runtime) => async_runtime,
+            None => return Ok(()),
+        };
+        let subscriptions = async_runtime.enter(|| {
             futures::executor::block_on(lib::stripe::list_active_subscriptions(&stripe_client))
         })?;
         let mut message = String::new();
@@ -1552,7 +1613,7 @@ impl super::bot::Handler {
                     Some(product) => match product {
                         stripe::Expandable::Object(product) => Some(*product.clone()),
                         stripe::Expandable::Id(product_id) => {
-                            let product = lib::ASYNC_RUNTIME.enter(|| {
+                            let product = async_runtime.enter(|| {
                                 futures::executor::block_on(stripe::Product::retrieve(
                                     stripe_client,
                                     product_id,
@@ -1570,7 +1631,7 @@ impl super::bot::Handler {
             let customer = match &subscription.customer {
                 stripe::Expandable::Object(customer) => *customer.clone(),
                 stripe::Expandable::Id(customer_id) => {
-                    let customer = lib::ASYNC_RUNTIME.enter(|| {
+                    let customer = async_runtime.enter(|| {
                         futures::executor::block_on(stripe::Customer::retrieve(
                             stripe_client,
                             customer_id,

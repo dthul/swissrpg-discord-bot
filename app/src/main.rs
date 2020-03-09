@@ -1,9 +1,9 @@
 mod sync_task;
 
 use futures::future;
-use futures_util::stream::StreamExt;
 use redis::Commands;
-use std::{env, pin::Pin, sync::Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::{env, sync::Arc};
 
 fn main() {
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
@@ -71,26 +71,31 @@ fn main() {
         },
     ));
 
+    // Create a tokio runtime
+    let async_runtime = Arc::new(tokio::sync::RwLock::new(Some(
+        tokio::runtime::Builder::new()
+            .enable_io()
+            .enable_time()
+            .threaded_scheduler()
+            .build()
+            .expect("Could not create tokio runtime"),
+    )));
+
     // Create a task scheduler and schedule the refresh token task
     let task_scheduler = Arc::new(futures_util::lock::Mutex::new(
         white_rabbit::Scheduler::new(/*thread_count*/ 1),
     ));
 
-    let (tx, rx) = futures_channel::mpsc::channel::<lib::BoxedFuture<()>>(1);
-    let spawn_other_futures_future = rx.for_each(|fut| {
-        let pinned_fut: Pin<Box<_>> = fut.into();
-        lib::ASYNC_RUNTIME.spawn(pinned_fut);
-        future::ready(())
-    });
-
+    let bot_shutdown_signal = Arc::new(AtomicBool::new(false));
     let mut bot = ui::discord::bot::create_discord_client(
         &discord_token,
         redis_client.clone(),
         async_meetup_client.clone(),
         task_scheduler.clone(),
-        tx,
         meetup_oauth2_consumer.clone(),
         stripe_client.clone(),
+        async_runtime.clone(),
+        bot_shutdown_signal.clone(),
     )
     .expect("Could not create the Discord bot");
     let discord_api = lib::discord::CacheAndHttp {
@@ -158,8 +163,7 @@ fn main() {
         }
         task_time
     };
-    let mut task_scheduler_guard =
-        lib::ASYNC_RUNTIME.enter(|| futures::executor::block_on(task_scheduler.lock()));
+    let mut task_scheduler_guard = futures::executor::block_on(task_scheduler.lock());
     task_scheduler_guard.add_task_datetime(next_end_of_game_task_time, end_of_game_task);
     drop(task_scheduler_guard);
 
@@ -180,34 +184,88 @@ fn main() {
         future::abortable(organizer_token_refresh_task);
     let (users_token_refresh_task, abort_handle_users_token_refresh_task) =
         future::abortable(users_token_refresh_task);
-    let (spawn_other_futures_future, abort_handle_spawn_other_futures_future) =
-        future::abortable(spawn_other_futures_future);
     let (syncing_task, abort_handle_syncing_task) = future::abortable(syncing_task);
 
-    // Register the signal handlers
-    let mut sigint_stream =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
-    let mut sigterm_stream =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
-    let signal_handling_task = async {
-        // Wait until we receive a SIGINT (Ctrl+C) or a SIGTERM (systemd stop)
-        tokio::select! {
-            _ = sigint_stream.recv() => {},
-            _ = sigterm_stream.recv() => {}
+    // Create a synchronization barrier that keeps the main thread from exiting
+    // until the signal handler tells it to
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+
+    // Create the signal handling task
+    let signal_handling_task = {
+        let barrier = barrier.clone();
+        async move {
+            // Register the signal handlers
+            let mut sigint_stream =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                    .expect("Could not register the SIGINT signal handler.");
+            let mut sigterm_stream =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("Could not register the SIGTERM signal handler.");
+            // Wait until we receive a SIGINT (Ctrl+C) or a SIGTERM (systemd stop)
+            tokio::select! {
+                _ = sigint_stream.recv() => {
+                    println!("Received SIGINT. Shutting down.");
+                },
+                _ = sigterm_stream.recv() => {
+                    println!("Received SIGTERM. Shutting down.");
+                }
+            }
+            // Finally, tell the main thread to exit
+            barrier.wait();
         }
     };
 
     // Spawn all tasks onto the async runtime
-    lib::ASYNC_RUNTIME.enter(move || {
-        lib::ASYNC_RUNTIME.spawn(spawn_other_futures_future);
-        lib::ASYNC_RUNTIME.spawn(organizer_token_refresh_task);
-        lib::ASYNC_RUNTIME.spawn(users_token_refresh_task);
-        lib::ASYNC_RUNTIME.spawn(syncing_task);
-        lib::ASYNC_RUNTIME.spawn(web_server);
+    {
+        let runtime_guard = futures::executor::block_on(async_runtime.read());
+        let async_runtime = match *runtime_guard {
+            Some(ref async_runtime) => async_runtime,
+            None => panic!("Async runtime not available"),
+        };
+        async_runtime.enter(move || {
+            tokio::spawn(signal_handling_task);
+            tokio::spawn(async {
+                let _ = organizer_token_refresh_task.await;
+                println!("Organizer token refresh task shut down.");
+            });
+            tokio::spawn(async {
+                let _ = users_token_refresh_task.await;
+                println!("User token refresh task shut down.");
+            });
+            tokio::spawn(async {
+                let _ = syncing_task.await;
+                println!("Syncing task shut down.");
+            });
+            tokio::spawn(async {
+                web_server.await;
+                println!("Web server shut down.");
+            });
+        });
+        // runtime guard dropped here
+    }
+
+    // Start the Discord bot in another thread
+    std::thread::spawn(move || {
+        if let Err(why) = bot.start() {
+            println!("Client error: {:?}", why);
+        }
     });
 
-    // Finally, start the Discord bot
-    if let Err(why) = bot.start() {
-        println!("Client error: {:?}", why);
+    // Wait for a signal to exit the main thread
+    barrier.wait();
+
+    // We received the signal to shut down.
+    // Abort all long running futures
+    bot_shutdown_signal.store(true, Ordering::Release);
+    abort_handle_organizer_token_refresh_task.abort();
+    abort_handle_users_token_refresh_task.abort();
+    abort_handle_syncing_task.abort();
+    let _ = abort_web_server_tx.send(());
+    // Wait for any currently running tasks to finish
+    let mut runtime_guard = futures::executor::block_on(async_runtime.write());
+    if let Some(async_runtime) = runtime_guard.take() {
+        println!("About to shut down the tokio runtime.");
+        async_runtime.shutdown_timeout(tokio::time::Duration::from_secs(60));
+        println!("Tokio runtime shut down.\nHyperion out.");
     }
 }

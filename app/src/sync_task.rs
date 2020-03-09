@@ -23,7 +23,7 @@ pub async fn create_recurring_syncing_task(
         let discord_api = discord_api.clone();
         let meetup_client = meetup_client.clone();
         let task_scheduler = task_scheduler.clone();
-        lib::ASYNC_RUNTIME.spawn(async move {
+        tokio::spawn(async move {
             let mut redis_connection = redis_client.get_async_connection().await?;
             tokio::time::timeout(
                 Duration::from_secs(360),

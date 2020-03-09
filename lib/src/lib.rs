@@ -9,17 +9,7 @@ pub mod tasks;
 pub mod urls;
 
 pub use error::BoxedError;
-use lazy_static::lazy_static;
 use rand::Rng;
-
-lazy_static! {
-    pub static ref ASYNC_RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new()
-        .enable_io()
-        .enable_time()
-        .threaded_scheduler()
-        .build()
-        .expect("Could not create tokio runtime");
-}
 
 pub type BoxedFuture<T> = Box<dyn std::future::Future<Output = T> + Send>;
 
