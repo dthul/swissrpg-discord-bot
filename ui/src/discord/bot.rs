@@ -149,13 +149,6 @@ impl EventHandler for Handler {
                 return;
             }
         }
-        if shutdown_signal {
-            let _ = msg.channel_id.say(
-                &ctx,
-                "Sorry, I can not help you right now. I am about to shut down!",
-            );
-            return;
-        }
         let channel = match msg.channel_id.to_channel(&ctx) {
             Ok(channel) => channel,
             _ => return,
@@ -170,6 +163,13 @@ impl EventHandler for Handler {
         // If the message is not a direct message and does not start with a
         // mention of the bot, ignore it
         if !is_dm && !is_mention {
+            return;
+        }
+        if shutdown_signal {
+            let _ = msg.channel_id.say(
+                &ctx,
+                "Sorry, I can not help you right now. I am about to shut down!",
+            );
             return;
         }
         // If the message is a direct message but starts with a mention of the bot,
