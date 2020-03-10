@@ -19,6 +19,7 @@ futures-channel = "0.3"
 futures-util = { version = "0.3" }
 redis = "0.15"
 serenity = "0.8"
+signal-hook = "0.1"
 stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "dthul/list-fix", default-features = false, features = ["full", "webhook-events", "async"] }
-tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "time", "signal", "macros"] }
+tokio = { version = "0.2", default-features = false, features = ["io-driver", "rt-threaded", "time"] }
 white_rabbit = "0.1"

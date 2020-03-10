@@ -1,5 +1,5 @@
 use crate::meetup::oauth2::TokenType;
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
 use futures_util::lock::Mutex;
 use redis::AsyncCommands;
 use std::sync::Arc;
@@ -112,7 +112,14 @@ pub async fn users_token_refresh_task(
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
     redis_client: redis::Client,
 ) -> ! {
+    let mut interval_timer = tokio::time::interval_at(
+        tokio::time::Instant::now() + tokio::time::Duration::from_secs(60),
+        tokio::time::Duration::from_secs(30 * 60),
+    );
+    // Run forever
     loop {
+        // Wait for the next interval tick
+        interval_timer.tick().await;
         // Poor man's try block
         let res: Result<_, crate::meetup::Error> = (|| async {
             let mut redis_connection = redis_client.get_async_connection().await?;
@@ -154,8 +161,6 @@ pub async fn users_token_refresh_task(
         if let Err(err) = res {
             eprintln!("Error in users refresh token task:\n{:#?}", err);
         }
-        // Wait half a day for the next refresh
-        tokio::time::delay_for(tokio::time::Duration::from_secs(12 * 60 * 60)).await;
     }
 }
 
@@ -190,26 +195,44 @@ async fn user_token_refresh_task_impl(
             return Ok(());
         }
     } else {
-        // If the token has not been refreshed yet, check whether today is a
-        // good day to do so.
-        let day_number = chrono::Utc::now().num_days_from_ce();
-        if day_number as u64 % 15 != meetup_user_id % 15 {
-            // Today is not a good day
+        // If the token has not been refreshed yet, check whether now is a
+        // good time to do so.
+        let now = chrono::Utc::now();
+        let day_number = now.num_days_from_ce();
+        let hour_number = now.hour(); // [0, 23]
+        let bucket_number = (((day_number % 4) as u32 + 1) * (hour_number + 1)) - 1; // [0, 95]
+        if (meetup_user_id % 96) as u32 != bucket_number {
+            // Now is not a good time
             return Ok(());
         }
     }
     // Try to refresh the user's oauth tokens
     println!("Refreshing oauth2 token of Meetup user {}", meetup_user_id);
-    let _new_auth_token = crate::meetup::oauth2::refresh_oauth_tokens(
+    let new_auth_token = crate::meetup::oauth2::refresh_oauth_tokens(
         TokenType::User(meetup_user_id),
         &oauth2_consumer.authorization_client,
         &mut redis_connection,
     )
-    .await?;
-    println!(
-        "OAuth2 tokens of Meetup user {} successfully refreshed",
-        meetup_user_id
-    );
+    .await;
+    match new_auth_token {
+        Ok(_) => {
+            let mut pipe = redis::pipe();
+            pipe.sadd("meetup_users_successful_token_refresh", meetup_user_id);
+            pipe.srem("meetup_users_failed_token_refresh", meetup_user_id);
+            let _: redis::RedisResult<()> = pipe.query_async(&mut redis_connection).await;
+            println!(
+                "OAuth2 tokens of Meetup user {} successfully refreshed",
+                meetup_user_id
+            );
+        }
+        Err(err) => {
+            let mut pipe = redis::pipe();
+            pipe.sadd("meetup_users_failed_token_refresh", meetup_user_id);
+            pipe.srem("meetup_users_successful_token_refresh", meetup_user_id);
+            let _: redis::RedisResult<()> = pipe.query_async(&mut redis_connection).await;
+            return Err(err);
+        }
+    }
     // Store the new refresh time in Redis
     let _: () = redis_connection
         .set(

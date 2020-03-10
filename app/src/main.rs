@@ -191,29 +191,25 @@ fn main() {
     let barrier = Arc::new(std::sync::Barrier::new(2));
 
     // Create the signal handling task
-    let signal_handling_task = {
+    {
         let barrier = barrier.clone();
-        async move {
-            // Register the signal handlers
-            let mut sigint_stream =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-                    .expect("Could not register the SIGINT signal handler.");
-            let mut sigterm_stream =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .expect("Could not register the SIGTERM signal handler.");
-            // Wait until we receive a SIGINT (Ctrl+C) or a SIGTERM (systemd stop)
-            tokio::select! {
-                _ = sigint_stream.recv() => {
-                    println!("Received SIGINT. Shutting down.");
-                },
-                _ = sigterm_stream.recv() => {
-                    println!("Received SIGTERM. Shutting down.");
+        let signals =
+            signal_hook::iterator::Signals::new(&[signal_hook::SIGINT, signal_hook::SIGTERM])
+                .expect("Could not register the signal handler");
+        std::thread::spawn(move || {
+            // Wait for SIGINT or SIGTERM to arrive
+            for signal in signals.forever() {
+                match signal {
+                    signal_hook::SIGINT => println!("Received SIGINT. Shutting down."),
+                    signal_hook::SIGTERM => println!("Received SIGTERM. Shutting down."),
+                    _ => unreachable!(),
                 }
+                // Finally, tell the main thread to exit
+                barrier.wait();
+                break;
             }
-            // Finally, tell the main thread to exit
-            barrier.wait();
-        }
-    };
+        });
+    }
 
     // Spawn all tasks onto the async runtime
     {
@@ -223,7 +219,6 @@ fn main() {
             None => panic!("Async runtime not available"),
         };
         async_runtime.enter(move || {
-            tokio::spawn(signal_handling_task);
             tokio::spawn(async {
                 let _ = organizer_token_refresh_task.await;
                 println!("Organizer token refresh task shut down.");
@@ -261,11 +256,13 @@ fn main() {
     abort_handle_users_token_refresh_task.abort();
     abort_handle_syncing_task.abort();
     let _ = abort_web_server_tx.send(());
-    // Wait for any currently running tasks to finish
     let mut runtime_guard = futures::executor::block_on(async_runtime.write());
+    // Give any currently running tasks a chance to finish
+    println!("Waiting for tasks to finish.");
+    std::thread::sleep(std::time::Duration::from_secs(10));
     if let Some(async_runtime) = runtime_guard.take() {
         println!("About to shut down the tokio runtime.");
-        async_runtime.shutdown_timeout(tokio::time::Duration::from_secs(60));
+        async_runtime.shutdown_timeout(tokio::time::Duration::from_secs(10));
         println!("Tokio runtime shut down.\nHyperion out.");
     }
 }
