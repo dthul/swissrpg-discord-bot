@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 pub mod discord;
 pub mod error;
 pub mod flow;

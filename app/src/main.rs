@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 mod sync_task;
 
 use futures::future;
