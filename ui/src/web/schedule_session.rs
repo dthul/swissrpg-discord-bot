@@ -199,9 +199,9 @@ async fn handle_schedule_session_post(
         Some(flow) => flow,
         None => return Ok(("Link expired", "Please request a new link").into()),
     };
+    let event_series_id = flow.event_series_id.clone();
     let mut events =
-        lib::meetup::util::get_events_for_series_async(redis_connection, &flow.event_series_id)
-            .await?;
+        lib::meetup::util::get_events_for_series_async(redis_connection, &event_series_id).await?;
     // Sort by date
     events.sort_unstable_by_key(|event| event.time);
     // Check that the form contains all necessary data
@@ -343,11 +343,22 @@ async fn handle_schedule_session_post(
             true
         };
         // Announce the new session in the Discord channel
-        let message = format!(
-            "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
-             the treasure, or whatever shenanigans you like to get into.",
-            link = &new_event.link
-        );
+        let channel_roles =
+            lib::get_event_series_roles_async(&event_series_id, redis_connection).await?;
+        let message = if let Some(channel_roles) = channel_roles {
+            format!(
+                "Your adventure continues here, heroes of <@&{channel_role_id}>: {link}. Slay the dragon, save the prince, get \
+                the treasure, or whatever shenanigans you like to get into.",
+                link = &new_event.link,
+                channel_role_id = channel_roles.user
+            )
+        } else {
+            format!(
+                "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
+                the treasure, or whatever shenanigans you like to get into.",
+                link = &new_event.link
+            )
+        };
         if let Err(err) = lib::discord::util::say_in_event_channel(
             &event.id,
             &message,

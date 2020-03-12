@@ -594,38 +594,6 @@ impl super::bot::Handler {
         Ok(())
     }
 
-    fn get_channel_roles(
-        channel_id: u64,
-        redis_connection: &mut redis::Connection,
-    ) -> Result<Option<ChannelRoles>, lib::meetup::Error> {
-        // Figure out whether this is a game channel or a managed channel
-        let is_game_channel: bool = redis_connection.sismember("discord_channels", channel_id)?;
-        if !is_game_channel {
-            return Ok(None);
-        }
-        // Check that this message came from a bot controlled channel
-        let redis_channel_role_key = format!("discord_channel:{}:discord_role", channel_id);
-        let redis_channel_host_role_key =
-            format!("discord_channel:{}:discord_host_role", channel_id);
-        let channel_roles: redis::RedisResult<(Option<u64>, Option<u64>)> = redis::pipe()
-            .get(redis_channel_role_key)
-            .get(redis_channel_host_role_key)
-            .query(redis_connection);
-        match channel_roles {
-            Ok((Some(role), Some(host_role))) => Ok(Some(ChannelRoles {
-                user: role,
-                host: host_role,
-            })),
-            Ok((None, None)) => Ok(None),
-            Ok(_) => {
-                return Err(SimpleError::new("Channel has only one of two roles").into());
-            }
-            Err(err) => {
-                return Err(err.into());
-            }
-        }
-    }
-
     pub fn end_adventure(
         ctx: &Context,
         msg: &Message,
@@ -633,7 +601,7 @@ impl super::bot::Handler {
     ) -> Result<(), lib::meetup::Error> {
         let mut redis_connection = redis_client.get_connection()?;
         // Check whether this is a bot controlled channel
-        let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+        let channel_roles = lib::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
         let channel_roles = match channel_roles {
             Some(roles) => roles,
             None => {
@@ -759,7 +727,7 @@ impl super::bot::Handler {
             return Ok(());
         }
         if is_game_channel && !is_managed_channel {
-            let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+            let channel_roles = lib::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
             let channel_roles = match channel_roles {
                 Some(roles) => roles,
                 None => {
@@ -1389,7 +1357,7 @@ impl super::bot::Handler {
     ) -> Result<(), lib::meetup::Error> {
         let mut redis_connection = redis_client.get_connection()?;
         // Check whether this is a bot controlled channel
-        let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+        let channel_roles = lib::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
         let channel_roles = match channel_roles {
             Some(roles) => roles,
             None => {
@@ -1439,7 +1407,7 @@ impl super::bot::Handler {
     ) -> Result<(), lib::meetup::Error> {
         let mut redis_connection = redis_client.get_connection()?;
         // Check whether this is a bot controlled channel
-        let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+        let channel_roles = lib::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
         let channel_roles = match channel_roles {
             Some(roles) => roles,
             None => {
@@ -1821,9 +1789,4 @@ impl super::bot::Handler {
         }
         Ok(())
     }
-}
-
-struct ChannelRoles {
-    user: u64,
-    host: u64,
 }

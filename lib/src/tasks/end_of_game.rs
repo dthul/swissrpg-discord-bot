@@ -250,11 +250,13 @@ fn send_channel_expiration_reminder(
         }
         // Send a reminder and update the last reminder time
         println!("Reminding channel {} of its expiration", channel_id);
+        let channel_roles = crate::get_channel_roles(channel_id, con)?;
+        let user_role = channel_roles.map(|roles| roles.user);
         ChannelId(channel_id).send_message(&discord_api.http, |message_builder| {
             if is_campaign {
-                message_builder.content(strings::END_OF_CAMPAIGN_MESSAGE(bot_id))
+                message_builder.content(strings::END_OF_CAMPAIGN_MESSAGE(bot_id, user_role))
             } else {
-                message_builder.content(strings::END_OF_ADVENTURE_MESSAGE(bot_id))
+                message_builder.content(strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role))
             }
         })?;
         let last_reminder_time = chrono::Utc::now().to_rfc3339();
