@@ -2,6 +2,9 @@ use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use redis::Commands;
 use regex::Regex;
+use serenity::model::channel::Channel;
+use serenity::model::channel::{PermissionOverwrite, PermissionOverwriteType};
+use serenity::model::Permissions;
 use serenity::{
     model::{channel, channel::Message, id::UserId, user::User},
     prelude::*,
@@ -241,7 +244,6 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         r"^{bot_mention}\s+(?i)manage\s+channel\s*$",
         bot_mention = bot_mention,
     );
-    // pub add_managed_host_mention: Regex,
     Regexes {
         bot_mention: Regex::new(&format!("^{}", bot_mention)).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -597,29 +599,14 @@ impl super::bot::Handler {
         redis_connection: &mut redis::Connection,
     ) -> Result<Option<ChannelRoles>, lib::meetup::Error> {
         // Figure out whether this is a game channel or a managed channel
-        let is_game_channel = {
-            let is_game_channel: bool =
-                redis_connection.sismember("discord_channels", channel_id)?;
-            let is_managed_channel: bool =
-                redis_connection.sismember("managed_discord_channels", channel_id)?;
-            match (is_game_channel, is_managed_channel) {
-                (true, false) => true,
-                (false, true) => false,
-                (false, false) => return Ok(None),
-                (true, true) => return Err(SimpleError::new("Inconsistent channel state").into()),
-            }
-        };
+        let is_game_channel: bool = redis_connection.sismember("discord_channels", channel_id)?;
+        if !is_game_channel {
+            return Ok(None);
+        }
         // Check that this message came from a bot controlled channel
-        let redis_channel_role_key = if is_game_channel {
-            format!("discord_channel:{}:discord_role", channel_id)
-        } else {
-            format!("managed_discord_channel:{}:discord_role", channel_id)
-        };
-        let redis_channel_host_role_key = if is_game_channel {
-            format!("discord_channel:{}:discord_host_role", channel_id)
-        } else {
-            format!("managed_discord_channel:{}:discord_host_role", channel_id)
-        };
+        let redis_channel_role_key = format!("discord_channel:{}:discord_role", channel_id);
+        let redis_channel_host_role_key =
+            format!("discord_channel:{}:discord_host_role", channel_id);
         let channel_roles: redis::RedisResult<(Option<u64>, Option<u64>)> = redis::pipe()
             .get(redis_channel_role_key)
             .get(redis_channel_host_role_key)
@@ -628,7 +615,6 @@ impl super::bot::Handler {
             Ok((Some(role), Some(host_role))) => Ok(Some(ChannelRoles {
                 user: role,
                 host: host_role,
-                is_game_channel,
             })),
             Ok((None, None)) => Ok(None),
             Ok(_) => {
@@ -755,17 +741,10 @@ impl super::bot::Handler {
     ) -> Result<(), lib::meetup::Error> {
         let mut redis_connection = redis_client.get_connection()?;
         // Check whether this is a bot controlled channel
-        let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
-        let channel_roles = match channel_roles {
-            Some(roles) => roles,
-            None => {
-                let _ = msg
-                    .channel_id
-                    .say(&ctx.http, strings::CHANNEL_NOT_BOT_CONTROLLED);
-                return Ok(());
-            }
-        };
-        // This is only for bot_admins and channel hosts
+        let is_game_channel: bool =
+            redis_connection.sismember("discord_channels", msg.channel_id.0)?;
+        let is_managed_channel: bool =
+            redis_connection.sismember("managed_discord_channels", msg.channel_id.0)?;
         let is_bot_admin = msg
             .author
             .has_role(
@@ -774,59 +753,49 @@ impl super::bot::Handler {
                 lib::discord::sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
-        let is_host = msg
-            .author
-            .has_role(ctx, lib::discord::sync::ids::GUILD_ID, channel_roles.host)
-            .unwrap_or(false);
-        // Only bot admins and channel hosts can add/remove users
-        if !is_bot_admin && !is_host {
-            let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
-            return Ok(());
-        }
         // Only bot admins can add/remove hosts
         if !is_bot_admin && as_host {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
             return Ok(());
         }
-        // Game channel specific rules
-        if channel_roles.is_game_channel {
+        if is_game_channel && !is_managed_channel {
+            let channel_roles = Self::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+            let channel_roles = match channel_roles {
+                Some(roles) => roles,
+                None => {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, strings::CHANNEL_NOT_BOT_CONTROLLED);
+                    return Ok(());
+                }
+            };
+            // This is only for bot_admins and channel hosts
+            let is_host = msg
+                .author
+                .has_role(ctx, lib::discord::sync::ids::GUILD_ID, channel_roles.host)
+                .unwrap_or(false);
+            // Only bot admins and channel hosts can add/remove users
+            if !is_bot_admin && !is_host {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
+                return Ok(());
+            }
             // Only bot admins can add users
             if !is_bot_admin && add {
                 let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                 return Ok(());
             }
-        }
-        if add {
-            // Try to add the user to the channel
-            match ctx.http.add_member_role(
-                lib::discord::sync::ids::GUILD_ID.0,
-                discord_id,
-                channel_roles.user,
-            ) {
-                Ok(()) => {
-                    let _ = msg.react(ctx, "\u{2705}");
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, format!("Welcome <@{}>!", discord_id));
-                }
-                Err(err) => {
-                    eprintln!("Could not assign channel role: {}", err);
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, strings::CHANNEL_ROLE_ADD_ERROR);
-                }
-            }
-            if as_host {
+            if add {
+                // Try to add the user to the channel
                 match ctx.http.add_member_role(
                     lib::discord::sync::ids::GUILD_ID.0,
                     discord_id,
-                    channel_roles.host,
+                    channel_roles.user,
                 ) {
                     Ok(()) => {
                         let _ = msg.react(ctx, "\u{2705}");
                         let _ = msg
                             .channel_id
-                            .say(&ctx.http, strings::CHANNEL_ADDED_NEW_HOST(discord_id));
+                            .say(&ctx.http, format!("Welcome <@{}>!", discord_id));
                     }
                     Err(err) => {
                         eprintln!("Could not assign channel role: {}", err);
@@ -835,42 +804,59 @@ impl super::bot::Handler {
                             .say(&ctx.http, strings::CHANNEL_ROLE_ADD_ERROR);
                     }
                 }
-            }
-            Ok(())
-        } else {
-            // Try to remove the user from the channel
-            match ctx.http.remove_member_role(
-                lib::discord::sync::ids::GUILD_ID.0,
-                discord_id,
-                channel_roles.host,
-            ) {
-                Ok(()) => {
-                    let _ = msg.react(ctx, "\u{2705}");
+                if as_host {
+                    match ctx.http.add_member_role(
+                        lib::discord::sync::ids::GUILD_ID.0,
+                        discord_id,
+                        channel_roles.host,
+                    ) {
+                        Ok(()) => {
+                            let _ = msg.react(ctx, "\u{2705}");
+                            let _ = msg
+                                .channel_id
+                                .say(&ctx.http, strings::CHANNEL_ADDED_NEW_HOST(discord_id));
+                        }
+                        Err(err) => {
+                            eprintln!("Could not assign channel role: {}", err);
+                            let _ = msg
+                                .channel_id
+                                .say(&ctx.http, strings::CHANNEL_ROLE_ADD_ERROR);
+                        }
+                    }
                 }
-                Err(err) => {
-                    eprintln!("Could not remove host channel role: {}", err);
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, strings::CHANNEL_ROLE_REMOVE_ERROR);
-                }
-            }
-            if !as_host {
+            } else {
+                // Try to remove the user from the channel
                 match ctx.http.remove_member_role(
                     lib::discord::sync::ids::GUILD_ID.0,
                     discord_id,
-                    channel_roles.user,
+                    channel_roles.host,
                 ) {
+                    Ok(()) => {
+                        let _ = msg.react(ctx, "\u{2705}");
+                    }
                     Err(err) => {
-                        eprintln!("Could not remove channel role: {}", err);
+                        eprintln!("Could not remove host channel role: {}", err);
                         let _ = msg
                             .channel_id
                             .say(&ctx.http, strings::CHANNEL_ROLE_REMOVE_ERROR);
                     }
-                    _ => (),
                 }
-            }
-            // Remember which users were removed manually
-            if channel_roles.is_game_channel {
+                if !as_host {
+                    match ctx.http.remove_member_role(
+                        lib::discord::sync::ids::GUILD_ID.0,
+                        discord_id,
+                        channel_roles.user,
+                    ) {
+                        Err(err) => {
+                            eprintln!("Could not remove channel role: {}", err);
+                            let _ = msg
+                                .channel_id
+                                .say(&ctx.http, strings::CHANNEL_ROLE_REMOVE_ERROR);
+                        }
+                        _ => (),
+                    }
+                }
+                // Remember which users were removed manually
                 if as_host {
                     let redis_channel_removed_hosts_key =
                         format!("discord_channel:{}:removed_hosts", msg.channel_id.0);
@@ -881,8 +867,121 @@ impl super::bot::Handler {
                     redis_connection.sadd(redis_channel_removed_users_key, discord_id)?
                 }
             }
-            Ok(())
+        } else if is_managed_channel && !is_game_channel {
+            // Managed channels don't use roles but user-specific permission overwrites
+            let channel = if let Some(Channel::Guild(channel)) = msg.channel(ctx) {
+                channel.clone()
+            } else {
+                let _ = msg.channel_id.say(ctx, "Could not find this channel");
+                return Ok(());
+            };
+            // This is only for bot_admins and channel hosts
+            let author_permission_overwrites = channel
+                .read()
+                .permission_overwrites
+                .iter()
+                .find(|overwrite| PermissionOverwriteType::Member(msg.author.id) == overwrite.kind)
+                .cloned();
+            // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
+            // MENTION_EVERYONE permission are channel hosts
+            let is_host = author_permission_overwrites.map_or(false, |overwrites| {
+                overwrites.allow.contains(
+                    Permissions::READ_MESSAGES
+                        | Permissions::MANAGE_MESSAGES
+                        | Permissions::MENTION_EVERYONE,
+                )
+            });
+            // Only bot admins and channel hosts can add/remove users
+            if !is_bot_admin && !is_host {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
+                return Ok(());
+            }
+            let target_permission_overwrites = channel
+                .read()
+                .permission_overwrites
+                .iter()
+                .find(|overwrite| {
+                    PermissionOverwriteType::Member(UserId(discord_id)) == overwrite.kind
+                })
+                .cloned()
+                .unwrap_or(PermissionOverwrite {
+                    allow: Permissions::empty(),
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Member(UserId(discord_id)),
+                });
+            if add {
+                let new_target_permission_overwrites = if as_host {
+                    // Add normal and host specific permissions
+                    let mut new_target_permission_overwrites = target_permission_overwrites.clone();
+                    new_target_permission_overwrites.allow |= Permissions::READ_MESSAGES
+                        | Permissions::MANAGE_MESSAGES
+                        | Permissions::MENTION_EVERYONE;
+                    new_target_permission_overwrites
+                } else {
+                    // Add only user permissions
+                    let mut new_target_permission_overwrites = target_permission_overwrites.clone();
+                    new_target_permission_overwrites.allow |= Permissions::READ_MESSAGES;
+                    new_target_permission_overwrites
+                };
+                if new_target_permission_overwrites.allow != target_permission_overwrites.allow
+                    || new_target_permission_overwrites.deny != target_permission_overwrites.deny
+                {
+                    if new_target_permission_overwrites.allow == Permissions::empty()
+                        && new_target_permission_overwrites.deny == Permissions::empty()
+                    {
+                        channel
+                            .read()
+                            .delete_permission(ctx, new_target_permission_overwrites.kind)?;
+                    } else {
+                        channel
+                            .read()
+                            .create_permission(ctx, &new_target_permission_overwrites)?;
+                    }
+                }
+            } else {
+                // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
+                // MENTION_EVERYONE permission are channel hosts
+                let target_is_host = target_permission_overwrites.allow.contains(
+                    Permissions::READ_MESSAGES
+                        | Permissions::MANAGE_MESSAGES
+                        | Permissions::MENTION_EVERYONE,
+                );
+                if target_is_host && !is_bot_admin {
+                    let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                    return Ok(());
+                }
+                let new_target_permission_overwrites = if as_host {
+                    // Remove only the host-specific permissions
+                    let mut new_target_permission_overwrites = target_permission_overwrites.clone();
+                    new_target_permission_overwrites.allow &=
+                        !(Permissions::MANAGE_MESSAGES | Permissions::MENTION_EVERYONE);
+                    new_target_permission_overwrites
+                } else {
+                    // Remove the host and user permissions
+                    let mut new_target_permission_overwrites = target_permission_overwrites.clone();
+                    new_target_permission_overwrites.allow &= !(Permissions::READ_MESSAGES
+                        | Permissions::MANAGE_MESSAGES
+                        | Permissions::MENTION_EVERYONE);
+                    new_target_permission_overwrites
+                };
+                if new_target_permission_overwrites.allow != target_permission_overwrites.allow
+                    || new_target_permission_overwrites.deny != target_permission_overwrites.deny
+                {
+                    if new_target_permission_overwrites.allow == Permissions::empty()
+                        && new_target_permission_overwrites.deny == Permissions::empty()
+                    {
+                        channel
+                            .read()
+                            .delete_permission(ctx, new_target_permission_overwrites.kind)?;
+                    } else {
+                        channel
+                            .read()
+                            .create_permission(ctx, &new_target_permission_overwrites)?;
+                    }
+                }
+            }
         }
+        Ok(())
     }
 
     pub fn send_welcome_message(ctx: &Context, user: &User) {
@@ -1661,8 +1760,6 @@ impl super::bot::Handler {
         redis_client: &redis::Client,
         bot_id: UserId,
     ) -> Result<(), lib::meetup::Error> {
-        use serenity::model::channel::{Channel, PermissionOverwrite, PermissionOverwriteType};
-        use serenity::model::Permissions;
         let mut redis_connection = redis_client.get_connection()?;
         let channel_id = msg.channel_id;
         // Step 1: Try to mark this channel as managed
@@ -1683,39 +1780,13 @@ impl super::bot::Handler {
             let _ = msg.channel_id.say(ctx, "Can not manage this channel");
             return Ok(());
         }
-        // Step 2: Create Discord roles for users and hosts
         let channel = if let Some(Channel::Guild(channel)) = msg.channel(ctx) {
             channel.clone()
         } else {
             let _ = msg.channel_id.say(ctx, "Can not manage this channel");
             return Ok(());
         };
-        let channel_name = channel.read().name.clone();
-        let user_role_name = format!("#channel: {}", &channel_name);
-        let host_role_name = format!("#channelhost: {}", &channel_name);
-        let discord_api: lib::discord::CacheAndHttp = ctx.into();
-        let discord_user_role = lib::discord::sync::sync_role(
-            &user_role_name,
-            /*is_host_role*/ false,
-            channel_id,
-            /*is_managed_channel*/ true,
-            &mut redis_connection,
-            &discord_api,
-        )?;
-        let discord_host_role = lib::discord::sync::sync_role(
-            &host_role_name,
-            /*is_host_role*/ true,
-            channel_id,
-            /*is_managed_channel*/ true,
-            &mut redis_connection,
-            &discord_api,
-        )?;
-        // Step 3: Give all current users in the channel the user role
-        let mut current_channel_members = channel.read().members(&ctx)?;
-        for member in &mut current_channel_members {
-            member.add_role(ctx, discord_user_role)?;
-        }
-        // Step 4: Adjust the channel permissions
+        // Step 2: Grant the bot continued access to the channel
         channel.read().create_permission(
             ctx,
             &PermissionOverwrite {
@@ -1724,24 +1795,30 @@ impl super::bot::Handler {
                 kind: PermissionOverwriteType::Member(bot_id),
             },
         )?;
-        channel.read().create_permission(
-            ctx,
-            &PermissionOverwrite {
-                allow: Permissions::READ_MESSAGES,
-                deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Role(discord_user_role),
-            },
-        )?;
-        channel.read().create_permission(
-            ctx,
-            &PermissionOverwrite {
-                allow: Permissions::READ_MESSAGES
-                    | Permissions::MANAGE_MESSAGES
-                    | Permissions::MENTION_EVERYONE,
-                deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Role(discord_host_role),
-            },
-        )?;
+        // Step 3: Grant all current users access to the channel
+        let mut current_channel_members = channel.read().members(&ctx)?;
+        for member in &mut current_channel_members {
+            // Don't explicitly grant access to admins
+            let is_admin = {
+                if let Ok(member_permissions) = member.permissions(ctx) {
+                    member_permissions.administrator()
+                } else {
+                    false
+                }
+            };
+            if is_admin {
+                continue;
+            }
+            let user_id = member.user.read().id;
+            channel.read().create_permission(
+                ctx,
+                &PermissionOverwrite {
+                    allow: Permissions::READ_MESSAGES,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Member(user_id),
+                },
+            )?;
+        }
         Ok(())
     }
 }
@@ -1749,5 +1826,4 @@ impl super::bot::Handler {
 struct ChannelRoles {
     user: u64,
     host: u64,
-    is_game_channel: bool, // managed channel if false
 }
