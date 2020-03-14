@@ -309,26 +309,29 @@ impl EventHandler for Handler {
                     .clone();
                 (async_meetup_client, redis_client, async_runtime)
             };
-            let sync_task = {
-                let task = async move {
-                    let mut redis_connection = redis_client.get_async_connection().await?;
-                    lib::meetup::sync::sync_task(async_meetup_client, &mut redis_connection).await
-                };
-                // Wrap the task in a timeout
-                tokio::time::timeout(
-                    Duration::from_secs(5 * 60),
-                    task.unwrap_or_else(|err| {
-                        eprintln!("Syncing task failed: {}", err);
-                    }),
-                )
-                .unwrap_or_else(|err| {
-                    eprintln!("Syncing task timed out: {}", err);
-                })
-            };
             // Send the syncing future to the executor
             let runtime_guard = futures::executor::block_on(async_runtime.read());
             if let Some(ref async_runtime) = *runtime_guard {
-                async_runtime.enter(move || tokio::spawn(sync_task));
+                async_runtime.enter(move || {
+                    let sync_task = {
+                        let task = async move {
+                            let mut redis_connection = redis_client.get_async_connection().await?;
+                            lib::meetup::sync::sync_task(async_meetup_client, &mut redis_connection)
+                                .await
+                        };
+                        // Wrap the task in a timeout
+                        tokio::time::timeout(
+                            Duration::from_secs(5 * 60),
+                            task.unwrap_or_else(|err| {
+                                eprintln!("Syncing task failed: {}", err);
+                            }),
+                        )
+                        .unwrap_or_else(|err| {
+                            eprintln!("Syncing task timed out: {}", err);
+                        })
+                    };
+                    tokio::spawn(sync_task)
+                });
                 let _ = msg.channel_id.say(
                     &ctx.http,
                     "Started asynchronous Meetup synchronization task",
