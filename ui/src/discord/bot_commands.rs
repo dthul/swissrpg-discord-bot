@@ -894,18 +894,14 @@ impl super::bot::Handler {
                 if new_target_permission_overwrites.allow != target_permission_overwrites.allow
                     || new_target_permission_overwrites.deny != target_permission_overwrites.deny
                 {
-                    if new_target_permission_overwrites.allow == Permissions::empty()
-                        && new_target_permission_overwrites.deny == Permissions::empty()
-                    {
-                        channel
-                            .read()
-                            .delete_permission(ctx, new_target_permission_overwrites.kind)?;
-                    } else {
-                        channel
-                            .read()
-                            .create_permission(ctx, &new_target_permission_overwrites)?;
-                    }
+                    channel
+                        .read()
+                        .create_permission(ctx, &new_target_permission_overwrites)?;
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, format!("Welcome <@{}>!", discord_id));
                 }
+                let _ = msg.react(ctx, "\u{2705}");
             } else {
                 // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
                 // MENTION_EVERYONE permission are channel hosts
@@ -947,6 +943,7 @@ impl super::bot::Handler {
                             .create_permission(ctx, &new_target_permission_overwrites)?;
                     }
                 }
+                let _ = msg.react(ctx, "\u{2705}");
             }
         }
         Ok(())
@@ -1787,6 +1784,7 @@ impl super::bot::Handler {
                 },
             )?;
         }
+        let _ = msg.react(ctx, "\u{2705}");
         Ok(())
     }
 }
