@@ -878,6 +878,31 @@ impl EventHandler for Handler {
                 eprintln!("Something went wrong in manage_channel:\n{:#?}", err);
                 let _ = msg.channel_id.say(&ctx, "Something went wrong");
             }
+        } else if regexes.mention_channel_role_mention.is_match(&msg.content) {
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            // Poor man's try block
+            let ctx = &ctx;
+            if let Err(err) = (|| {
+                let mut redis_connection = redis_client.get_connection()?;
+                let channel_roles =
+                    lib::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
+                if let Some(channel_roles) = channel_roles {
+                    msg.channel_id
+                        .say(ctx, format!("<@&{}>", channel_roles.user))?;
+                } else {
+                    msg.channel_id
+                        .say(ctx, format!("This channel has no role"))?;
+                }
+                Ok::<_, lib::meetup::Error>(())
+            })() {
+                eprintln!("Error in mention_channel_role command:\n{:#?}", err);
+                let _ = msg.channel_id.say(ctx, "Something went wrong.");
+            }
         } else {
             eprintln!("Unrecognized command: {}", &msg.content);
             let _ = msg
