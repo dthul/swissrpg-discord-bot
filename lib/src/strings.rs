@@ -36,11 +36,15 @@ pub fn HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id: u64) -> String {
     format!(
         ":white_small_square: **link meetup `@some-user` `meetup-ID`** - link another user's \
          Meetup and Discord profile.\n:white_small_square: **link meetup `@some-user`** - unlink \
-         another user's Meetup and Discord profile.\n:white_small_square: **<@{bot_id}> add host \
-         `@some-user`** - _(in game channel)_ makes a user an additional Host. _(Desktop \
+         another user's Meetup and Discord profile.\n:white_small_square: **<@{bot_id}> manage channel** - Enable \
+         the `[add|remove] user` and `[add|remove] host` command for this channel.\n\
+         :white_small_square: **<@{bot_id}> add host \
+         `@some-user`** - _(in game channel or managed channel)_ makes a user an additional Host. _(Desktop \
          only)_\n:white_small_square: **<@{bot_id}> remove host `@some-user`** - _(in game \
-         channel)_ makes a user no longer a Host.\n:white_small_square: **<@{bot_id}> add \
-         `@some-user`** - _(in game channel)_ adds a user to the channel.\n:white_small_square: \
+         channel or managed channel)_ makes a user no longer a Host.\n:white_small_square: **<@{bot_id}> add \
+         `@some-user`** - _(in game channel or managed channel)_ adds a user to the channel.\n\
+         :white_small_square: **<@{bot_id}> remove `@some-user`** - _(in game channel or managed channel)_ \
+         removes a user from the channel.\n :white_small_square: \
          **<@{bot_id}> whois @some-discord-user** - _(needs proper mention)_ shows the Meetup \
          profile of the mentioned Discord user\n:white_small_square: **<@{bot_id}> whois \
          some-discord-username#1234** - _(no mention)_ shows the Meetup profile of the mentioned \
