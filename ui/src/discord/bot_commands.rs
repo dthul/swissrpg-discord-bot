@@ -112,7 +112,7 @@ impl Regexes {
 
 pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
     let bot_mention = format!(
-        r"(?:<@!?{bot_id}>|@{bot_name})",
+        r"(?:<@!?{bot_id}>|(@|#)(?i){bot_name})",
         bot_id = bot_id,
         bot_name = regex::escape(bot_name)
     );
@@ -392,7 +392,7 @@ impl super::bot::Handler {
             }
             Err(why) => {
                 eprintln!("Error sending Meetup linking DM: {:?}", why);
-                let _ = msg.reply(ctx, "There was an error trying to send you instructions.");
+                let _ = msg.reply(ctx, "There was an error trying to send you instructions.\nDo you have direct messages disabled? In that case send me a private message with the text \"link meetup\".");
             }
         }
         Ok(())
