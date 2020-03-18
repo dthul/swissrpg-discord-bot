@@ -276,52 +276,27 @@ fn sync_event_series(
         discord_api,
     )?;
     // Step 3: Sync the channel's associated host role
-    let host_role_name = format!("[Host] {}", series_name);
-    let channel_host_role_id = sync_role(
-        &host_role_name,
-        /*is_host_role*/ true,
-        channel_id,
-        redis_connection,
-        discord_api,
-    )?;
+    // let host_role_name = format!("[Host] {}", series_name);
+    // let channel_host_role_id = sync_role(
+    //     &host_role_name,
+    //     /*is_host_role*/ true,
+    //     channel_id,
+    //     redis_connection,
+    //     discord_api,
+    // )?;
     // Step 4: Sync the channel permissions
     sync_channel_permissions(
         channel_id,
         ChannelType::Text,
         series_id,
         channel_role_id,
-        channel_host_role_id,
+        // &discord_host_ids,
         bot_id,
         redis_connection,
         discord_api,
     )?;
-    // Step 5: Sync RSVP'd users
-    sync_user_role_assignments(
-        &discord_host_ids,
-        channel_id,
-        channel_host_role_id,
-        /*is_host_role*/ true,
-        redis_connection,
-        discord_api,
-    )?;
-    sync_user_role_assignments(
-        &discord_guest_ids,
-        channel_id,
-        channel_role_id,
-        /*is_host_role*/ false,
-        redis_connection,
-        discord_api,
-    )?;
-    // Step 6: Keep the channel's topic up-to-date
-    sync_channel_topic_and_category(
-        series_id,
-        channel_id,
-        next_event,
-        redis_connection,
-        discord_api,
-    )?;
     // Step 7: If this is an online campaign, also create a voice channel
-    if is_online {
+    let voice_channel_id = if is_online {
         let voice_channel_id = sync_channel(
             ChannelType::Voice,
             series_name,
@@ -335,12 +310,41 @@ fn sync_event_series(
             ChannelType::Voice,
             series_id,
             channel_role_id,
-            channel_host_role_id,
+            // &discord_host_ids,
             bot_id,
             redis_connection,
             discord_api,
         )?;
-    }
+        Some(voice_channel_id)
+    } else {
+        None
+    };
+    // Step 5: Sync RSVP'd users
+    // sync_user_role_assignments(
+    //     &discord_host_ids,
+    //     channel_id,
+    //     channel_host_role_id,
+    //     /*is_host_role*/ true,
+    //     redis_connection,
+    //     discord_api,
+    // )?;
+    sync_role_assignments_permissions(
+        &discord_guest_ids,
+        &discord_host_ids,
+        channel_id,
+        voice_channel_id,
+        channel_role_id,
+        redis_connection,
+        discord_api,
+    )?;
+    // Step 6: Keep the channel's topic up-to-date
+    sync_channel_topic_and_category(
+        series_id,
+        channel_id,
+        next_event,
+        redis_connection,
+        discord_api,
+    )?;
     Ok(())
 }
 
@@ -748,7 +752,7 @@ fn sync_channel_permissions(
     channel_type: ChannelType,
     series_id: &str,
     role_id: RoleId,
-    host_role_id: RoleId,
+    // discord_host_ids: &[u64],
     bot_id: u64,
     redis_connection: &mut redis::Connection,
     discord_api: &super::CacheAndHttp,
@@ -768,56 +772,66 @@ fn sync_channel_permissions(
         }
     };
     let mut permission_overwrites = match channel_type {
-        ChannelType::Text => vec![
-            PermissionOverwrite {
-                allow: Permissions::empty(),
-                deny: Permissions::READ_MESSAGES,
-                kind: PermissionOverwriteType::Role(role_everyone_id),
-            },
-            PermissionOverwrite {
-                allow: Permissions::READ_MESSAGES,
-                deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Member(UserId(bot_id)),
-            },
-            PermissionOverwrite {
-                allow: Permissions::READ_MESSAGES,
-                deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Role(role_id),
-            },
-            PermissionOverwrite {
-                allow: Permissions::READ_MESSAGES
-                    | Permissions::MENTION_EVERYONE
-                    | Permissions::MANAGE_MESSAGES,
-                deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Role(host_role_id),
-            },
-        ],
-        ChannelType::Voice => vec![
-            PermissionOverwrite {
-                allow: Permissions::empty(),
-                deny: Permissions::CONNECT,
-                kind: PermissionOverwriteType::Role(role_everyone_id),
-            },
-            PermissionOverwrite {
-                allow: Permissions::CONNECT,
-                deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Member(UserId(bot_id)),
-            },
-            PermissionOverwrite {
-                allow: Permissions::CONNECT,
-                deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Role(role_id),
-            },
-            PermissionOverwrite {
-                allow: Permissions::CONNECT
-                    | Permissions::MUTE_MEMBERS
-                    | Permissions::DEAFEN_MEMBERS
-                    | Permissions::MOVE_MEMBERS
-                    | Permissions::PRIORITY_SPEAKER,
-                deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Role(host_role_id),
-            },
-        ],
+        ChannelType::Text => {
+            let permission_overwrites = vec![
+                PermissionOverwrite {
+                    allow: Permissions::empty(),
+                    deny: Permissions::READ_MESSAGES,
+                    kind: PermissionOverwriteType::Role(role_everyone_id),
+                },
+                PermissionOverwrite {
+                    allow: Permissions::READ_MESSAGES,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Member(UserId(bot_id)),
+                },
+                PermissionOverwrite {
+                    allow: Permissions::READ_MESSAGES,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Role(role_id),
+                },
+            ];
+            // for &host_id in discord_host_ids {
+            //     permission_overwrites.push(PermissionOverwrite {
+            //         allow: Permissions::READ_MESSAGES
+            //             | Permissions::MENTION_EVERYONE
+            //             | Permissions::MANAGE_MESSAGES,
+            //         deny: Permissions::empty(),
+            //         kind: PermissionOverwriteType::Member(UserId(host_id)),
+            //     });
+            // }
+            permission_overwrites
+        }
+        ChannelType::Voice => {
+            let permission_overwrites = vec![
+                PermissionOverwrite {
+                    allow: Permissions::empty(),
+                    deny: Permissions::CONNECT,
+                    kind: PermissionOverwriteType::Role(role_everyone_id),
+                },
+                PermissionOverwrite {
+                    allow: Permissions::CONNECT,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Member(UserId(bot_id)),
+                },
+                PermissionOverwrite {
+                    allow: Permissions::CONNECT,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Role(role_id),
+                },
+            ];
+            // for &host_id in discord_host_ids {
+            //     permission_overwrites.push(PermissionOverwrite {
+            //         allow: Permissions::CONNECT
+            //             | Permissions::MUTE_MEMBERS
+            //             | Permissions::DEAFEN_MEMBERS
+            //             | Permissions::MOVE_MEMBERS
+            //             | Permissions::PRIORITY_SPEAKER,
+            //         deny: Permissions::empty(),
+            //         kind: PermissionOverwriteType::Member(UserId(host_id)),
+            //     });
+            // }
+            permission_overwrites
+        }
     };
     if is_campaign && channel_type == ChannelType::Text {
         // Grant the publisher role access to campaign channels
@@ -833,75 +847,132 @@ fn sync_channel_permissions(
     Ok(())
 }
 
-fn sync_user_role_assignments(
+fn sync_role_assignments_permissions(
     discord_user_ids: &[u64],
-    channel: ChannelId,
-    role: RoleId,
-    is_host_role: bool,
+    discord_host_ids: &[u64],
+    channel_id: ChannelId,
+    voice_channel_id: Option<ChannelId>,
+    user_role: RoleId,
     redis_connection: &mut redis::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // Check whether any users have manually removed roles and don't add them back
-    let redis_channel_removed_hosts_key = format!("discord_channel:{}:removed_hosts", channel.0);
-    let redis_channel_removed_users_key = format!("discord_channel:{}:removed_users", channel.0);
-    let ignore_discord_user_ids: Vec<u64> = if is_host_role {
-        // Don't automatically assign the host role to users that have either
-        // been manually removed as a host or as a user from a channel
-        redis_connection.sunion(&[
-            &redis_channel_removed_hosts_key,
-            &redis_channel_removed_users_key,
-        ])?
-    } else {
-        // Don't automatically assign the user role to user that have been
-        // manually removed from a channel
-        redis_connection.smembers(&redis_channel_removed_users_key)?
-    };
-    // Lastly, actually assign the role to the Discord users
+    let redis_channel_removed_hosts_key = format!("discord_channel:{}:removed_hosts", channel_id.0);
+    let redis_channel_removed_users_key = format!("discord_channel:{}:removed_users", channel_id.0);
+    // Don't automatically assign the user role to user that have been
+    // manually removed from a channel
+    let ignore_discord_user_ids: Vec<u64> =
+        redis_connection.smembers(&redis_channel_removed_users_key)?;
+    // Don't automatically assign the host role to users that have either
+    // been manually removed as a host or as a user from a channel
+    let ignore_discord_host_ids: Vec<u64> = redis_connection.sunion(&[
+        &redis_channel_removed_hosts_key,
+        &redis_channel_removed_users_key,
+    ])?;
+    // Assign the role to the Discord users
     let mut newly_added_user_ids = vec![];
     for &user_id in discord_user_ids {
         if ignore_discord_user_ids.contains(&user_id) {
             continue;
         }
         match UserId(user_id).to_user(discord_api) {
-            Ok(user) => match user.has_role(discord_api, GUILD_ID, role) {
+            Ok(user) => match user.has_role(discord_api, GUILD_ID, user_role) {
                 Ok(has_role) => {
                     if !has_role {
                         match discord_api
                             .http()
-                            .add_member_role(GUILD_ID.0, user_id, role.0)
+                            .add_member_role(GUILD_ID.0, user_id, user_role.0)
                         {
                             Ok(_) => {
-                                println!("Assigned user {} to role {}", user_id, role.0);
+                                println!("Assigned user {} to role {}", user_id, user_role.0);
                                 newly_added_user_ids.push(user_id);
                             }
                             Err(err) => eprintln!(
                                 "Could not assign user {} to role {}: {}",
-                                user_id, role.0, err
+                                user_id, user_role.0, err
                             ),
                         }
                     }
                 }
                 Err(err) => eprintln!(
                     "Could not figure out whether the user {} already has role {}: {}",
-                    user.id, role.0, err
+                    user.id, user_role.0, err
                 ),
             },
             Err(err) => eprintln!("Could not find the user {}: {}", user_id, err),
         }
     }
-    // Announce the newly added users
-    if !newly_added_user_ids.is_empty() {
-        if let Err(err) = channel.send_message(&discord_api.http, |message_builder| {
-            if is_host_role {
-                message_builder.content(crate::strings::CHANNEL_ADDED_HOSTS(&newly_added_user_ids))
-            } else {
-                message_builder
-                    .content(crate::strings::CHANNEL_ADDED_PLAYERS(&newly_added_user_ids))
+    // Assign direct permissions to hosts
+    let mut newly_added_host_ids = vec![];
+    for &host_id in discord_host_ids {
+        if ignore_discord_host_ids.contains(&host_id) {
+            continue;
+        }
+        // Assign text channel permissions
+        let new_permissions = Permissions::READ_MESSAGES
+            | Permissions::MENTION_EVERYONE
+            | Permissions::MANAGE_MESSAGES;
+        match crate::discord::add_channel_user_permissions(
+            discord_api,
+            channel_id,
+            UserId(host_id),
+            new_permissions,
+        ) {
+            Ok(true) => {
+                println!("Assigned user {} host permissions in text channel", host_id);
+                newly_added_host_ids.push(host_id);
             }
+            Err(err) => eprintln!(
+                "Could not assign user {} host permissions in text channel:\n{:#?}",
+                host_id, err
+            ),
+            _ => (),
+        }
+        // Also assign rights in the possibly existing voice channel
+        if let Some(voice_channel_id) = voice_channel_id {
+            let new_permissions = Permissions::CONNECT
+                | Permissions::MUTE_MEMBERS
+                | Permissions::DEAFEN_MEMBERS
+                | Permissions::MOVE_MEMBERS
+                | Permissions::PRIORITY_SPEAKER;
+            match crate::discord::add_channel_user_permissions(
+                discord_api,
+                voice_channel_id,
+                UserId(host_id),
+                new_permissions,
+            ) {
+                Ok(true) => {
+                    println!(
+                        "Assigned user {} host permissions in voice channel",
+                        host_id
+                    );
+                }
+                Err(err) => eprintln!(
+                    "Could not assign user {} host permissions in voice channel:\n{:#?}",
+                    host_id, err
+                ),
+                _ => (),
+            }
+        }
+    }
+    // Announce the newly added users
+    if !newly_added_host_ids.is_empty() {
+        if let Err(err) = channel_id.send_message(&discord_api.http, |message_builder| {
+            message_builder.content(crate::strings::CHANNEL_ADDED_HOSTS(&newly_added_host_ids))
         }) {
             eprintln!(
-                "Could not announce new players in channel {}: {}",
-                channel.0, err
+                "Could not announce new hosts in channel {}:\n{:#?}",
+                channel_id.0, err
+            );
+        };
+    }
+    if !newly_added_user_ids.is_empty() {
+        if let Err(err) = channel_id.send_message(&discord_api.http, |message_builder| {
+            message_builder.content(crate::strings::CHANNEL_ADDED_PLAYERS(&newly_added_user_ids))
+        }) {
+            eprintln!(
+                "Could not announce new players in channel {}:\n{:#?}",
+                channel_id.0, err
             );
         };
     }
