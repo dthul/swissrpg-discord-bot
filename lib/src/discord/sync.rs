@@ -778,7 +778,9 @@ fn sync_channel_permissions(
                     kind: PermissionOverwriteType::Role(role_id),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES | Permissions::MENTION_EVERYONE,
+                    allow: Permissions::READ_MESSAGES
+                        | Permissions::MENTION_EVERYONE
+                        | Permissions::MANAGE_MESSAGES,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(ORGANISER_ID),
                 },
@@ -812,7 +814,10 @@ fn sync_channel_permissions(
                     kind: PermissionOverwriteType::Role(role_id),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::CONNECT,
+                    allow: Permissions::CONNECT
+                        | Permissions::MOVE_MEMBERS
+                        | Permissions::MUTE_MEMBERS
+                        | Permissions::DEAFEN_MEMBERS,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(ORGANISER_ID),
                 },
