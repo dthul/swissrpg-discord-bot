@@ -20,6 +20,7 @@ pub mod ids {
     pub const PUBLISHER_ID: RoleId = RoleId(613769364990066699);
     pub const ORGANISER_ID: RoleId = RoleId(689914933357314090);
     pub const GAME_MASTER_ID: RoleId = RoleId(606913167439822987);
+    pub const DICE_ROLLER_BOT_ID: Option<RoleId> = None;
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561808429056042)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561949651402772)];
     pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(601070848446824512);
@@ -35,6 +36,7 @@ pub mod ids {
     pub const PUBLISHER_ID: RoleId = RoleId(611290948395073585);
     pub const ORGANISER_ID: RoleId = RoleId(539447673988841492);
     pub const GAME_MASTER_ID: RoleId = RoleId(412946716892069888);
+    pub const DICE_ROLLER_BOT_ID: Option<RoleId> = Some(RoleId(600612886368223274));
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(562607292176924694)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] =
         &[ChannelId(414074722259828736), ChannelId(651006290998329354)];
@@ -761,7 +763,7 @@ fn sync_channel_permissions(
     // see: https://support.discordapp.com/hc/en-us/articles/206143877-How-do-I-set-up-a-Role-Exclusive-channel-
     let permission_overwrites = match channel_type {
         ChannelType::Text => {
-            let permission_overwrites = vec![
+            let mut permission_overwrites = vec![
                 PermissionOverwrite {
                     allow: Permissions::empty(),
                     deny: Permissions::READ_MESSAGES,
@@ -785,6 +787,13 @@ fn sync_channel_permissions(
                     kind: PermissionOverwriteType::Role(ORGANISER_ID),
                 },
             ];
+            if let Some(dice_roller_bot_id) = DICE_ROLLER_BOT_ID {
+                permission_overwrites.push(PermissionOverwrite {
+                    allow: Permissions::READ_MESSAGES,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Role(dice_roller_bot_id),
+                });
+            }
             // for &host_id in discord_host_ids {
             //     permission_overwrites.push(PermissionOverwrite {
             //         allow: Permissions::READ_MESSAGES
