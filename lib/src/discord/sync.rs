@@ -18,6 +18,7 @@ pub mod ids {
     pub const GUILD_ID: GuildId = GuildId(601070848446824509);
     pub const BOT_ADMIN_ID: RoleId = RoleId(606829075226689536);
     pub const PUBLISHER_ID: RoleId = RoleId(613769364990066699);
+    pub const ORGANISER_ID: RoleId = RoleId(689914933357314090);
     pub const GAME_MASTER_ID: RoleId = RoleId(606913167439822987);
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561808429056042)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561949651402772)];
@@ -32,6 +33,7 @@ pub mod ids {
     pub const GUILD_ID: GuildId = GuildId(401856510709202945);
     pub const BOT_ADMIN_ID: RoleId = RoleId(610541498852966436);
     pub const PUBLISHER_ID: RoleId = RoleId(611290948395073585);
+    pub const ORGANISER_ID: RoleId = RoleId(539447673988841492);
     pub const GAME_MASTER_ID: RoleId = RoleId(412946716892069888);
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(562607292176924694)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] =
@@ -288,11 +290,9 @@ fn sync_event_series(
     sync_channel_permissions(
         channel_id,
         ChannelType::Text,
-        series_id,
         channel_role_id,
         // &discord_host_ids,
         bot_id,
-        redis_connection,
         discord_api,
     )?;
     // Step 7: If this is an online campaign, also create a voice channel
@@ -308,11 +308,9 @@ fn sync_event_series(
         sync_channel_permissions(
             voice_channel_id,
             ChannelType::Voice,
-            series_id,
             channel_role_id,
             // &discord_host_ids,
             bot_id,
-            redis_connection,
             discord_api,
         )?;
         Some(voice_channel_id)
@@ -750,11 +748,9 @@ fn sync_channel_impl(
 fn sync_channel_permissions(
     channel_id: ChannelId,
     channel_type: ChannelType,
-    series_id: &str,
     role_id: RoleId,
     // discord_host_ids: &[u64],
     bot_id: u64,
-    redis_connection: &mut redis::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // The @everyone role has the same id as the guild
@@ -763,15 +759,7 @@ fn sync_channel_permissions(
     // This is achieved by denying @everyone the READ_MESSAGES permission
     // but allowing the new role the READ_MESSAGES permission.
     // see: https://support.discordapp.com/hc/en-us/articles/206143877-How-do-I-set-up-a-Role-Exclusive-channel-
-    let is_campaign = {
-        let redis_series_type_key = format!("event_series:{}:type", series_id);
-        let series_type: Option<String> = redis_connection.get(&redis_series_type_key)?;
-        match series_type.as_ref().map(String::as_str) {
-            Some("campaign") => true,
-            _ => false,
-        }
-    };
-    let mut permission_overwrites = match channel_type {
+    let permission_overwrites = match channel_type {
         ChannelType::Text => {
             let permission_overwrites = vec![
                 PermissionOverwrite {
@@ -788,6 +776,11 @@ fn sync_channel_permissions(
                     allow: Permissions::READ_MESSAGES,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(role_id),
+                },
+                PermissionOverwrite {
+                    allow: Permissions::READ_MESSAGES | Permissions::MENTION_EVERYONE,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Role(ORGANISER_ID),
                 },
             ];
             // for &host_id in discord_host_ids {
@@ -818,6 +811,11 @@ fn sync_channel_permissions(
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(role_id),
                 },
+                PermissionOverwrite {
+                    allow: Permissions::CONNECT,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Role(ORGANISER_ID),
+                },
             ];
             // for &host_id in discord_host_ids {
             //     permission_overwrites.push(PermissionOverwrite {
@@ -833,14 +831,6 @@ fn sync_channel_permissions(
             permission_overwrites
         }
     };
-    if is_campaign && channel_type == ChannelType::Text {
-        // Grant the publisher role access to campaign channels
-        permission_overwrites.push(PermissionOverwrite {
-            allow: Permissions::READ_MESSAGES | Permissions::MENTION_EVERYONE,
-            deny: Permissions::empty(),
-            kind: PermissionOverwriteType::Role(PUBLISHER_ID),
-        });
-    }
     for permission_overwrite in &permission_overwrites {
         channel_id.create_permission(discord_api.http(), permission_overwrite)?;
     }
