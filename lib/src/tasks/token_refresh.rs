@@ -200,7 +200,7 @@ async fn user_token_refresh_task_impl(
         let now = chrono::Utc::now();
         let day_number = now.num_days_from_ce();
         let hour_number = now.hour(); // [0, 23]
-        let bucket_number = (((day_number % 4) as u32 + 1) * (hour_number + 1)) - 1; // [0, 95]
+        let bucket_number = (day_number % 4) as u32 * 24 + hour_number; // [0, 95]
         if (meetup_user_id % 96) as u32 != bucket_number {
             // Now is not a good time
             return Ok(());
