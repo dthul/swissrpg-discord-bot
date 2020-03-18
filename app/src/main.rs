@@ -126,7 +126,7 @@ fn main() {
             .expect("Bot name was not set")
             .clone(),
         stripe_webhook_signing_secret,
-        stripe_client,
+        stripe_client.clone(),
         api_key,
         abort_web_server_signal,
     );
@@ -171,7 +171,7 @@ fn main() {
     let syncing_task = crate::sync_task::create_recurring_syncing_task(
         redis_client.clone(),
         async_meetup_client.clone(),
-        discord_api,
+        discord_api.clone(),
         bot.data
             .read()
             .get::<ui::discord::bot::BotIdKey>()
@@ -180,12 +180,20 @@ fn main() {
         task_scheduler.clone(),
     );
 
+    let stripe_subscription_refresh_task =
+        lib::tasks::subscription_roles::stripe_subscriptions_refresh_task(
+            discord_api.clone(),
+            stripe_client.clone(),
+        );
+
     // Wrap the long-running tasks in abortable Futures
     let (organizer_token_refresh_task, abort_handle_organizer_token_refresh_task) =
         future::abortable(organizer_token_refresh_task);
     let (users_token_refresh_task, abort_handle_users_token_refresh_task) =
         future::abortable(users_token_refresh_task);
     let (syncing_task, abort_handle_syncing_task) = future::abortable(syncing_task);
+    let (stripe_subscription_refresh_task, abort_handle_stripe_subscription_refresh_task) =
+        future::abortable(stripe_subscription_refresh_task);
 
     // Create a synchronization barrier that keeps the main thread from exiting
     // until the signal handler tells it to
@@ -233,6 +241,10 @@ fn main() {
                 println!("Syncing task shut down.");
             });
             tokio::spawn(async {
+                let _ = stripe_subscription_refresh_task.await;
+                println!("Stripe subscription refresh task shut down.");
+            });
+            tokio::spawn(async {
                 web_server.await;
                 println!("Web server shut down.");
             });
@@ -256,6 +268,7 @@ fn main() {
     abort_handle_organizer_token_refresh_task.abort();
     abort_handle_users_token_refresh_task.abort();
     abort_handle_syncing_task.abort();
+    abort_handle_stripe_subscription_refresh_task.abort();
     let _ = abort_web_server_tx.send(());
     let mut runtime_guard = futures::executor::block_on(async_runtime.write());
     // Give any currently running tasks a chance to finish

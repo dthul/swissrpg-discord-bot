@@ -2,6 +2,7 @@ use lazy_static::lazy_static;
 use serenity::http::CacheHttp;
 use serenity::model::id::{RoleId, UserId};
 use std::collections::HashSet;
+use std::sync::Arc;
 
 pub const CHAMPION_PRODUCT_PATTERN: &'static str =
     r"(?i).*(Novice|Apprentice|Adept|Master|Legendary).*";
@@ -30,6 +31,39 @@ pub mod ids {
     pub const CHAMPION_ID: RoleId = RoleId(670197555166052362);
     pub const INSIDER_ID: RoleId = RoleId(670201953883783169);
     pub const GM_CHAMPION_ID: RoleId = RoleId(671111220119470093);
+}
+
+pub async fn stripe_subscriptions_refresh_task(
+    discord_api: crate::discord::CacheAndHttp,
+    stripe_client: Arc<stripe::Client>,
+) -> ! {
+    // Sync every 8 hours, starting in an hour from now
+    let mut interval_timer = tokio::time::interval_at(
+        tokio::time::Instant::now() + tokio::time::Duration::from_secs(60 * 60),
+        tokio::time::Duration::from_secs(8 * 60 * 60),
+    );
+    // Run forever
+    loop {
+        // Wait for the next interval tick
+        interval_timer.tick().await;
+        println!("Refreshing Stripe subscription information");
+        let join_handle = {
+            let discord_api = discord_api.clone();
+            let stripe_client = stripe_client.clone();
+            tokio::spawn(async move { update_roles(&discord_api, &stripe_client).await })
+        };
+        match join_handle.await {
+            Err(err) => {
+                eprintln!("Stripe subscription update task failed:\n{:#?}", err);
+            }
+            Ok(Err(err)) => {
+                eprintln!("Stripe subscription update task failed:\n{:#?}", err);
+            }
+            Ok(Ok(())) => {
+                // Nothing to do
+            }
+        }
+    }
 }
 
 pub async fn update_roles(
