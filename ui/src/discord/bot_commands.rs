@@ -801,7 +801,8 @@ impl super::bot::Handler {
                     }
                     // Also grant permissions in a possibly existing voice channel
                     if let Some(voice_channel_id) = voice_channel_id {
-                        let new_permissions = Permissions::CONNECT
+                        let new_permissions = Permissions::READ_MESSAGES
+                            | Permissions::CONNECT
                             | Permissions::MUTE_MEMBERS
                             | Permissions::DEAFEN_MEMBERS
                             | Permissions::MOVE_MEMBERS

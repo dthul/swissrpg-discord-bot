@@ -813,17 +813,18 @@ fn sync_channel_permissions(
                     kind: PermissionOverwriteType::Role(role_everyone_id),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::CONNECT,
+                    allow: Permissions::READ_MESSAGES | Permissions::CONNECT,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Member(UserId(bot_id)),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::CONNECT,
+                    allow: Permissions::READ_MESSAGES | Permissions::CONNECT,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(role_id),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::CONNECT
+                    allow: Permissions::READ_MESSAGES
+                        | Permissions::CONNECT
                         | Permissions::MOVE_MEMBERS
                         | Permissions::MUTE_MEMBERS
                         | Permissions::DEAFEN_MEMBERS,
@@ -934,7 +935,8 @@ fn sync_role_assignments_permissions(
         }
         // Also assign rights in the possibly existing voice channel
         if let Some(voice_channel_id) = voice_channel_id {
-            let new_permissions = Permissions::CONNECT
+            let new_permissions = Permissions::READ_MESSAGES
+                | Permissions::CONNECT
                 | Permissions::MUTE_MEMBERS
                 | Permissions::DEAFEN_MEMBERS
                 | Permissions::MOVE_MEMBERS
