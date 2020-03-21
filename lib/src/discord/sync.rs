@@ -809,7 +809,7 @@ fn sync_channel_permissions(
             let permission_overwrites = vec![
                 PermissionOverwrite {
                     allow: Permissions::empty(),
-                    deny: Permissions::CONNECT,
+                    deny: Permissions::READ_MESSAGES | Permissions::CONNECT,
                     kind: PermissionOverwriteType::Role(role_everyone_id),
                 },
                 PermissionOverwrite {
