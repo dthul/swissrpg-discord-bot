@@ -41,15 +41,17 @@ impl From<&serenity::client::Context> for CacheAndHttp {
 }
 
 pub fn is_host(
-    cache: impl AsRef<serenity::cache::CacheRwLock>,
+    discord_api: &CacheAndHttp,
     channel_id: ChannelId,
     user_id: UserId,
+    redis_connection: &mut redis::Connection,
 ) -> Result<bool, crate::meetup::Error> {
-    let channel = if let Some(Channel::Guild(channel)) = cache.as_ref().read().channel(channel_id) {
-        channel.clone()
-    } else {
-        return Err(simple_error::SimpleError::new("Could not find this channel").into());
-    };
+    let channel =
+        if let Some(Channel::Guild(channel)) = discord_api.cache.read().channel(channel_id) {
+            channel.clone()
+        } else {
+            return Err(simple_error::SimpleError::new("Could not find this channel").into());
+        };
     // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
     // MENTION_EVERYONE permission are channel hosts
     let user_permission_overwrites = channel
@@ -65,6 +67,23 @@ pub fn is_host(
                 | Permissions::MENTION_EVERYONE,
         )
     });
+    if !is_host {
+        // Maybe the user is still on the old host roles
+        let channel_roles = crate::get_channel_roles(channel_id.0, redis_connection)?;
+        if let Some(crate::ChannelRoles {
+            host: Some(host_role),
+            ..
+        }) = channel_roles
+        {
+            let user = user_id.to_user(discord_api)?;
+            let is_host = user
+                .has_role(discord_api, sync::ids::GUILD_ID, host_role)
+                .unwrap_or(false);
+            return Ok(is_host);
+        } else {
+            return Ok(false);
+        }
+    }
     Ok(is_host)
 }
 

@@ -624,7 +624,12 @@ impl super::bot::Handler {
                 lib::discord::sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
-        let is_host = lib::discord::is_host(ctx, msg.channel_id, msg.author.id)?;
+        let is_host = lib::discord::is_host(
+            &ctx.into(),
+            msg.channel_id,
+            msg.author.id,
+            &mut redis_connection,
+        )?;
         if !is_bot_admin && !is_host {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
             return Ok(());
@@ -720,7 +725,12 @@ impl super::bot::Handler {
             return Ok(());
         }
         // Managed channels and hosts don't use roles but user-specific permission overwrites
-        let is_host = lib::discord::is_host(ctx, msg.channel_id, msg.author.id)?;
+        let is_host = lib::discord::is_host(
+            &ctx.into(),
+            msg.channel_id,
+            msg.author.id,
+            &mut redis_connection,
+        )?;
         if is_game_channel && !is_managed_channel {
             let channel_roles = lib::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
             let channel_roles = match channel_roles {
@@ -953,8 +963,12 @@ impl super::bot::Handler {
             } else {
                 // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
                 // MENTION_EVERYONE permission are channel hosts
-                let target_is_host =
-                    lib::discord::is_host(ctx, msg.channel_id, UserId(discord_id))?;
+                let target_is_host = lib::discord::is_host(
+                    &ctx.into(),
+                    msg.channel_id,
+                    UserId(discord_id),
+                    &mut redis_connection,
+                )?;
                 if target_is_host && !is_bot_admin {
                     let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
                     return Ok(());
@@ -1383,8 +1397,10 @@ impl super::bot::Handler {
         msg: &Message,
         redis_client: &mut redis::Client,
     ) -> Result<(), lib::meetup::Error> {
+        let mut redis_connection = redis_client.get_connection()?;
         // Check whether this is a game channel
-        let is_game_channel: bool = redis_client.sismember("discord_channels", msg.channel_id.0)?;
+        let is_game_channel: bool =
+            redis_connection.sismember("discord_channels", msg.channel_id.0)?;
         if !is_game_channel {
             let _ = msg
                 .channel_id
@@ -1392,7 +1408,12 @@ impl super::bot::Handler {
             return Ok(());
         };
         // This is only for channel hosts and admins
-        let is_host = lib::discord::is_host(ctx, msg.channel_id, msg.author.id)?;
+        let is_host = lib::discord::is_host(
+            &ctx.into(),
+            msg.channel_id,
+            msg.author.id,
+            &mut redis_connection,
+        )?;
         let is_bot_admin = msg
             .author
             .has_role(
@@ -1407,9 +1428,9 @@ impl super::bot::Handler {
         }
         // Find the series belonging to the channel
         let redis_channel_series_key = format!("discord_channel:{}:event_series", msg.channel_id.0);
-        let event_series: String = redis_client.get(&redis_channel_series_key)?;
+        let event_series: String = redis_connection.get(&redis_channel_series_key)?;
         // Create a new Flow
-        let flow = lib::flow::ScheduleSessionFlow::new(redis_client, event_series)?;
+        let flow = lib::flow::ScheduleSessionFlow::new(&mut redis_connection, event_series)?;
         let link = format!("{}/schedule_session/{}", lib::urls::BASE_URL, flow.id);
         let _ = msg.author.direct_message(ctx, |message_builder| {
             message_builder.content(format!(
@@ -1447,7 +1468,12 @@ impl super::bot::Handler {
                 lib::discord::sync::ids::BOT_ADMIN_ID,
             )
             .unwrap_or(false);
-        let is_host = lib::discord::is_host(ctx, msg.channel_id, msg.author.id)?;
+        let is_host = lib::discord::is_host(
+            &ctx.into(),
+            msg.channel_id,
+            msg.author.id,
+            &mut redis_connection,
+        )?;
         if !is_bot_admin && !is_host {
             let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
             return Ok(());
