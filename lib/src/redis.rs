@@ -1,8 +1,7 @@
 use futures_util::FutureExt;
 use rand::Rng;
 use redis::{AsyncCommands, Commands};
-use std::future::Future;
-use std::pin::Pin;
+use std::{future::Future, pin::Pin};
 
 pub fn closure_type_helper<
     T: redis::FromRedisValue + Send + 'static,

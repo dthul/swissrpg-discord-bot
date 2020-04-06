@@ -1,7 +1,6 @@
 use askama::Template;
 use cookie::Cookie;
-use futures_util::FutureExt;
-use futures_util::{lock::Mutex, TryFutureExt};
+use futures_util::{lock::Mutex, FutureExt, TryFutureExt};
 use hyper::Response;
 use oauth2::{
     basic::BasicClient, AsyncCodeTokenRequest, AuthorizationCode, CsrfToken, RedirectUrl, Scope,

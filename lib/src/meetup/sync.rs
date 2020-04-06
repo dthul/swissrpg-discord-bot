@@ -1,5 +1,4 @@
-use futures_util::FutureExt;
-use futures_util::{lock::Mutex, stream::StreamExt};
+use futures_util::{lock::Mutex, stream::StreamExt, FutureExt};
 use lazy_static::lazy_static;
 use redis::{self, AsyncCommands};
 use simple_error::SimpleError;

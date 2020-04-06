@@ -2,11 +2,14 @@ use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use redis::Commands;
 use regex::Regex;
-use serenity::model::channel::Channel;
-use serenity::model::channel::{PermissionOverwrite, PermissionOverwriteType};
-use serenity::model::Permissions;
 use serenity::{
-    model::{channel, channel::Message, id::UserId, user::User},
+    model::{
+        channel,
+        channel::{Channel, Message, PermissionOverwrite, PermissionOverwriteType},
+        id::UserId,
+        user::User,
+        Permissions,
+    },
     prelude::*,
 };
 use simple_error::SimpleError;
@@ -398,7 +401,12 @@ impl super::bot::Handler {
             }
             Err(why) => {
                 eprintln!("Error sending Meetup linking DM: {:?}", why);
-                let _ = msg.reply(ctx, "There was an error trying to send you instructions.\nDo you have direct messages disabled? In that case send me a private message with the text \"link meetup\".");
+                let _ = msg.reply(
+                    ctx,
+                    "There was an error trying to send you instructions.\nDo you have direct \
+                     messages disabled? In that case send me a private message with the text \
+                     \"link meetup\".",
+                );
             }
         }
         Ok(())

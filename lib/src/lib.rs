@@ -9,8 +9,7 @@ pub mod stripe;
 pub mod tasks;
 pub mod urls;
 
-use ::redis::AsyncCommands;
-use ::redis::Commands;
+use ::redis::{AsyncCommands, Commands};
 pub use error::BoxedError;
 use rand::Rng;
 use serenity::model::id::ChannelId;

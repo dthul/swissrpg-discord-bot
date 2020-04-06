@@ -22,9 +22,11 @@ pub fn INVALID_COMMAND(bot_id: u64) -> String {
 pub fn HELP_MESSAGE_INTRO(bot_id: u64) -> String {
     format!(
         "Of course, I'm happy to serve (because I've been programmed to). Here are the commands I \
-         understand.\n\n***Note:*** *Unless specified, you can type all these commands in this \
-         private chat. Any commands you type in a channel should start with the mention of my \
-         name <@{bot_id}>, but be mindful not to spam the public channels please.*",
+         understand.
+         
+***Note:*** *Unless specified, you can type all these commands in this private chat. Any commands \
+         you type in a channel should start with the mention of my name <@{bot_id}>, but be \
+         mindful not to spam the public channels please.*",
         bot_id = bot_id
     )
 }
@@ -46,7 +48,7 @@ pub fn HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id: u64) -> String {
          channel)_ makes a user no longer a Host.
 :white_small_square: **<@{bot_id}> add `@some-user`** - _(in game channel or managed channel)_ \
          adds a user to the channel.
-         :white_small_square: **<@{bot_id}> remove `@some-user`** - _(in game channel or managed channel)_ \
+:white_small_square: **<@{bot_id}> remove `@some-user`** - _(in game channel or managed channel)_ \
          removes a user from the channel.
 :white_small_square: **<@{bot_id}> whois @some-discord-user** - _(needs proper mention)_ shows the \
          Meetup profile of the mentioned Discord user
@@ -67,12 +69,13 @@ pub const HELP_MESSAGE_GM_EMBED_TITLE: &'static str =
 pub fn HELP_MESSAGE_GM_EMBED_CONTENT(bot_id: u64) -> String {
     format!(
         ":white_small_square: **<@{bot_id}> remove `@some-user`** - removes a user from the \
-         channel.\n:white_small_square: **<@{bot_id}> end adventure** - sets the channel for \
-         closure at the end of an adventure. The channel won't be deleted immediately but within \
-         24 hours.\n:white_small_square: **<@{bot_id}> schedule session** - allows you to \
-         schedule a new session for your adventure.\n:white_small_square: **<@{bot_id}> list \
-         players** - shows information about people in this channel and people signed up for this \
-         channel's events on Meetup.",
+         channel.
+:white_small_square: **<@{bot_id}> end adventure** - sets the channel for closure at the end of an \
+         adventure. The channel won't be deleted immediately but within 24 hours.
+:white_small_square: **<@{bot_id}> schedule session** - allows you to schedule a new session for \
+         your adventure.
+:white_small_square: **<@{bot_id}> list players** - shows information about people in this channel \
+         and people signed up for this channel's events on Meetup.",
         bot_id = bot_id
     )
 }
@@ -80,10 +83,10 @@ pub fn HELP_MESSAGE_GM_EMBED_CONTENT(bot_id: u64) -> String {
 pub const HELP_MESSAGE_PLAYER_EMBED_TITLE: &'static str = "**Player commands**";
 
 pub const HELP_MESSAGE_PLAYER_EMBED_CONTENT: &'static str =
-    ":white_small_square: **help** - do I really need to explain this one?\n:white_small_square: \
-     **link meetup** - starts the process to link your Meetup and Discord profiles. If you \
-     haven't yet, you should really do that now.\n:white_small_square: **unlink meetup** - \
-     unlinks your Meetup and Discord profiles.";
+    ":white_small_square: **help** - do I really need to explain this one?
+:white_small_square: **link meetup** - starts the process to link your Meetup and Discord \
+     profiles. If you haven't yet, you should really do that now.
+:white_small_square: **unlink meetup** - unlinks your Meetup and Discord profiles.";
 
 // ** Welcome messages **
 
@@ -132,7 +135,7 @@ Now that your adventure is over, it's time to close this channel.
 Can the GM please confirm this by typing here:
 ***<@{bot_id}> end adventure***
 This will set the channel for closure in the next 24 hours, which should be just enough time to \
-         say thanks and goodbye.
+             say thanks and goodbye.
 If the adventure is not done, you can schedule a new session by typing here:
 ***<@{bot_id}> schedule session***",
             bot_id = bot_id,
@@ -145,7 +148,7 @@ Now that your adventure is over, it's time to close this channel.
 Can the GM please confirm this by typing here:
 ***<@{bot_id}> end adventure***
 This will set the channel for closure in the next 24 hours, which should be just enough time to \
-         say thanks and goodbye.
+             say thanks and goodbye.
 If the adventure is not done, you can schedule a new session by typing here:
 ***<@{bot_id}> schedule session***",
             bot_id = bot_id

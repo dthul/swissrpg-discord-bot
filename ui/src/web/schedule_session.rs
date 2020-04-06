@@ -359,15 +359,16 @@ async fn handle_schedule_session_post(
             lib::get_event_series_roles_async(&event_series_id, redis_connection).await?;
         let message = if let Some(channel_roles) = channel_roles {
             format!(
-                "Your adventure continues here, heroes of <@&{channel_role_id}>: {link}. Slay the dragon, save the prince, get \
-                the treasure, or whatever shenanigans you like to get into.",
+                "Your adventure continues here, heroes of <@&{channel_role_id}>: {link}. Slay the \
+                 dragon, save the prince, get the treasure, or whatever shenanigans you like to \
+                 get into.",
                 link = &new_event.link,
                 channel_role_id = channel_roles.user
             )
         } else {
             format!(
                 "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
-                the treasure, or whatever shenanigans you like to get into.",
+                 the treasure, or whatever shenanigans you like to get into.",
                 link = &new_event.link
             )
         };

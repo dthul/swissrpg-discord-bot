@@ -1,10 +1,11 @@
 pub mod sync;
 pub mod util;
 
-use serenity::model::channel::Channel;
-use serenity::model::channel::{PermissionOverwrite, PermissionOverwriteType};
-use serenity::model::id::{ChannelId, UserId};
-use serenity::model::permissions::Permissions;
+use serenity::model::{
+    channel::{Channel, PermissionOverwrite, PermissionOverwriteType},
+    id::{ChannelId, UserId},
+    permissions::Permissions,
+};
 use std::sync::Arc;
 
 #[derive(Clone)]

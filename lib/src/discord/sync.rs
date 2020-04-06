@@ -1034,8 +1034,7 @@ fn sync_game_master_role(
                     }
                 }
                 Err(err) => eprintln!(
-                    "Could not figure out whether the user {} already has the game master \
-                     role: {}",
+                    "Could not figure out whether the user {} already has the game master role: {}",
                     user.id, err
                 ),
             },

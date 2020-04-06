@@ -9,8 +9,7 @@ use serenity::Error as SerenityError;
 use simple_error::SimpleError;
 use std::num::ParseIntError;
 use stripe::Error as StripeError;
-use tokio::task::JoinError;
-use tokio::time::Elapsed;
+use tokio::{task::JoinError, time::Elapsed};
 use url::ParseError as UrlParseError;
 
 #[derive(Debug)]

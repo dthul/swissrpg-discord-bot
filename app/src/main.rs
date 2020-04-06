@@ -3,8 +3,13 @@ mod sync_task;
 
 use futures::future;
 use redis::Commands;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::{env, sync::Arc};
+use std::{
+    env,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 fn main() {
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");

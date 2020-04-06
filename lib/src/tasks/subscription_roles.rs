@@ -1,8 +1,9 @@
 use lazy_static::lazy_static;
-use serenity::http::CacheHttp;
-use serenity::model::id::{RoleId, UserId};
-use std::collections::HashSet;
-use std::sync::Arc;
+use serenity::{
+    http::CacheHttp,
+    model::id::{RoleId, UserId},
+};
+use std::{collections::HashSet, sync::Arc};
 
 pub const CHAMPION_PRODUCT_PATTERN: &'static str =
     r"(?i).*(Novice|Apprentice|Adept|Master|Legendary).*";

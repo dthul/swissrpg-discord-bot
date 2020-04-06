@@ -11,8 +11,13 @@ use serenity::{
     },
     prelude::*,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 pub fn create_discord_client(
     discord_token: &str,

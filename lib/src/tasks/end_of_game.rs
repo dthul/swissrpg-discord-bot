@@ -1,5 +1,4 @@
-use crate::discord::sync::ChannelType;
-use crate::strings;
+use crate::{discord::sync::ChannelType, strings};
 use redis::Commands;
 use serenity::model::id::{ChannelId, RoleId, UserId};
 use simple_error::SimpleError;
@@ -244,17 +243,17 @@ fn send_channel_expiration_reminder(
                 return Ok(());
             }
         }
-    // Check if this is a one-shot or a campaign series
-    let is_campaign = {
+        // Check if this is a one-shot or a campaign series
+        let is_campaign = {
             let series_id: String =
                 con.get(format!("discord_channel:{}:event_series", channel_id))?;
-        let redis_series_type_key = format!("event_series:{}:type", &series_id);
-        let series_type: Option<String> = con.get(&redis_series_type_key)?;
-        match series_type.as_ref().map(String::as_str) {
-            Some("campaign") => true,
-            _ => false,
-        }
-    };
+            let redis_series_type_key = format!("event_series:{}:type", &series_id);
+            let series_type: Option<String> = con.get(&redis_series_type_key)?;
+            match series_type.as_ref().map(String::as_str) {
+                Some("campaign") => true,
+                _ => false,
+            }
+        };
         if let Some(last_reminder_time) = last_reminder_time {
             // Reminders will be sent with an interval of two days for
             // one-shots and four days for campaign channels
