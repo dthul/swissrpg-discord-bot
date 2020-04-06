@@ -50,6 +50,7 @@ pub struct Regexes {
     pub num_cached_members: Regex,
     pub manage_channel_mention: Regex,
     pub mention_channel_role_mention: Regex,
+    pub snooze_reminders: Regex,
 }
 
 impl Regexes {
@@ -249,6 +250,10 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         r"^{bot_mention}\s+(?i)mention\s+channel\s*$",
         bot_mention = bot_mention,
     );
+    let snooze_until = format!(
+        r"^{bot_mention}\s+(?i)snooze\s+(?P<num_days>[0-9]+)\s*d(ay)?s?\s*$",
+        bot_mention = bot_mention,
+    );
     Regexes {
         bot_mention: Regex::new(&format!("^{}", bot_mention)).unwrap(),
         link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
@@ -287,6 +292,7 @@ pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
         num_cached_members: Regex::new(num_cached_members.as_str()).unwrap(),
         manage_channel_mention: Regex::new(manage_channel_mention.as_str()).unwrap(),
         mention_channel_role_mention: Regex::new(mention_channel_role_mention.as_str()).unwrap(),
+        snooze_reminders: Regex::new(snooze_until.as_ref()).unwrap(),
     }
 }
 

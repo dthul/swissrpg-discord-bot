@@ -3,6 +3,7 @@ use askama::Template;
 use chrono::{offset::TimeZone, Datelike, Timelike};
 use chrono_tz::Europe;
 use futures_util::{lock::Mutex, TryFutureExt};
+use redis::AsyncCommands;
 use std::{collections::HashMap, sync::Arc};
 use warp::Filter;
 
@@ -342,6 +343,17 @@ async fn handle_schedule_session_post(
         } else {
             true
         };
+        // Remove any possibly existing channel snoozes
+        {
+            let redis_series_channel_key =
+                format!("event_series:{}:discord_channel", event_series_id);
+            let channel_id: redis::RedisResult<Option<u64>> =
+                redis_connection.get(&redis_series_channel_key).await;
+            if let Ok(Some(channel_id)) = channel_id {
+                let redis_snooze_until_key = format!("discord_channel:{}:snooze_until", channel_id);
+                let _: redis::RedisResult<()> = redis_connection.del(&redis_snooze_until_key).await;
+            }
+        }
         // Announce the new session in the Discord channel
         let channel_roles =
             lib::get_event_series_roles_async(&event_series_id, redis_connection).await?;

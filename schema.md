@@ -98,6 +98,9 @@ Expiration time of this channel
 `discord_channel:{}:last_expiration_reminder_time`: string\
 Time the channel was last reminded of its expiration
 
+`discord_channel:{}:snooze_until`: string\
+Time until which this channel should not be reminded of its expiration
+
 `discord_channel:{}:deletion_time`: string\
 Time after which this channel will be deleted
 

@@ -1,6 +1,7 @@
 use futures::future::TryFutureExt;
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
+use redis::Commands;
 use serenity::{
     model::{
         channel::{Channel, Message},
@@ -852,7 +853,11 @@ impl EventHandler for Handler {
                     ),
                 );
             } else {
-                let _ = msg.channel_id.say(&ctx.http, "No guild associated with this message (use the command from a guild channel instead of a direct message).");
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    "No guild associated with this message (use the command from a guild channel \
+                     instead of a direct message).",
+                );
             }
         } else if regexes.manage_channel_mention.is_match(&msg.content) {
             // This is only for bot_admins
@@ -897,6 +902,68 @@ impl EventHandler for Handler {
                 } else {
                     msg.channel_id
                         .say(ctx, format!("This channel has no role"))?;
+                }
+                Ok::<_, lib::meetup::Error>(())
+            })() {
+                eprintln!("Error in mention_channel_role command:\n{:#?}", err);
+                let _ = msg.channel_id.say(ctx, "Something went wrong.");
+            }
+        } else if let Some(captures) = regexes.snooze_reminders.captures(&msg.content) {
+            // This is only for bot_admins
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    lib::discord::sync::ids::GUILD_ID,
+                    lib::discord::sync::ids::BOT_ADMIN_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return;
+            }
+            let redis_client = {
+                let data = ctx.data.read();
+                data.get::<RedisClientKey>()
+                    .expect("Redis client was not set")
+                    .clone()
+            };
+            // Poor man's try block
+            let ctx = &ctx;
+            if let Err(err) = (|| {
+                let num_days: u32 = captures
+                    .name("num_days")
+                    .expect("Regex capture does not contain 'num_days'")
+                    .as_str()
+                    .parse()
+                    .map(|num_days: u32| num_days.min(180))
+                    .map_err(|_err| {
+                        simple_error::SimpleError::new("Invalid number of days specified")
+                    })?;
+                let mut redis_connection = redis_client.get_connection()?;
+                // Check whether this is a game channel
+                let is_game_channel: bool =
+                    redis_connection.sismember("discord_channels", msg.channel_id.0)?;
+                if !is_game_channel {
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, strings::CHANNEL_NOT_BOT_CONTROLLED);
+                    return Ok(());
+                };
+                let redis_channel_snooze_key =
+                    format!("discord_channel:{}:snooze_until", msg.channel_id.0);
+                if num_days == 0 {
+                    // Remove the snooze
+                    let _: () = redis_connection.del(&redis_channel_snooze_key)?;
+                    let _ = msg.channel_id.say(ctx, "Disabled snoozing.");
+                } else {
+                    let snooze_until = chrono::Utc::now() + chrono::Duration::days(num_days as i64);
+                    // Set a new snooze date
+                    let _: () = redis_connection
+                        .set(&redis_channel_snooze_key, snooze_until.to_rfc3339())?;
+                    let _ = msg
+                        .channel_id
+                        .say(ctx, format!("Snoozing for {} days.", num_days));
                 }
                 Ok::<_, lib::meetup::Error>(())
             })() {
