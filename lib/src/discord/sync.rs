@@ -182,11 +182,11 @@ fn sync_event_series(
     let next_event = match upcoming.first() {
         Some(event) => event,
         None => {
-            println!(
-                "Event series \"{}\" seems to have no upcoming events associated with it, not \
-                 syncing to Discord",
-                series_id
-            );
+            // println!(
+            //     "Event series \"{}\" seems to have no upcoming events associated with it, not \
+            //      syncing to Discord",
+            //     series_id
+            // );
             return Ok(());
         }
     };
