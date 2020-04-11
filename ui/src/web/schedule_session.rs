@@ -245,25 +245,25 @@ async fn handle_schedule_session_post(
     ) {
         (Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute)) => {
             match chrono::NaiveDate::from_ymd_opt(year, month, day) {
-                Some(date) => {
-                    match date.and_hms_opt(hour, minute, 0) {
-                        Some(naive_date_time) => {
-                            match Europe::Zurich.from_local_datetime(&naive_date_time) {
-                                chrono::LocalResult::Single(date_time) => date_time,
-                                _ => return Ok((
+                Some(date) => match date.and_hms_opt(hour, minute, 0) {
+                    Some(naive_date_time) => {
+                        match Europe::Zurich.from_local_datetime(&naive_date_time) {
+                            chrono::LocalResult::Single(date_time) => date_time,
+                            _ => {
+                                return Ok((
                                     "Invalid data",
                                     "Seems like the specified time is ambiguous or non-existent",
                                 )
-                                    .into()),
+                                    .into())
                             }
                         }
-                        _ => {
-                            return Ok(
-                                ("Invalid data", "Seems like the specified time is invalid").into()
-                            )
-                        }
                     }
-                }
+                    _ => {
+                        return Ok(
+                            ("Invalid data", "Seems like the specified time is invalid").into()
+                        )
+                    }
+                },
                 _ => return Ok(("Invalid data", "Seems like the specified date is invalid").into()),
             }
         }
