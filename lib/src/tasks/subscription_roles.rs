@@ -3,7 +3,10 @@ use serenity::{
     http::CacheHttp,
     model::id::{RoleId, UserId},
 };
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 pub const CHAMPION_PRODUCT_PATTERN: &'static str =
     r"(?i).*(Novice|Apprentice|Adept|Master|Legendary).*";
@@ -81,30 +84,32 @@ pub async fn update_roles(
         match get_customer_and_product(stripe_client, subscription).await {
             Err(err) => eprintln!("Error in update_roles:\n{:#?}", err),
             Ok((customer, product)) => {
-                let discord_username = match customer.metadata.get("Discord") {
-                    None => continue,
-                    Some(username) => username,
-                };
-                let is_champion_product = product
-                    .name
-                    .as_ref()
-                    .map_or(false, |name| CHAMPION_PRODUCT_REGEX.is_match(name));
-                let is_insider_product = product
-                    .name
-                    .as_ref()
-                    .map_or(false, |name| INSIDER_PRODUCT_REGEX.is_match(name));
-                if is_champion_product {
-                    new_champions.push(discord_username.clone());
-                }
-                if is_insider_product {
-                    new_insiders.push(discord_username.clone());
+                let discord_id =
+                    ensure_customer_has_discord_id(&customer, stripe_client, discord_api).await?;
+                if let Some(discord_id) = discord_id {
+                    let is_champion_product = product
+                        .name
+                        .as_ref()
+                        .map_or(false, |name| CHAMPION_PRODUCT_REGEX.is_match(name));
+                    let is_insider_product = product
+                        .name
+                        .as_ref()
+                        .map_or(false, |name| INSIDER_PRODUCT_REGEX.is_match(name));
+                    if is_champion_product {
+                        new_champions.push(discord_id);
+                    }
+                    if is_insider_product {
+                        new_insiders.push(discord_id);
+                    }
+                } else {
+                    eprintln!(
+                        "Could not find Discord ID for Stripe customer {} ({:?})",
+                        customer.id, customer.email
+                    );
                 }
             }
         }
     }
-    // Look up the Discord IDs for the new champions and insiders
-    let new_champions = discord_usernames_to_ids(discord_api, &new_champions)?;
-    let new_insiders = discord_usernames_to_ids(discord_api, &new_insiders)?;
     // Now, check which Discord users already have the Champion and Insider roles
     let mut current_champions = vec![];
     let mut current_gm_champions = vec![];
@@ -236,6 +241,55 @@ pub async fn get_customer_and_product(
             subscription.id
         ))
         .into())
+    }
+}
+
+async fn ensure_customer_has_discord_id(
+    customer: &stripe::Customer,
+    client: &stripe::Client,
+    discord_api: &crate::discord::CacheAndHttp,
+) -> Result<Option<UserId>, crate::meetup::Error> {
+    let discord_id = customer
+        .metadata
+        .get("_hyperion_discord_id")
+        .map(|id| id.parse::<u64>())
+        .transpose()
+        .unwrap_or(None);
+    if let Some(discord_id) = discord_id {
+        Ok(Some(UserId(discord_id)))
+    } else {
+        // No Discord ID is stored in the Stripe metadata.
+        // Check for a Discord username, use that to look up the ID and store
+        // it in the Stripe metadata.
+        let discord_username = match customer.metadata.get("Discord") {
+            None => return Ok(None),
+            Some(username) => username.clone(),
+        };
+        let discord_id = discord_usernames_to_ids(discord_api, &[discord_username])?[0];
+        // Try to store the Discord ID in Stripe.
+        // Don't fail this method if it doesn't work, just log it.
+        let mut new_metadata = HashMap::new();
+        new_metadata.insert(
+            "_hyperion_discord_id".to_string(),
+            format!("{}", discord_id),
+        );
+        if let Err(err) = stripe::Customer::update(
+            client,
+            &customer.id,
+            stripe::UpdateCustomer {
+                metadata: Some(new_metadata),
+                ..Default::default()
+            },
+        )
+        .await
+        {
+            eprintln!(
+                "Could not store the Discord user ID in Stripe customer metadata.\nStripe \
+                 customer: {}\nError:\n{:#?}",
+                customer.id, err
+            );
+        };
+        Ok(Some(discord_id))
     }
 }
 
