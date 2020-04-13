@@ -1886,9 +1886,9 @@ dependencies = [
 
 [[package]]
 name = "serenity"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e35933f2f6fb1212f02bc6bbb1f550128ed07f72d6124fd8e368ed449db96c7"
+checksum = "fc90d6980aba87ee9a4560f0a8c9617cc1cb4046e277336386ca859e71797e5b"
 dependencies = [
  "base64 0.11.0",
  "bitflags",
@@ -2289,9 +2289,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39fb9142eb6e9cc37f4f29144e62618440b149a138eee01a7bbe9b9226aaf17c"
+checksum = "34ef16d072d2b6dc8b4a56c70f5c5ced1a37752116f8e7c1e80c659aa7cb6713"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
