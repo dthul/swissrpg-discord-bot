@@ -310,14 +310,29 @@ pub fn discord_usernames_to_ids(
     };
     let discord_ids = usernames
         .iter()
-        .filter_map(|username| match guild.read().member_named(username) {
-            Some(member) => Some(member.user.read().id),
-            None => {
-                eprintln!(
-                    "Subscription roles: Could not find a Discord ID for username {}",
-                    username
-                );
-                None
+        .filter_map(|username| {
+            match guild.read().member_named(username).and_then(|member| {
+                // Serenity does fuzzy matching.
+                // We want to filter any results which don't match exactly.
+                if &format!(
+                    "{}#{}",
+                    member.user.read().name,
+                    member.user.read().discriminator
+                ) != username
+                {
+                    None
+                } else {
+                    Some(member)
+                }
+            }) {
+                Some(member) => Some(member.user.read().id),
+                None => {
+                    eprintln!(
+                        "Subscription roles: Could not find a Discord ID for username {}",
+                        username
+                    );
+                    None
+                }
             }
         })
         .collect();
