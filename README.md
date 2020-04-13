@@ -87,16 +87,40 @@ Cmnd_Alias BOT_SYSTEMD = /bin/systemctl start bot, /bin/systemctl stop bot, /bin
 bot ALL=(ALL) NOPASSWD: BOT_SYSTEMD
 ```
 
-# To link statically
+# Backups to Amazon S3
 
-## For OpenSSL
+Install the AWS CLI tools.
 
-`$ sudo apt install libssl-dev`\
-`$ cargo clean`\
-`$ env OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu OPENSSL_INCLUDE_DIR=/usr/include OPENSSL_STATIC=yes cargo build`
+Switch to the user account that should do the backups and add the AWS IAM user access key:
 
-## For libc
+```
+$ aws configure
+> AWS Access Key ID [None]: ...
+> AWS Secret Access Key [None]: ...
+> Default region name [None]: eu-central-1
+> Default output format [None]: json
+```
 
-`$ rustup target add x86_64-unknown-linux-musl`\
-`$ sudo apt install musl-tools`\
-`$ cargo build --target x86_64-unknown-linux-musl`
+Check the access to S3 works, for example by listing the bucket contents:
+
+`$ aws s3 ls s3://bucket-name`
+
+Give the user account that should do the backups (e.g. `daniel`) read access to the database files:
+
+`$ setfacl -m u:daniel:r-x /var/lib/redis`
+`$ setfacl -m u:daniel:r /var/lib/redis/appendonly.aof`
+`$ setfacl -m u:daniel:r /var/lib/redis/dump.rdb`
+
+Copy/symlink `bot-backup.service` and `bot-backup.timer` to `/etc/systemd/system/`. Then:
+
+`$ systemctl start bot-backup.timer`
+
+and to enable it permanently:
+
+`$ systemctl enable bot-backup.timer`
+
+NOTE: call `systemctl daemon-reload` after modifying service files
+
+To check the scheduled timers, use:
+
+`$ systemctl list-timers`

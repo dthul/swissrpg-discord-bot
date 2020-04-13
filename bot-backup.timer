@@ -1,0 +1,11 @@
+[Unit]
+Description=SwissRPG Bot Backup Timer
+After=network.target
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=240
+Persistent=true
+
+[Install]
+WantedBy=timers.target
