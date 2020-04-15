@@ -79,12 +79,12 @@ pub struct Event {
 pub struct Venue {
     pub id: u64,
     pub name: String,
-    pub lat: f64,
-    pub lon: f64,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
     pub address_1: Option<String>,
     pub address_2: Option<String>,
     pub address_3: Option<String>,
-    pub city: String,
+    pub city: Option<String>,
 }
 
 pub struct NewEvent {
