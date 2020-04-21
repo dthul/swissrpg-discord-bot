@@ -377,7 +377,7 @@ async fn handle_link_redirect(
     bot_name: &str,
     path: &str,
     query: LinkQuery,
-    headers: &hyper::HeaderMap<hyper::header::HeaderValue>,
+    _headers: &hyper::HeaderMap<hyper::header::HeaderValue>,
     linking_id: &str,
     with_rsvp_scope: bool,
 ) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
@@ -421,14 +421,14 @@ async fn handle_link_redirect(
     }
     // Compare the CSRF state that was returned by Meetup to the one
     // we have saved
-    let csrf_is_valid = check_csrf_cookie(redis_connection, headers, &query.state).await?;
-    if !csrf_is_valid {
-        return Ok((
-            "CSRF check failed",
-            "Please go back to the first page, reload, and repeat the process",
-        )
-            .into());
-    }
+    // let csrf_is_valid = check_csrf_cookie(redis_connection, headers, &query.state).await?;
+    // if !csrf_is_valid {
+    //     return Ok((
+    //         "CSRF check failed",
+    //         "Please go back to the first page, reload, and repeat the process",
+    //     )
+    //         .into());
+    // }
     // Exchange the code with a token.
     let code = AuthorizationCode::new(query.code);
     let redirect_url = RedirectUrl::new(format!("{}{}", lib::urls::BASE_URL, path))?;
