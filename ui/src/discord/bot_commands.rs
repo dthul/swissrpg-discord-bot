@@ -15,605 +15,293 @@ use serenity::{
 use simple_error::SimpleError;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
-const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
-const USERNAME_TAG_PATTERN: &'static str = r"(?P<discord_username_tag>[^@#:]{2,32}#[0-9]+)";
-const MEETUP_ID_PATTERN: &'static str = r"(?P<meetup_user_id>[0-9]+)";
-
 pub struct Regexes {
     pub bot_mention: Regex,
-    pub link_meetup_dm: Regex,
-    pub link_meetup_mention: Regex,
-    pub link_meetup_bot_admin_dm: Regex,
-    pub link_meetup_bot_admin_mention: Regex,
-    pub unlink_meetup_dm: Regex,
-    pub unlink_meetup_mention: Regex,
-    pub unlink_meetup_bot_admin_dm: Regex,
-    pub unlink_meetup_bot_admin_mention: Regex,
-    pub sync_meetup_mention: Regex,
-    pub sync_discord_mention: Regex,
-    pub add_user_bot_admin_mention: Regex,
-    pub add_host_bot_admin_mention: Regex,
-    pub remove_user_mention: Regex,
-    pub remove_host_bot_admin_mention: Regex,
-    pub stop_bot_admin_dm: Regex,
-    pub stop_bot_admin_mention: Regex,
-    pub send_expiration_reminder_bot_admin_mention: Regex,
-    pub end_adventure_host_mention: Regex,
-    pub help_dm: Regex,
-    pub help_mention: Regex,
-    pub refresh_user_token_admin_dm: Regex,
-    pub rsvp_user_admin_mention: Regex,
-    pub clone_event_admin_mention: Regex,
-    pub schedule_session_mention: Regex,
-    pub whois_bot_admin_dm: Regex,
-    pub whois_bot_admin_mention: Regex,
-    pub list_players_mention: Regex,
-    pub list_stripe_subscriptions: Regex,
-    pub sync_stripe_subscriptions: Regex,
-    pub num_cached_members: Regex,
-    pub manage_channel_mention: Regex,
-    pub mention_channel_role_mention: Regex,
-    pub snooze_reminders: Regex,
+    // pub link_meetup_dm: Regex,
+    // pub link_meetup_mention: Regex,
+    // pub link_meetup_bot_admin_dm: Regex,
+    // pub link_meetup_bot_admin_mention: Regex,
+    // pub unlink_meetup_dm: Regex,
+    // pub unlink_meetup_mention: Regex,
+    // pub unlink_meetup_bot_admin_dm: Regex,
+    // pub unlink_meetup_bot_admin_mention: Regex,
+    // pub sync_meetup_mention: Regex,
+    // pub sync_discord_mention: Regex,
+    // pub add_user_bot_admin_mention: Regex,
+    // pub add_host_bot_admin_mention: Regex,
+    // pub remove_user_mention: Regex,
+    // pub remove_host_bot_admin_mention: Regex,
+    // pub stop_bot_admin_dm: Regex,
+    // pub stop_bot_admin_mention: Regex,
+    // pub send_expiration_reminder_bot_admin_mention: Regex,
+    // pub end_adventure_host_mention: Regex,
+    // pub help_dm: Regex,
+    // pub help_mention: Regex,
+    // pub refresh_user_token_admin_dm: Regex,
+    // pub rsvp_user_admin_mention: Regex,
+    // pub clone_event_admin_mention: Regex,
+    // pub schedule_session_mention: Regex,
+    // pub whois_bot_admin_dm: Regex,
+    // pub whois_bot_admin_mention: Regex,
+    // pub list_players_mention: Regex,
+    // pub list_stripe_subscriptions: Regex,
+    // pub sync_stripe_subscriptions: Regex,
+    // pub num_cached_members: Regex,
+    // pub manage_channel_mention: Regex,
+    // pub mention_channel_role_mention: Regex,
+    // pub snooze_reminders: Regex,
+    // pub list_inactive_users: Regex,
 }
 
-impl Regexes {
-    pub fn link_meetup(&self, is_dm: bool) -> &Regex {
-        if is_dm {
-            &self.link_meetup_dm
-        } else {
-            &self.link_meetup_mention
-        }
-    }
+// impl Regexes {
+//     pub fn link_meetup(&self, is_dm: bool) -> &Regex {
+//         if is_dm {
+//             &self.link_meetup_dm
+//         } else {
+//             &self.link_meetup_mention
+//         }
+//     }
 
-    pub fn link_meetup_bot_admin(&self, is_dm: bool) -> &Regex {
-        if is_dm {
-            &self.link_meetup_bot_admin_dm
-        } else {
-            &self.link_meetup_bot_admin_mention
-        }
-    }
+//     pub fn link_meetup_bot_admin(&self, is_dm: bool) -> &Regex {
+//         if is_dm {
+//             &self.link_meetup_bot_admin_dm
+//         } else {
+//             &self.link_meetup_bot_admin_mention
+//         }
+//     }
 
-    pub fn unlink_meetup(&self, is_dm: bool) -> &Regex {
-        if is_dm {
-            &self.unlink_meetup_dm
-        } else {
-            &self.unlink_meetup_mention
-        }
-    }
+//     pub fn unlink_meetup(&self, is_dm: bool) -> &Regex {
+//         if is_dm {
+//             &self.unlink_meetup_dm
+//         } else {
+//             &self.unlink_meetup_mention
+//         }
+//     }
 
-    pub fn unlink_meetup_bot_admin(&self, is_dm: bool) -> &Regex {
-        if is_dm {
-            &self.unlink_meetup_bot_admin_dm
-        } else {
-            &self.unlink_meetup_bot_admin_mention
-        }
-    }
+//     pub fn unlink_meetup_bot_admin(&self, is_dm: bool) -> &Regex {
+//         if is_dm {
+//             &self.unlink_meetup_bot_admin_dm
+//         } else {
+//             &self.unlink_meetup_bot_admin_mention
+//         }
+//     }
 
-    pub fn stop_bot_admin(&self, is_dm: bool) -> &Regex {
-        if is_dm {
-            &self.stop_bot_admin_dm
-        } else {
-            &self.stop_bot_admin_mention
-        }
-    }
+//     pub fn stop_bot_admin(&self, is_dm: bool) -> &Regex {
+//         if is_dm {
+//             &self.stop_bot_admin_dm
+//         } else {
+//             &self.stop_bot_admin_mention
+//         }
+//     }
 
-    pub fn whois_bot_admin(&self, is_dm: bool) -> &Regex {
-        if is_dm {
-            &self.whois_bot_admin_dm
-        } else {
-            &self.whois_bot_admin_mention
-        }
-    }
+//     pub fn whois_bot_admin(&self, is_dm: bool) -> &Regex {
+//         if is_dm {
+//             &self.whois_bot_admin_dm
+//         } else {
+//             &self.whois_bot_admin_mention
+//         }
+//     }
 
-    pub fn help(&self, is_dm: bool) -> &Regex {
-        if is_dm {
-            &self.help_dm
-        } else {
-            &self.help_mention
-        }
-    }
-}
+//     pub fn help(&self, is_dm: bool) -> &Regex {
+//         if is_dm {
+//             &self.help_dm
+//         } else {
+//             &self.help_mention
+//         }
+//     }
+// }
 
 pub fn compile_regexes(bot_id: u64, bot_name: &str) -> Regexes {
     let bot_mention = format!(
-        r"(?:<@!?{bot_id}>|(@|#)(?i){bot_name})",
+        r"^\s*(?:<@!?{bot_id}>|(@|#)(?i){bot_name})",
         bot_id = bot_id,
         bot_name = regex::escape(bot_name)
     );
-    let link_meetup_dm = r"^(?i)link[ -]?meetup\s*$";
-    let link_meetup_mention = format!(
-        r"^{bot_mention}\s+(?i)link[ -]?meetup\s*$",
-        bot_mention = bot_mention
-    );
-    let link_meetup_bot_admin = format!(
-        r"(?i)link[ -]?meetup\s+{mention_pattern}\s+(?P<meetupid>[0-9]+)",
-        mention_pattern = MENTION_PATTERN
-    );
-    let link_meetup_bot_admin_dm = format!(
-        r"^{link_meetup_bot_admin}\s*$",
-        link_meetup_bot_admin = link_meetup_bot_admin
-    );
-    let link_meetup_bot_admin_mention = format!(
-        r"^{bot_mention}\s+{link_meetup_bot_admin}\s*$",
-        bot_mention = bot_mention,
-        link_meetup_bot_admin = link_meetup_bot_admin
-    );
-    let unlink_meetup = r"(?i)unlink[ -]?meetup";
-    let unlink_meetup_dm = format!(r"^{unlink_meetup}\s*$", unlink_meetup = unlink_meetup);
-    let unlink_meetup_mention = format!(
-        r"^{bot_mention}\s+{unlink_meetup}\s*$",
-        bot_mention = bot_mention,
-        unlink_meetup = unlink_meetup
-    );
-    let unlink_meetup_bot_admin = format!(
-        r"(?i)unlink[ -]?meetup\s+{mention_pattern}",
-        mention_pattern = MENTION_PATTERN
-    );
-    let unlink_meetup_bot_admin_dm = format!(
-        r"^{unlink_meetup_bot_admin}\s*$",
-        unlink_meetup_bot_admin = unlink_meetup_bot_admin
-    );
-    let unlink_meetup_bot_admin_mention = format!(
-        r"^{bot_mention}\s+{unlink_meetup_bot_admin}\s*$",
-        bot_mention = bot_mention,
-        unlink_meetup_bot_admin = unlink_meetup_bot_admin
-    );
-    let sync_meetup_mention = format!(
-        r"^{bot_mention}\s+(?i)sync\s+meetup\s*$",
-        bot_mention = bot_mention
-    );
-    let sync_discord_mention = format!(
-        r"^{bot_mention}\s+(?i)sync\s+discord\s*$",
-        bot_mention = bot_mention
-    );
-    let add_user_bot_admin_mention = format!(
-        r"^{bot_mention}\s+(?i)add\s+{mention_pattern}\s*$",
-        bot_mention = bot_mention,
-        mention_pattern = MENTION_PATTERN,
-    );
-    let add_host_bot_admin_mention = format!(
-        r"^{bot_mention}\s+(?i)add\s+host\s+{mention_pattern}\s*$",
-        bot_mention = bot_mention,
-        mention_pattern = MENTION_PATTERN,
-    );
-    let remove_user_mention = format!(
-        r"^{bot_mention}\s+(?i)remove\s+{mention_pattern}\s*$",
-        bot_mention = bot_mention,
-        mention_pattern = MENTION_PATTERN,
-    );
-    let remove_host_bot_admin_mention = format!(
-        r"^{bot_mention}\s+(?i)remove\s+host\s+{mention_pattern}\s*$",
-        bot_mention = bot_mention,
-        mention_pattern = MENTION_PATTERN,
-    );
-    let stop_bot_admin_dm = r"^(?i)stop\s*$";
-    let stop_bot_admin_mention =
-        format!(r"^{bot_mention}\s+(?i)stop\s*$", bot_mention = bot_mention);
-    let send_expiration_reminder_bot_admin_mention = format!(
-        r"^{bot_mention}\s+(?i)remind\s+expiration\s*$",
-        bot_mention = bot_mention
-    );
-    let end_adventure_host_mention = format!(
-        r"^{bot_mention}\s+(?i)end\s+adventure\s*$",
-        bot_mention = bot_mention
-    );
-    let help_dm = r"^(?i)help\s*$";
-    let help_mention = format!(r"^{bot_mention}\s+(?i)help\s*$", bot_mention = bot_mention);
-    let refresh_user_token_admin_dm = format!(
-        r"^{bot_mention}\s+(?i)refresh\s+meetup(-|\s*)token\s+{mention_pattern}\s*$",
-        bot_mention = bot_mention,
-        mention_pattern = MENTION_PATTERN
-    );
-    let rsvp_user_admin_mention = format!(
-        r"^{bot_mention}\s+(?i)rsvp\s+{mention_pattern}\s+(?P<meetup_event_id>[^\s]+)\s*$",
-        bot_mention = bot_mention,
-        mention_pattern = MENTION_PATTERN,
-    );
-    let clone_event_admin_mention = format!(
-        r"^{bot_mention}\s+(?i)clone\s+event\s+(?P<meetup_event_id>[^\s]+)\s*$",
-        bot_mention = bot_mention,
-    );
-    let schedule_session_mention = format!(
-        r"^{bot_mention}\s+(?i)schedule\s+session\s*$",
-        bot_mention = bot_mention,
-    );
-    let whois_bot_admin = format!(
-        r"(?i)whois\s+{mention_pattern}|{username_tag_pattern}|{meetup_id_pattern}",
-        mention_pattern = MENTION_PATTERN,
-        username_tag_pattern = USERNAME_TAG_PATTERN,
-        meetup_id_pattern = MEETUP_ID_PATTERN,
-    );
-    let whois_bot_admin_dm = format!(r"^{whois_bot_admin}\s*$", whois_bot_admin = whois_bot_admin);
-    let whois_bot_admin_mention = format!(
-        r"^{bot_mention}\s+{whois_bot_admin}\s*$",
-        bot_mention = bot_mention,
-        whois_bot_admin = whois_bot_admin
-    );
-    let list_players_mention = format!(
-        r"^{bot_mention}\s+(?i)list\s+players\s*$",
-        bot_mention = bot_mention,
-    );
-    let list_stripe_subscriptions = format!(
-        r"^{bot_mention}\s+(?i)list\s+subscriptions\s*$",
-        bot_mention = bot_mention,
-    );
-    let sync_stripe_subscriptions = format!(
-        r"^{bot_mention}\s+(?i)sync\s+subscriptions\s*$",
-        bot_mention = bot_mention,
-    );
-    let num_cached_members = format!(
-        r"^{bot_mention}\s+(?i)numcached\s*$",
-        bot_mention = bot_mention,
-    );
-    let manage_channel_mention = format!(
-        r"^{bot_mention}\s+(?i)manage\s+channel\s*$",
-        bot_mention = bot_mention,
-    );
-    let mention_channel_role_mention = format!(
-        r"^{bot_mention}\s+(?i)mention\s+channel\s*$",
-        bot_mention = bot_mention,
-    );
-    let snooze_until = format!(
-        r"^{bot_mention}\s+(?i)snooze\s+(?P<num_days>[0-9]+)\s*d(ay)?s?\s*$",
-        bot_mention = bot_mention,
-    );
+    // let link_meetup_dm = r"^(?i)link[ -]?meetup\s*$";
+    // let link_meetup_mention = format!(
+    //     r"^{bot_mention}\s+(?i)link[ -]?meetup\s*$",
+    //     bot_mention = bot_mention
+    // );
+    // let link_meetup_bot_admin = format!(
+    //     r"(?i)link[ -]?meetup\s+{mention_pattern}\s+(?P<meetupid>[0-9]+)",
+    //     mention_pattern = MENTION_PATTERN
+    // );
+    // let link_meetup_bot_admin_dm = format!(
+    //     r"^{link_meetup_bot_admin}\s*$",
+    //     link_meetup_bot_admin = link_meetup_bot_admin
+    // );
+    // let link_meetup_bot_admin_mention = format!(
+    //     r"^{bot_mention}\s+{link_meetup_bot_admin}\s*$",
+    //     bot_mention = bot_mention,
+    //     link_meetup_bot_admin = link_meetup_bot_admin
+    // );
+    // let unlink_meetup = r"(?i)unlink[ -]?meetup";
+    // let unlink_meetup_dm = format!(r"^{unlink_meetup}\s*$", unlink_meetup = unlink_meetup);
+    // let unlink_meetup_mention = format!(
+    //     r"^{bot_mention}\s+{unlink_meetup}\s*$",
+    //     bot_mention = bot_mention,
+    //     unlink_meetup = unlink_meetup
+    // );
+    // let unlink_meetup_bot_admin = format!(
+    //     r"(?i)unlink[ -]?meetup\s+{mention_pattern}",
+    //     mention_pattern = MENTION_PATTERN
+    // );
+    // let unlink_meetup_bot_admin_dm = format!(
+    //     r"^{unlink_meetup_bot_admin}\s*$",
+    //     unlink_meetup_bot_admin = unlink_meetup_bot_admin
+    // );
+    // let unlink_meetup_bot_admin_mention = format!(
+    //     r"^{bot_mention}\s+{unlink_meetup_bot_admin}\s*$",
+    //     bot_mention = bot_mention,
+    //     unlink_meetup_bot_admin = unlink_meetup_bot_admin
+    // );
+    // let sync_meetup_mention = format!(
+    //     r"^{bot_mention}\s+(?i)sync\s+meetup\s*$",
+    //     bot_mention = bot_mention
+    // );
+    // let sync_discord_mention = format!(
+    //     r"^{bot_mention}\s+(?i)sync\s+discord\s*$",
+    //     bot_mention = bot_mention
+    // );
+    // let add_user_bot_admin_mention = format!(
+    //     r"^{bot_mention}\s+(?i)add\s+{mention_pattern}\s*$",
+    //     bot_mention = bot_mention,
+    //     mention_pattern = MENTION_PATTERN,
+    // );
+    // let add_host_bot_admin_mention = format!(
+    //     r"^{bot_mention}\s+(?i)add\s+host\s+{mention_pattern}\s*$",
+    //     bot_mention = bot_mention,
+    //     mention_pattern = MENTION_PATTERN,
+    // );
+    // let remove_user_mention = format!(
+    //     r"^{bot_mention}\s+(?i)remove\s+{mention_pattern}\s*$",
+    //     bot_mention = bot_mention,
+    //     mention_pattern = MENTION_PATTERN,
+    // );
+    // let remove_host_bot_admin_mention = format!(
+    //     r"^{bot_mention}\s+(?i)remove\s+host\s+{mention_pattern}\s*$",
+    //     bot_mention = bot_mention,
+    //     mention_pattern = MENTION_PATTERN,
+    // );
+    // let stop_bot_admin_dm = r"^(?i)stop\s*$";
+    // let stop_bot_admin_mention =
+    //     format!(r"^{bot_mention}\s+(?i)stop\s*$", bot_mention = bot_mention);
+    // let send_expiration_reminder_bot_admin_mention = format!(
+    //     r"^{bot_mention}\s+(?i)remind\s+expiration\s*$",
+    //     bot_mention = bot_mention
+    // );
+    // let end_adventure_host_mention = format!(
+    //     r"^{bot_mention}\s+(?i)end\s+adventure\s*$",
+    //     bot_mention = bot_mention
+    // );
+    // let help_dm = r"^(?i)help\s*$";
+    // let help_mention = format!(r"^{bot_mention}\s+(?i)help\s*$", bot_mention = bot_mention);
+    // let refresh_user_token_admin_dm = format!(
+    //     r"^{bot_mention}\s+(?i)refresh\s+meetup(-|\s*)token\s+{mention_pattern}\s*$",
+    //     bot_mention = bot_mention,
+    //     mention_pattern = MENTION_PATTERN
+    // );
+    // let rsvp_user_admin_mention = format!(
+    //     r"^{bot_mention}\s+(?i)rsvp\s+{mention_pattern}\s+(?P<meetup_event_id>[^\s]+)\s*$",
+    //     bot_mention = bot_mention,
+    //     mention_pattern = MENTION_PATTERN,
+    // );
+    // let clone_event_admin_mention = format!(
+    //     r"^{bot_mention}\s+(?i)clone\s+event\s+(?P<meetup_event_id>[^\s]+)\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let schedule_session_mention = format!(
+    //     r"^{bot_mention}\s+(?i)schedule\s+session\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let whois_bot_admin = format!(
+    //     r"(?i)whois\s+{mention_pattern}|{username_tag_pattern}|{meetup_id_pattern}",
+    //     mention_pattern = MENTION_PATTERN,
+    //     username_tag_pattern = USERNAME_TAG_PATTERN,
+    //     meetup_id_pattern = MEETUP_ID_PATTERN,
+    // );
+    // let whois_bot_admin_dm = format!(r"^{whois_bot_admin}\s*$", whois_bot_admin = whois_bot_admin);
+    // let whois_bot_admin_mention = format!(
+    //     r"^{bot_mention}\s+{whois_bot_admin}\s*$",
+    //     bot_mention = bot_mention,
+    //     whois_bot_admin = whois_bot_admin
+    // );
+    // let list_players_mention = format!(
+    //     r"^{bot_mention}\s+(?i)list\s+players\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let list_stripe_subscriptions = format!(
+    //     r"^{bot_mention}\s+(?i)list\s+subscriptions\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let sync_stripe_subscriptions = format!(
+    //     r"^{bot_mention}\s+(?i)sync\s+subscriptions\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let num_cached_members = format!(
+    //     r"^{bot_mention}\s+(?i)numcached\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let manage_channel_mention = format!(
+    //     r"^{bot_mention}\s+(?i)manage\s+channel\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let mention_channel_role_mention = format!(
+    //     r"^{bot_mention}\s+(?i)mention\s+channel\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let snooze_until = format!(
+    //     r"^{bot_mention}\s+(?i)snooze\s+(?P<num_days>[0-9]+)\s*d(ay)?s?\s*$",
+    //     bot_mention = bot_mention,
+    // );
+    // let list_inactive_users = format!(
+    //     r"^{bot_mention}\s+(?i)list\sinactive\s*$",
+    //     bot_mention = bot_mention,
+    // );
     Regexes {
         bot_mention: Regex::new(&format!("^{}", bot_mention)).unwrap(),
-        link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
-        link_meetup_mention: Regex::new(link_meetup_mention.as_str()).unwrap(),
-        link_meetup_bot_admin_dm: Regex::new(link_meetup_bot_admin_dm.as_str()).unwrap(),
-        link_meetup_bot_admin_mention: Regex::new(link_meetup_bot_admin_mention.as_str()).unwrap(),
-        unlink_meetup_dm: Regex::new(unlink_meetup_dm.as_str()).unwrap(),
-        unlink_meetup_mention: Regex::new(unlink_meetup_mention.as_str()).unwrap(),
-        unlink_meetup_bot_admin_dm: Regex::new(unlink_meetup_bot_admin_dm.as_str()).unwrap(),
-        unlink_meetup_bot_admin_mention: Regex::new(unlink_meetup_bot_admin_mention.as_str())
-            .unwrap(),
-        sync_meetup_mention: Regex::new(sync_meetup_mention.as_str()).unwrap(),
-        sync_discord_mention: Regex::new(sync_discord_mention.as_str()).unwrap(),
-        add_user_bot_admin_mention: Regex::new(add_user_bot_admin_mention.as_str()).unwrap(),
-        add_host_bot_admin_mention: Regex::new(add_host_bot_admin_mention.as_str()).unwrap(),
-        remove_user_mention: Regex::new(remove_user_mention.as_str()).unwrap(),
-        remove_host_bot_admin_mention: Regex::new(remove_host_bot_admin_mention.as_str()).unwrap(),
-        stop_bot_admin_dm: Regex::new(stop_bot_admin_dm).unwrap(),
-        stop_bot_admin_mention: Regex::new(stop_bot_admin_mention.as_str()).unwrap(),
-        send_expiration_reminder_bot_admin_mention: Regex::new(
-            send_expiration_reminder_bot_admin_mention.as_str(),
-        )
-        .unwrap(),
-        end_adventure_host_mention: Regex::new(end_adventure_host_mention.as_str()).unwrap(),
-        help_dm: Regex::new(help_dm).unwrap(),
-        help_mention: Regex::new(help_mention.as_str()).unwrap(),
-        refresh_user_token_admin_dm: Regex::new(refresh_user_token_admin_dm.as_str()).unwrap(),
-        rsvp_user_admin_mention: Regex::new(rsvp_user_admin_mention.as_str()).unwrap(),
-        clone_event_admin_mention: Regex::new(clone_event_admin_mention.as_str()).unwrap(),
-        schedule_session_mention: Regex::new(schedule_session_mention.as_str()).unwrap(),
-        whois_bot_admin_dm: Regex::new(whois_bot_admin_dm.as_str()).unwrap(),
-        whois_bot_admin_mention: Regex::new(whois_bot_admin_mention.as_str()).unwrap(),
-        list_players_mention: Regex::new(list_players_mention.as_str()).unwrap(),
-        list_stripe_subscriptions: Regex::new(list_stripe_subscriptions.as_str()).unwrap(),
-        sync_stripe_subscriptions: Regex::new(sync_stripe_subscriptions.as_str()).unwrap(),
-        num_cached_members: Regex::new(num_cached_members.as_str()).unwrap(),
-        manage_channel_mention: Regex::new(manage_channel_mention.as_str()).unwrap(),
-        mention_channel_role_mention: Regex::new(mention_channel_role_mention.as_str()).unwrap(),
-        snooze_reminders: Regex::new(snooze_until.as_ref()).unwrap(),
+        // link_meetup_dm: Regex::new(link_meetup_dm).unwrap(),
+        // link_meetup_mention: Regex::new(link_meetup_mention.as_str()).unwrap(),
+        // link_meetup_bot_admin_dm: Regex::new(link_meetup_bot_admin_dm.as_str()).unwrap(),
+        // link_meetup_bot_admin_mention: Regex::new(link_meetup_bot_admin_mention.as_str()).unwrap(),
+        // unlink_meetup_dm: Regex::new(unlink_meetup_dm.as_str()).unwrap(),
+        // unlink_meetup_mention: Regex::new(unlink_meetup_mention.as_str()).unwrap(),
+        // unlink_meetup_bot_admin_dm: Regex::new(unlink_meetup_bot_admin_dm.as_str()).unwrap(),
+        // unlink_meetup_bot_admin_mention: Regex::new(unlink_meetup_bot_admin_mention.as_str())
+        //     .unwrap(),
+        // sync_meetup_mention: Regex::new(sync_meetup_mention.as_str()).unwrap(),
+        // sync_discord_mention: Regex::new(sync_discord_mention.as_str()).unwrap(),
+        // add_user_bot_admin_mention: Regex::new(add_user_bot_admin_mention.as_str()).unwrap(),
+        // add_host_bot_admin_mention: Regex::new(add_host_bot_admin_mention.as_str()).unwrap(),
+        // remove_user_mention: Regex::new(remove_user_mention.as_str()).unwrap(),
+        // remove_host_bot_admin_mention: Regex::new(remove_host_bot_admin_mention.as_str()).unwrap(),
+        // stop_bot_admin_dm: Regex::new(stop_bot_admin_dm).unwrap(),
+        // stop_bot_admin_mention: Regex::new(stop_bot_admin_mention.as_str()).unwrap(),
+        // send_expiration_reminder_bot_admin_mention: Regex::new(
+        //     send_expiration_reminder_bot_admin_mention.as_str(),
+        // )
+        // .unwrap(),
+        // end_adventure_host_mention: Regex::new(end_adventure_host_mention.as_str()).unwrap(),
+        // help_dm: Regex::new(help_dm).unwrap(),
+        // help_mention: Regex::new(help_mention.as_str()).unwrap(),
+        // refresh_user_token_admin_dm: Regex::new(refresh_user_token_admin_dm.as_str()).unwrap(),
+        // rsvp_user_admin_mention: Regex::new(rsvp_user_admin_mention.as_str()).unwrap(),
+        // clone_event_admin_mention: Regex::new(clone_event_admin_mention.as_str()).unwrap(),
+        // schedule_session_mention: Regex::new(schedule_session_mention.as_str()).unwrap(),
+        // whois_bot_admin_dm: Regex::new(whois_bot_admin_dm.as_str()).unwrap(),
+        // whois_bot_admin_mention: Regex::new(whois_bot_admin_mention.as_str()).unwrap(),
+        // list_players_mention: Regex::new(list_players_mention.as_str()).unwrap(),
+        // list_stripe_subscriptions: Regex::new(list_stripe_subscriptions.as_str()).unwrap(),
+        // sync_stripe_subscriptions: Regex::new(sync_stripe_subscriptions.as_str()).unwrap(),
+        // num_cached_members: Regex::new(num_cached_members.as_str()).unwrap(),
+        // manage_channel_mention: Regex::new(manage_channel_mention.as_str()).unwrap(),
+        // mention_channel_role_mention: Regex::new(mention_channel_role_mention.as_str()).unwrap(),
+        // snooze_reminders: Regex::new(snooze_until.as_ref()).unwrap(),
+        // list_inactive_users: Regex::new(list_inactive_users.as_ref()).unwrap(),
     }
 }
 
 impl super::bot::Handler {
-    pub fn link_meetup(
-        ctx: &Context,
-        msg: &Message,
-        user_id: u64,
-    ) -> Result<(), lib::meetup::Error> {
-        let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
-        let (redis_client, redis_connection_mutex, meetup_client_mutex, bot_id, async_runtime) = {
-            let data = ctx.data.read();
-            (
-                data.get::<super::bot::RedisClientKey>()
-                    .ok_or_else(|| SimpleError::new("Redis client was not set"))?
-                    .clone(),
-                data.get::<super::bot::RedisConnectionKey>()
-                    .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
-                    .clone(),
-                data.get::<super::bot::AsyncMeetupClientKey>()
-                    .ok_or_else(|| SimpleError::new("Meetup client was not set"))?
-                    .clone(),
-                data.get::<super::bot::BotIdKey>()
-                    .ok_or_else(|| SimpleError::new("Bot ID was not set"))?
-                    .clone(),
-                data.get::<super::bot::AsyncRuntimeKey>()
-                    .ok_or_else(|| SimpleError::new("Async runtime was not set"))?
-                    .clone(),
-            )
-        };
-        // Check if there is already a meetup id linked to this user
-        // and issue a warning
-        let linked_meetup_id: Option<u64> = {
-            let mut redis_connection = redis_connection_mutex.lock();
-            redis_connection.get(&redis_key_d2m)?
-        };
-        let runtime_guard = futures::executor::block_on(async_runtime.read());
-        let async_runtime = match *runtime_guard {
-            Some(ref async_runtime) => async_runtime,
-            None => return Ok(()),
-        };
-        if let Some(linked_meetup_id) = linked_meetup_id {
-            // Return value of the async block:
-            // None = Meetup API unavailable
-            // Some(None) = Meetup API available but no user found
-            // Some(Some(user)) = User found
-            let meetup_user = async_runtime.enter(|| {
-                futures::executor::block_on(async {
-                    let meetup_client = meetup_client_mutex.lock().await.clone();
-                    match meetup_client {
-                        None => Ok::<_, lib::meetup::Error>(None),
-                        Some(meetup_client) => match meetup_client
-                            .get_member_profile(Some(linked_meetup_id))
-                            .await?
-                        {
-                            None => Ok(Some(None)),
-                            Some(user) => Ok(Some(Some(user))),
-                        },
-                    }
-                })
-            })?;
-            match meetup_user {
-                Some(meetup_user) => match meetup_user {
-                    Some(meetup_user) => {
-                        let _ = msg.author.direct_message(ctx, |message| {
-                            message.content(strings::DISCORD_ALREADY_LINKED_MESSAGE1(
-                                &meetup_user.name,
-                                bot_id.0,
-                            ))
-                        });
-                        let _ = msg.react(ctx, "\u{2705}");
-                    }
-                    _ => {
-                        let _ = msg.author.direct_message(ctx, |message| {
-                            message.content(strings::NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id.0))
-                        });
-                        let _ = msg.react(ctx, "\u{2705}");
-                    }
-                },
-                _ => {
-                    let _ = msg.author.direct_message(ctx, |message| {
-                        message.content(strings::DISCORD_ALREADY_LINKED_MESSAGE2(bot_id.0))
-                    });
-                    let _ = msg.react(ctx, "\u{2705}");
-                }
-            }
-            return Ok(());
-        }
-        // TODO: creates a new Redis connection. Not optimal...
-        let url = async_runtime.enter(|| {
-            futures::executor::block_on(async {
-                let mut redis_connection = redis_client.get_async_connection().await?;
-                lib::meetup::oauth2::generate_meetup_linking_link(&mut redis_connection, user_id)
-                    .await
-            })
-        })?;
-        let dm = msg.author.direct_message(ctx, |message| {
-            message.content(strings::MEETUP_LINKING_MESSAGE(&url))
-        });
-        match dm {
-            Ok(_) => {
-                let _ = msg.react(ctx, "\u{2705}");
-            }
-            Err(why) => {
-                eprintln!("Error sending Meetup linking DM: {:?}", why);
-                let _ = msg.reply(
-                    ctx,
-                    "There was an error trying to send you instructions.\nDo you have direct \
-                     messages disabled? In that case send me a private message with the text \
-                     \"link meetup\".",
-                );
-            }
-        }
-        Ok(())
-    }
-
-    pub fn link_meetup_bot_admin(
-        ctx: &Context,
-        msg: &Message,
-        regexes: &Regexes,
-        user_id: u64,
-        meetup_id: u64,
-    ) -> Result<(), lib::meetup::Error> {
-        let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
-        let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
-        let (redis_connection_mutex, meetup_client_mutex, async_runtime) = {
-            let data = ctx.data.read();
-            (
-                data.get::<super::bot::RedisConnectionKey>()
-                    .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
-                    .clone(),
-                data.get::<super::bot::AsyncMeetupClientKey>()
-                    .ok_or_else(|| SimpleError::new("Meetup client was not set"))?
-                    .clone(),
-                data.get::<super::bot::AsyncRuntimeKey>()
-                    .ok_or_else(|| SimpleError::new("Async runtime was not set"))?
-                    .clone(),
-            )
-        };
-        // Check if there is already a meetup id linked to this user
-        // and issue a warning
-        let linked_meetup_id: Option<u64> = {
-            let mut redis_connection = redis_connection_mutex.lock();
-            redis_connection.get(&redis_key_d2m)?
-        };
-        if let Some(linked_meetup_id) = linked_meetup_id {
-            if linked_meetup_id == meetup_id {
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    format!(
-                        "All good, this Meetup account was already linked to <@{}>",
-                        user_id
-                    ),
-                );
-                return Ok(());
-            } else {
-                // TODO: answer in DM?
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    format!(
-                        "<@{discord_id}> is already linked to a different Meetup account. If you \
-                         want to change this, unlink the currently linked Meetup account first by \
-                         writing:\n{bot_mention} unlink meetup <@{discord_id}>",
-                        discord_id = user_id,
-                        bot_mention = regexes.bot_mention
-                    ),
-                );
-                return Ok(());
-            }
-        }
-        // Check if this meetup id is already linked
-        // and issue a warning
-        let linked_discord_id: Option<u64> = {
-            let mut redis_connection = redis_connection_mutex.lock();
-            redis_connection.get(&redis_key_m2d)?
-        };
-        if let Some(linked_discord_id) = linked_discord_id {
-            let _ = msg.author.direct_message(ctx, |message_builder| {
-                message_builder.content(format!(
-                    "This Meetup account is alread linked to <@{linked_discord_id}>. If you want \
-                     to change this, unlink the Meetup account first by writing\n{bot_mention} \
-                     unlink meetup <@{linked_discord_id}>",
-                    linked_discord_id = linked_discord_id,
-                    bot_mention = regexes.bot_mention
-                ))
-            });
-            return Ok(());
-        }
-        // The user has not yet linked their meetup account.
-        // Test whether the specified Meetup user actually exists.
-        let runtime_guard = futures::executor::block_on(async_runtime.read());
-        let async_runtime = match *runtime_guard {
-            Some(ref async_runtime) => async_runtime,
-            None => return Ok(()),
-        };
-        let meetup_user = async_runtime.enter(|| {
-            futures::executor::block_on(async {
-                let meetup_client = meetup_client_mutex.lock().await.clone();
-                match meetup_client {
-                    None => {
-                        return Err(lib::meetup::Error::from(SimpleError::new(
-                            "Meetup API unavailable",
-                        )))
-                    }
-                    Some(meetup_client) => meetup_client
-                        .get_member_profile(Some(meetup_id))
-                        .await
-                        .map_err(Into::into),
-                }
-            })
-        })?;
-        drop(runtime_guard);
-        match meetup_user {
-            None => {
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    "It looks like this Meetup profile does not exist",
-                );
-                return Ok(());
-            }
-            Some(meetup_user) => {
-                let mut successful = false;
-                {
-                    let mut redis_connection = redis_connection_mutex.lock();
-                    // Try to atomically set the meetup id
-                    redis::transaction(
-                        &mut *redis_connection,
-                        &[&redis_key_d2m, &redis_key_m2d],
-                        |con, pipe| {
-                            let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m)?;
-                            let linked_discord_id: Option<u64> = con.get(&redis_key_m2d)?;
-                            if linked_meetup_id.is_some() || linked_discord_id.is_some() {
-                                // The meetup id was linked in the meantime, abort
-                                successful = false;
-                                // Execute empty transaction just to get out of the closure
-                                pipe.query(con)
-                            } else {
-                                pipe.sadd("meetup_users", meetup_id)
-                                    .sadd("discord_users", user_id)
-                                    .set(&redis_key_d2m, meetup_id)
-                                    .set(&redis_key_m2d, user_id);
-                                successful = true;
-                                pipe.query(con)
-                            }
-                        },
-                    )?;
-                }
-                if successful {
-                    let photo_url = meetup_user.photo.as_ref().map(|p| p.thumb_link.as_str());
-                    let _ = msg.channel_id.send_message(&ctx.http, |message| {
-                        message.embed(|embed| {
-                            embed.title("Linked Meetup account");
-                            embed.description(format!(
-                                "Successfully linked <@{}> to {}'s Meetup account",
-                                user_id, meetup_user.name
-                            ));
-                            if let Some(photo_url) = photo_url {
-                                embed.image(photo_url)
-                            } else {
-                                embed
-                            }
-                        })
-                    });
-                    return Ok(());
-                } else {
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, "Could not assign meetup id (timing error)");
-                    return Ok(());
-                }
-            }
-        }
-    }
-
-    pub fn unlink_meetup(
-        ctx: &Context,
-        msg: &Message,
-        is_bot_admin_command: bool,
-        user_id: u64,
-        bot_id: u64,
-    ) -> Result<(), lib::meetup::Error> {
-        let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
-        let redis_connection_mutex = {
-            ctx.data
-                .read()
-                .get::<super::bot::RedisConnectionKey>()
-                .ok_or_else(|| SimpleError::new("Redis connection was not set"))?
-                .clone()
-        };
-        let mut redis_connection = redis_connection_mutex.lock();
-        // Check if there is actually a meetup id linked to this user
-        let linked_meetup_id: Option<u64> = redis_connection.get(&redis_key_d2m)?;
-        match linked_meetup_id {
-            Some(meetup_id) => {
-                let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
-                redis_connection.del(&[&redis_key_d2m, &redis_key_m2d])?;
-                let message = if is_bot_admin_command {
-                    format!("Unlinked <@{}>'s Meetup account", user_id)
-                } else {
-                    strings::MEETUP_UNLINK_SUCCESS(bot_id)
-                };
-                let _ = msg.channel_id.say(&ctx.http, message);
-            }
-            None => {
-                let message = if is_bot_admin_command {
-                    Cow::Owned(format!(
-                        "There was seemingly no meetup account linked to <@{}>",
-                        user_id
-                    ))
-                } else {
-                    Cow::Borrowed(strings::MEETUP_UNLINK_NOT_LINKED)
-                };
-                let _ = msg.channel_id.say(&ctx.http, message);
-            }
-        }
-        Ok(())
-    }
-
     pub fn end_adventure(
         ctx: &Context,
         msg: &Message,

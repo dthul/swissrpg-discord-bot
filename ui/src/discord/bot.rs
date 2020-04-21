@@ -45,16 +45,19 @@ pub fn create_discord_client(
     println!("Bot ID: {}", bot_id.0);
     println!("Bot name: {}", &bot_name);
 
+    // Prepare the commands
+    let prepared_commands = Arc::new(super::commands::prepare_commands(bot_id, &bot_name)?);
+
     // pre-compile the regexes
-    let regexes = super::bot_commands::compile_regexes(bot_id.0, &bot_name);
+    // let regexes = super::bot_commands::compile_regexes(bot_id.0, &bot_name);
 
     // Store the bot's id in the client for easy access
     {
         let mut data = client.data.write();
         data.insert::<BotIdKey>(bot_id);
         data.insert::<BotNameKey>(bot_name);
-        data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(redis_connection)));
-        data.insert::<RegexesKey>(Arc::new(regexes));
+        // data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(redis_connection)));
+        // data.insert::<RegexesKey>(Arc::new(regexes));
         data.insert::<AsyncMeetupClientKey>(async_meetup_client);
         data.insert::<RedisClientKey>(redis_client);
         data.insert::<TaskSchedulerKey>(task_scheduler);
@@ -62,6 +65,7 @@ pub fn create_discord_client(
         data.insert::<StripeClientKey>(stripe_client);
         data.insert::<AsyncRuntimeKey>(async_runtime);
         data.insert::<ShutdownSignalKey>(shutdown_signal);
+        data.insert::<PreparedCommandsKey>(prepared_commands);
     }
 
     Ok(client)
@@ -77,15 +81,15 @@ impl TypeMapKey for BotNameKey {
     type Value = String;
 }
 
-pub struct RedisConnectionKey;
-impl TypeMapKey for RedisConnectionKey {
-    type Value = Arc<Mutex<redis::Connection>>;
-}
+// pub struct RedisConnectionKey;
+// impl TypeMapKey for RedisConnectionKey {
+//     type Value = Arc<Mutex<redis::Connection>>;
+// }
 
-pub struct RegexesKey;
-impl TypeMapKey for RegexesKey {
-    type Value = Arc<super::bot_commands::Regexes>;
-}
+// pub struct RegexesKey;
+// impl TypeMapKey for RegexesKey {
+//     type Value = Arc<super::bot_commands::Regexes>;
+// }
 
 pub struct AsyncMeetupClientKey;
 impl TypeMapKey for AsyncMeetupClientKey {
@@ -122,6 +126,11 @@ impl TypeMapKey for AsyncRuntimeKey {
     type Value = Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>;
 }
 
+pub(crate) struct PreparedCommandsKey;
+impl TypeMapKey for PreparedCommandsKey {
+    type Value = Arc<super::commands::PreparedCommands>;
+}
+
 pub struct Handler;
 
 impl EventHandler for Handler {
@@ -131,136 +140,129 @@ impl EventHandler for Handler {
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
     fn message(&self, ctx: Context, msg: Message) {
-        let (bot_id, regexes, shutdown_signal) = {
+        let (bot_id, shutdown_signal) = {
             let data = ctx.data.read();
-            let regexes = data
-                .get::<RegexesKey>()
-                .expect("Regexes were not compiled")
-                .clone();
             let bot_id = data.get::<BotIdKey>().expect("Bot ID was not set").clone();
             let shutdown_signal = data
                 .get::<ShutdownSignalKey>()
                 .expect("Shutdown signal was not set")
                 .load(Ordering::Acquire);
-            (bot_id, regexes, shutdown_signal)
+            (bot_id, shutdown_signal)
         };
         // Ignore all messages written by the bot itself
         if msg.author.id == bot_id {
             return;
         }
         // Ignore all messages that might have come from another guild
-        // (shouldn't happen) but who knows
+        // (shouldn't happen, but who knows)
         if let Some(guild_id) = msg.guild_id {
             if guild_id != lib::discord::sync::ids::GUILD_ID {
                 return;
             }
         }
-        let channel = match msg.channel_id.to_channel(&ctx) {
-            Ok(channel) => channel,
-            _ => return,
-        };
-        // Is this a direct message to the bot?
-        let mut is_dm = match channel {
-            Channel::Private(_) => true,
-            _ => false,
-        };
-        // Does the message start with a mention of the bot?
-        let is_mention = regexes.bot_mention.is_match(&msg.content);
-        // If the message is not a direct message and does not start with a
-        // mention of the bot, ignore it
-        if !is_dm && !is_mention {
-            return;
-        }
-        if shutdown_signal {
-            let _ = msg.channel_id.say(
-                &ctx,
-                "Sorry, I can not help you right now. I am about to shut down!",
-            );
-            return;
-        }
-        // If the message is a direct message but starts with a mention of the bot,
-        // switch to the non-DM parsing
-        if is_dm && is_mention {
-            is_dm = false;
-        }
-        // TODO: might want to use a RegexSet here to speed up matching
-        if regexes.stop_bot_admin(is_dm).is_match(&msg.content) {
-            // This is only for bot_admins
-            if !msg
-                .author
-                .has_role(
-                    &ctx,
-                    lib::discord::sync::ids::GUILD_ID,
-                    lib::discord::sync::ids::BOT_ADMIN_ID,
-                )
-                .unwrap_or(false)
-            {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-                return;
+        // Get the prepared commands
+        let commands = ctx
+            .data
+            .read()
+            .get::<PreparedCommandsKey>()
+            .cloned()
+            .expect("Prepared commands have not been set");
+        // let regexes = ctx
+        //     .data
+        //     .read()
+        //     .get::<RegexesKey>()
+        //     .cloned()
+        //     .expect("Prepared commands have not been set");
+        // Wrap Serenity's context and message objects into a CommandContext
+        // for access to convenience functions.
+        let mut cmdctx = super::commands::CommandContext::new(&ctx, &msg);
+        // let channel = match msg.channel_id.to_channel(&ctx) {
+        //     Ok(channel) => channel,
+        //     _ => return,
+        // };
+        // Poor man's try block
+        let res: Result<(), lib::meetup::Error> = (|| {
+            // Is this a direct message to the bot?
+            let is_dm = cmdctx.is_dm()?;
+            // Does the message start with a mention of the bot?
+            let is_mention = commands.bot_mention.is_match(&msg.content);
+            // If the message is not a direct message and does not start with a
+            // mention of the bot, ignore it
+            if !is_dm && !is_mention {
+                return Ok(());
             }
-            std::process::Command::new("sudo")
-                .args(&["systemctl", "stop", "bot"])
-                .output()
-                .expect("Could not stop the bot");
-        } else if regexes.link_meetup(is_dm).is_match(&msg.content) {
-            let user_id = msg.author.id.0;
-            match Self::link_meetup(&ctx, &msg, user_id) {
-                Err(err) => {
-                    eprintln!("Error: {}", err);
-                    let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
-                    return;
+            if shutdown_signal {
+                let _ = msg.channel_id.say(
+                    &ctx,
+                    "Sorry, I can not help you right now. I am about to shut down!",
+                );
+                return Ok(());
+            }
+            // Figure out which command matches
+            let matches: Vec<_> = commands
+                .regex_set
+                .matches(&msg.content)
+                .into_iter()
+                .collect();
+            let i = match matches.as_slice() {
+                [] => {
+                    // unknown command
+                    eprintln!("Unrecognized command: {}", &msg.content);
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, strings::INVALID_COMMAND(bot_id.0));
+                    return Ok(());
                 }
-                _ => return,
-            }
-        } else if let Some(captures) = regexes.link_meetup_bot_admin(is_dm).captures(&msg.content) {
-            // This is only for bot_admins
-            if !msg
-                .author
-                .has_role(
-                    &ctx,
-                    lib::discord::sync::ids::GUILD_ID,
-                    lib::discord::sync::ids::BOT_ADMIN_ID,
-                )
-                .unwrap_or(false)
-            {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-                return;
-            }
-            let discord_id = captures.name("mention_id").unwrap().as_str();
-            let meetup_id = captures.name("meetupid").unwrap().as_str();
-            // Try to convert the specified ID to an integer
-            let (discord_id, meetup_id) =
-                match (discord_id.parse::<u64>(), meetup_id.parse::<u64>()) {
-                    (Ok(id1), Ok(id2)) => (id1, id2),
-                    _ => {
-                        let _ = msg.channel_id.say(
-                            &ctx.http,
-                            "Seems like the specified Discord or Meetup ID is invalid",
-                        );
-                        return;
+                [i] => *i, // unique command found
+                _ => {
+                    // multiple commands found
+                    eprintln!("Ambiguous command: {}", &msg.content);
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "I can't figure out what to do. This is a bug. Could you please let a bot admin know about this?");
+                    return Ok(());
+                }
+            };
+            let captures = match commands.regexes[i].captures(&msg.content) {
+                Some(captures) => captures,
+                None => {
+                    // This should not happen
+                    eprintln!("Unmatcheable command: {}", &msg.content);
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx.http, "I can't parse your command. This is a bug. Could you please let a bot admin know about this?");
+                    return Ok(());
+                }
+            };
+            // Check whether the user has the required permissions
+            let command = commands.commands[i];
+            match command.level {
+                super::commands::CommandLevel::Everybody => (),
+                super::commands::CommandLevel::AdminOnly => {
+                    if !cmdctx.is_admin()? {
+                        let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                        return Ok(());
                     }
-                };
-            match Self::link_meetup_bot_admin(&ctx, &msg, &regexes, discord_id, meetup_id) {
-                Err(err) => {
-                    eprintln!("Error: {}", err);
-                    let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
-                    return;
                 }
-                _ => return,
-            }
-        } else if regexes.unlink_meetup(is_dm).is_match(&msg.content) {
-            let user_id = msg.author.id.0;
-            match Self::unlink_meetup(
-                &ctx, &msg, /*is_bot_admin_command*/ false, user_id, bot_id.0,
-            ) {
-                Err(err) => {
-                    eprintln!("Error: {}", err);
-                    let _ = msg.channel_id.say(&ctx.http, strings::UNSPECIFIED_ERROR);
-                    return;
+                super::commands::CommandLevel::HostAndAdminOnly => {
+                    let is_admin = cmdctx.is_admin()?;
+                    let is_host = cmdctx.is_host()?;
+                    if !is_admin && !is_host {
+                        let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
+                        return Ok(());
+                    }
                 }
-                _ => return,
             }
-        } else if let Some(captures) = regexes
+            // Call the command
+            (command.fun)(cmdctx, captures)?;
+            Ok(())
+        })();
+        if let Err(err) = res {
+            eprintln!("Error in message handler:\n{:#?}", err);
+            let _ = msg.channel_id.say(&ctx, lib::strings::UNSPECIFIED_ERROR);
+        }
+        /*
+        if let Some(captures) = regexes
             .unlink_meetup_bot_admin(is_dm)
             .captures(&msg.content)
         {
@@ -975,12 +977,46 @@ impl EventHandler for Handler {
                 eprintln!("Error in mention_channel_role command:\n{:#?}", err);
                 let _ = msg.channel_id.say(ctx, "Something went wrong.");
             }
+        } else if regexes.list_inactive_users.is_match(&msg.content) {
+            // This is only for bot_admins
+            if !msg
+                .author
+                .has_role(
+                    &ctx,
+                    lib::discord::sync::ids::GUILD_ID,
+                    lib::discord::sync::ids::BOT_ADMIN_ID,
+                )
+                .unwrap_or(false)
+            {
+                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
+                return;
+            }
+            if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&ctx) {
+                let mut inactive_users = vec![];
+                for (&id, member) in &guild.read().members {
+                    if member.roles.is_empty() {
+                        inactive_users.push(id);
+                    }
+                }
+                let inactive_users_strs: Vec<String> = inactive_users
+                    .into_iter()
+                    .map(|id| format!("* <@{}>", id))
+                    .collect();
+                let inactive_users_str = inactive_users_strs.join("\n");
+                let _ = msg.channel_id.say(
+                    &ctx.http,
+                    "List of users with no roles assigned:\n".to_string() + &inactive_users_str,
+                );
+            } else {
+                let _ = msg.channel_id.say(&ctx.http, "Could not find the guild");
+            }
         } else {
             eprintln!("Unrecognized command: {}", &msg.content);
             let _ = msg
                 .channel_id
                 .say(&ctx.http, strings::INVALID_COMMAND(bot_id.0));
         }
+        */
     }
 
     // Set a handler to be called on the `ready` event. This is called when a

@@ -2,6 +2,7 @@
 
 members = [
     "lib",
+    "command_macro",
     "ui",
     "app",
 ]
