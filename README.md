@@ -108,6 +108,7 @@ Check the access to S3 works, for example by listing the bucket contents:
 Give the user account that should do the backups (e.g. `daniel`) read access to the database files:
 
 `$ setfacl -m u:daniel:r-x /var/lib/redis`
+`$ setfacl -d -m u:daniel:r /var/lib/redis`
 `$ setfacl -m u:daniel:r /var/lib/redis/appendonly.aof`
 `$ setfacl -m u:daniel:r /var/lib/redis/dump.rdb`
 
