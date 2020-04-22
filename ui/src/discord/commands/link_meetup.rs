@@ -86,9 +86,8 @@ fn link_meetup(
             eprintln!("Error sending Meetup linking DM: {:?}", why);
             let _ = context.msg.reply(
                 context.ctx,
-                "There was an error trying to send you instructions.\nDo you have direct \
-                     messages disabled? In that case send me a private message with the text \
-                     \"link meetup\".",
+                "There was an error trying to send you instructions.\nDo you have direct messages \
+                 disabled? In that case send me a private message with the text \"link meetup\".",
             );
         }
     }
@@ -150,8 +149,8 @@ fn link_meetup_bot_admin(
             let _ = context.msg.channel_id.say(
                 context.ctx,
                 format!(
-                    "<@{discord_id}> is already linked to a different Meetup account. If you \
-                     want to change this, unlink the currently linked Meetup account first by \
+                    "<@{discord_id}> is already linked to a different Meetup account. If you want \
+                     to change this, unlink the currently linked Meetup account first by \
                      writing:\n<@{bot_id}> unlink meetup <@{discord_id}>",
                     discord_id = discord_id,
                     bot_id = bot_id
@@ -170,8 +169,8 @@ fn link_meetup_bot_admin(
             .direct_message(context.ctx, |message_builder| {
                 message_builder.content(format!(
                     "This Meetup account is alread linked to <@{linked_discord_id}>. If you want \
-                 to change this, unlink the Meetup account first by writing\n<@{bot_id}> \
-                 unlink meetup <@{linked_discord_id}>",
+                     to change this, unlink the Meetup account first by writing\n<@{bot_id}> \
+                     unlink meetup <@{linked_discord_id}>",
                     linked_discord_id = linked_discord_id,
                     bot_id = bot_id
                 ))

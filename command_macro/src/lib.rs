@@ -4,12 +4,13 @@
 // extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, ToTokens};
-use syn::parse::{Parse, ParseStream};
-use syn::parse_macro_input;
-use syn::punctuated::Punctuated;
-use syn::Token;
-use syn::{Attribute, ItemFn};
+use quote::{format_ident, quote};
+use syn::{
+    parse::{Parse, ParseStream},
+    parse_macro_input,
+    punctuated::Punctuated,
+    Attribute, ItemFn, Token,
+};
 
 #[inline]
 fn into_stream(e: syn::Error) -> TokenStream {

@@ -12,14 +12,21 @@ use serenity::{
 use std::sync::Arc;
 
 mod add_user;
+mod clone_event;
 mod end_adventure;
 mod help;
 mod link_meetup;
+mod list_inactive;
 mod list_players;
 mod list_subscriptions;
+mod manage_channel;
+mod mention_channel;
+mod numcached;
 mod refresh_meetup_token;
 mod remind_expiration;
+mod rsvp_user;
 mod schedule_session;
+mod snooze;
 mod stop;
 mod sync_discord;
 mod sync_meetup;
@@ -47,6 +54,13 @@ static ALL_COMMANDS: &[&Command] = &[
     &list_players::LIST_PLAYERS_COMMAND,
     &list_subscriptions::LIST_SUBSCRIPTIONS_COMMAND,
     &sync_subscriptions::SYNC_SUBSCRIPTIONS_COMMAND,
+    &numcached::NUMCACHED_COMMAND,
+    &manage_channel::MANAGE_CHANNEL_COMMAND,
+    &mention_channel::MENTION_CHANNEL_COMMAND,
+    &snooze::SNOOZE_COMMAND,
+    &list_inactive::LIST_INACTIVE_COMMAND,
+    &clone_event::CLONE_EVENT_COMMAND,
+    &rsvp_user::RSVP_USER_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
@@ -124,7 +138,10 @@ impl<'a> CommandContext<'a> {
                 .expect("Redis connection not set. This is a bug."))
         } else {
             let redis_connection = self.redis_client()?.get_connection()?;
-            self.redis_connection.set(redis_connection);
+            self.redis_connection
+                .set(redis_connection)
+                .map_err(|_| ())
+                .expect("Redis connection could not be set. This is a bug.");
             Ok(self
                 .redis_connection
                 .get_mut()
@@ -144,7 +161,10 @@ impl<'a> CommandContext<'a> {
             let redis_client = self.redis_client()?;
             let async_redis_connection =
                 futures::executor::block_on(async { redis_client.get_async_connection().await })?;
-            self.async_redis_connection.set(async_redis_connection);
+            self.async_redis_connection
+                .set(async_redis_connection)
+                .map_err(|_| ())
+                .expect("Async redis connection could not be set. This is a bug.");
             Ok(self
                 .async_redis_connection
                 .get_mut()

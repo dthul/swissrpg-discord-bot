@@ -1,22 +1,18 @@
-use futures::future::TryFutureExt;
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
-use redis::Commands;
 use serenity::{
     model::{
-        channel::{Channel, Message},
+        channel::Message,
         gateway::Ready,
         guild::Member,
         id::{GuildId, UserId},
+        user::User,
     },
     prelude::*,
 };
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 pub fn create_discord_client(
@@ -29,8 +25,6 @@ pub fn create_discord_client(
     async_runtime: Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>,
     shutdown_signal: Arc<AtomicBool>,
 ) -> Result<Client, lib::meetup::Error> {
-    let redis_connection = redis_client.get_connection()?;
-
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
@@ -80,16 +74,6 @@ pub struct BotNameKey;
 impl TypeMapKey for BotNameKey {
     type Value = String;
 }
-
-// pub struct RedisConnectionKey;
-// impl TypeMapKey for RedisConnectionKey {
-//     type Value = Arc<Mutex<redis::Connection>>;
-// }
-
-// pub struct RegexesKey;
-// impl TypeMapKey for RegexesKey {
-//     type Value = Arc<super::bot_commands::Regexes>;
-// }
 
 pub struct AsyncMeetupClientKey;
 impl TypeMapKey for AsyncMeetupClientKey {
@@ -167,19 +151,9 @@ impl EventHandler for Handler {
             .get::<PreparedCommandsKey>()
             .cloned()
             .expect("Prepared commands have not been set");
-        // let regexes = ctx
-        //     .data
-        //     .read()
-        //     .get::<RegexesKey>()
-        //     .cloned()
-        //     .expect("Prepared commands have not been set");
         // Wrap Serenity's context and message objects into a CommandContext
         // for access to convenience functions.
         let mut cmdctx = super::commands::CommandContext::new(&ctx, &msg);
-        // let channel = match msg.channel_id.to_channel(&ctx) {
-        //     Ok(channel) => channel,
-        //     _ => return,
-        // };
         // Poor man's try block
         let res: Result<(), lib::meetup::Error> = (|| {
             // Is this a direct message to the bot?
@@ -217,9 +191,11 @@ impl EventHandler for Handler {
                 _ => {
                     // multiple commands found
                     eprintln!("Ambiguous command: {}", &msg.content);
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, "I can't figure out what to do. This is a bug. Could you please let a bot admin know about this?");
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        "I can't figure out what to do. This is a bug. Could you please let a bot \
+                         admin know about this?",
+                    );
                     return Ok(());
                 }
             };
@@ -228,9 +204,11 @@ impl EventHandler for Handler {
                 None => {
                     // This should not happen
                     eprintln!("Unmatcheable command: {}", &msg.content);
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, "I can't parse your command. This is a bug. Could you please let a bot admin know about this?");
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        "I can't parse your command. This is a bug. Could you please let a bot \
+                         admin know about this?",
+                    );
                     return Ok(());
                 }
             };
@@ -261,265 +239,6 @@ impl EventHandler for Handler {
             eprintln!("Error in message handler:\n{:#?}", err);
             let _ = msg.channel_id.say(&ctx, lib::strings::UNSPECIFIED_ERROR);
         }
-        /*
-        if let Some(captures) = regexes.rsvp_user_admin_mention.captures(&msg.content) {
-            // This is only for bot_admins
-            if !msg
-                .author
-                .has_role(
-                    &ctx,
-                    lib::discord::sync::ids::GUILD_ID,
-                    lib::discord::sync::ids::BOT_ADMIN_ID,
-                )
-                .unwrap_or(false)
-            {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-                return;
-            }
-            let (redis_client, oauth2_consumer) = {
-                let data = ctx.data.read();
-                (
-                    data.get::<RedisClientKey>()
-                        .expect("Redis client was not set")
-                        .clone(),
-                    data.get::<OAuth2ConsumerKey>()
-                        .expect("OAuth2 consumer was not set")
-                        .clone(),
-                )
-            };
-            // Get the mentioned Discord ID
-            let discord_id = captures.name("mention_id").unwrap().as_str();
-            // Try to convert the specified ID to an integer
-            let discord_id = match discord_id.parse::<u64>() {
-                Ok(id) => id,
-                _ => {
-                    // let _ = msg
-                    //     .channel_id
-                    //     .say(&ctx.http, strings::CHANNEL_ADD_USER_INVALID_DISCORD);
-                    // TODO
-                    return;
-                }
-            };
-            // Get the mentioned Meetup event
-            let meetup_event_id = captures.name("meetup_event_id").unwrap().as_str();
-            // Try to RSVP the user
-            Self::rsvp_user_to_event(
-                &ctx,
-                &msg,
-                UserId(discord_id),
-                "SwissRPG-Zurich",
-                meetup_event_id,
-                redis_client,
-                oauth2_consumer,
-            )
-        } else if let Some(captures) = regexes.clone_event_admin_mention.captures(&msg.content) {
-            // This is only for bot_admins
-            if !msg
-                .author
-                .has_role(
-                    &ctx,
-                    lib::discord::sync::ids::GUILD_ID,
-                    lib::discord::sync::ids::BOT_ADMIN_ID,
-                )
-                .unwrap_or(false)
-            {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-                return;
-            }
-            let (redis_client, async_meetup_client, oauth2_consumer) = {
-                let data = ctx.data.read();
-                (
-                    data.get::<RedisClientKey>()
-                        .expect("Redis client was not set")
-                        .clone(),
-                    data.get::<AsyncMeetupClientKey>()
-                        .expect("Async Meetup client was not set")
-                        .clone(),
-                    data.get::<OAuth2ConsumerKey>()
-                        .expect("OAuth2 consumer was not set")
-                        .clone(),
-                )
-            };
-            // Get the mentioned Meetup event
-            let meetup_event_id = captures.name("meetup_event_id").unwrap().as_str();
-            // Try to RSVP the user
-            Self::clone_event(
-                &ctx,
-                &msg,
-                "SwissRPG-Zurich",
-                meetup_event_id,
-                redis_client,
-                async_meetup_client,
-                oauth2_consumer,
-            )
-        } else if regexes.num_cached_members.is_match(&msg.content) {
-            if let Some(guild) = msg.guild(&ctx) {
-                let num_cached_members = guild.read().members.len();
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    format!(
-                        "I have {} members cached for this guild",
-                        num_cached_members
-                    ),
-                );
-            } else {
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    "No guild associated with this message (use the command from a guild channel \
-                     instead of a direct message).",
-                );
-            }
-        } else if regexes.manage_channel_mention.is_match(&msg.content) {
-            // This is only for bot_admins
-            if !msg
-                .author
-                .has_role(
-                    &ctx,
-                    lib::discord::sync::ids::GUILD_ID,
-                    lib::discord::sync::ids::BOT_ADMIN_ID,
-                )
-                .unwrap_or(false)
-            {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-                return;
-            }
-            let redis_client = {
-                let data = ctx.data.read();
-                data.get::<RedisClientKey>()
-                    .expect("Redis client was not set")
-                    .clone()
-            };
-            if let Err(err) = Self::manage_channel(&ctx, &msg, &redis_client, bot_id) {
-                eprintln!("Something went wrong in manage_channel:\n{:#?}", err);
-                let _ = msg.channel_id.say(&ctx, "Something went wrong");
-            }
-        } else if regexes.mention_channel_role_mention.is_match(&msg.content) {
-            let redis_client = {
-                let data = ctx.data.read();
-                data.get::<RedisClientKey>()
-                    .expect("Redis client was not set")
-                    .clone()
-            };
-            // Poor man's try block
-            let ctx = &ctx;
-            if let Err(err) = (|| {
-                let mut redis_connection = redis_client.get_connection()?;
-                let channel_roles =
-                    lib::get_channel_roles(msg.channel_id.0, &mut redis_connection)?;
-                if let Some(channel_roles) = channel_roles {
-                    msg.channel_id
-                        .say(ctx, format!("<@&{}>", channel_roles.user))?;
-                } else {
-                    msg.channel_id
-                        .say(ctx, format!("This channel has no role"))?;
-                }
-                Ok::<_, lib::meetup::Error>(())
-            })() {
-                eprintln!("Error in mention_channel_role command:\n{:#?}", err);
-                let _ = msg.channel_id.say(ctx, "Something went wrong.");
-            }
-        } else if let Some(captures) = regexes.snooze_reminders.captures(&msg.content) {
-            // This is only for bot_admins
-            if !msg
-                .author
-                .has_role(
-                    &ctx,
-                    lib::discord::sync::ids::GUILD_ID,
-                    lib::discord::sync::ids::BOT_ADMIN_ID,
-                )
-                .unwrap_or(false)
-            {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-                return;
-            }
-            let redis_client = {
-                let data = ctx.data.read();
-                data.get::<RedisClientKey>()
-                    .expect("Redis client was not set")
-                    .clone()
-            };
-            // Poor man's try block
-            let ctx = &ctx;
-            if let Err(err) = (|| {
-                let num_days: u32 = captures
-                    .name("num_days")
-                    .expect("Regex capture does not contain 'num_days'")
-                    .as_str()
-                    .parse()
-                    .map(|num_days: u32| num_days.min(180))
-                    .map_err(|_err| {
-                        simple_error::SimpleError::new("Invalid number of days specified")
-                    })?;
-                let mut redis_connection = redis_client.get_connection()?;
-                // Check whether this is a game channel
-                let is_game_channel: bool =
-                    redis_connection.sismember("discord_channels", msg.channel_id.0)?;
-                if !is_game_channel {
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, strings::CHANNEL_NOT_BOT_CONTROLLED);
-                    return Ok(());
-                };
-                let redis_channel_snooze_key =
-                    format!("discord_channel:{}:snooze_until", msg.channel_id.0);
-                if num_days == 0 {
-                    // Remove the snooze
-                    let _: () = redis_connection.del(&redis_channel_snooze_key)?;
-                    let _ = msg.channel_id.say(ctx, "Disabled snoozing.");
-                } else {
-                    let snooze_until = chrono::Utc::now() + chrono::Duration::days(num_days as i64);
-                    // Set a new snooze date
-                    let _: () = redis_connection
-                        .set(&redis_channel_snooze_key, snooze_until.to_rfc3339())?;
-                    let _ = msg
-                        .channel_id
-                        .say(ctx, format!("Snoozing for {} days.", num_days));
-                }
-                Ok::<_, lib::meetup::Error>(())
-            })() {
-                eprintln!("Error in mention_channel_role command:\n{:#?}", err);
-                let _ = msg.channel_id.say(ctx, "Something went wrong.");
-            }
-        } else if regexes.list_inactive_users.is_match(&msg.content) {
-            // This is only for bot_admins
-            if !msg
-                .author
-                .has_role(
-                    &ctx,
-                    lib::discord::sync::ids::GUILD_ID,
-                    lib::discord::sync::ids::BOT_ADMIN_ID,
-                )
-                .unwrap_or(false)
-            {
-                let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-                return;
-            }
-            if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&ctx) {
-                let mut inactive_users = vec![];
-                for (&id, member) in &guild.read().members {
-                    if member.roles.is_empty() {
-                        inactive_users.push(id);
-                    }
-                }
-                let inactive_users_strs: Vec<String> = inactive_users
-                    .into_iter()
-                    .map(|id| format!("* <@{}>", id))
-                    .collect();
-                let inactive_users_str = inactive_users_strs.join("\n");
-                let _ = msg.channel_id.say(
-                    &ctx.http,
-                    "List of users with no roles assigned:\n".to_string() + &inactive_users_str,
-                );
-            } else {
-                let _ = msg.channel_id.say(&ctx.http, "Could not find the guild");
-            }
-        } else {
-            eprintln!("Unrecognized command: {}", &msg.content);
-            let _ = msg
-                .channel_id
-                .say(&ctx.http, strings::INVALID_COMMAND(bot_id.0));
-        }
-        */
     }
 
     // Set a handler to be called on the `ready` event. This is called when a
@@ -537,5 +256,20 @@ impl EventHandler for Handler {
             return;
         }
         Self::send_welcome_message(&ctx, &new_member.user.read());
+    }
+}
+
+impl Handler {
+    fn send_welcome_message(ctx: &Context, user: &User) {
+        let _ = user.direct_message(ctx, |message_builder| {
+            message_builder
+                .content(strings::WELCOME_MESSAGE_PART1)
+                .embed(|embed_builder| {
+                    embed_builder
+                        .colour(serenity::utils::Colour::new(0xFF1744))
+                        .title(strings::WELCOME_MESSAGE_PART2_EMBED_TITLE)
+                        .description(strings::WELCOME_MESSAGE_PART2_EMBED_CONTENT)
+                })
+        });
     }
 }

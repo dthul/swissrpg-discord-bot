@@ -128,8 +128,8 @@ pub fn whois_by_meetup_id(
             let _ = context.msg.channel_id.say(
                 context.ctx,
                 format!(
-                    "https://www.meetup.com/members/{}/ does not seem to be linked to a \
-                     Discord user",
+                    "https://www.meetup.com/members/{}/ does not seem to be linked to a Discord \
+                     user",
                     meetup_id
                 ),
             );

@@ -1,9 +1,7 @@
 use command_macro::command;
 use lib::discord::CacheAndHttp;
 use redis::Commands;
-use serenity::model::channel::PermissionOverwriteType;
-use serenity::model::id::UserId;
-use serenity::model::permissions::Permissions;
+use serenity::model::{channel::PermissionOverwriteType, id::UserId, permissions::Permissions};
 
 #[command]
 #[regex(r"add\s+{mention_pattern}", mention_pattern)]

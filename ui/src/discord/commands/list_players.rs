@@ -170,7 +170,7 @@ fn list_players(
 
     // Construct the answer
     let mut reply = "**Note:** *this data might be a few minutes out of date. It is refreshed \
-                         several times per hour.*\n\n"
+                     several times per hour.*\n\n"
         .to_string();
 
     if !meetup_id_with_discord_id.is_empty() {
@@ -192,8 +192,8 @@ fn list_players(
     }
 
     if !meetup_id_only.is_empty() {
-        reply += "The following people are signed up for an upcoming event on Meetup but are \
-                      not linked to a Discord user:\n";
+        reply += "The following people are signed up for an upcoming event on Meetup but are not \
+                  linked to a Discord user:\n";
         for &meetup_id in &meetup_id_only {
             reply += &format!(
                 "• <https://www.meetup.com/members/{meetup_id}/>\n",
@@ -207,7 +207,7 @@ fn list_players(
         || (!discord_id_only.is_empty() && meetup_id_only.is_empty())
     {
         reply += "The following Discord users are in this channel but did not sign up for an \
-                      upcoming event on Meetup:\n";
+                  upcoming event on Meetup:\n";
         for (&discord_id, &meetup_id) in &discord_id_with_meetup_id {
             reply += &format!(
                 "• <@{discord_id}> (<https://www.meetup.com/members/{meetup_id}/>)\n",
@@ -224,9 +224,9 @@ fn list_players(
     }
 
     if !discord_id_only.is_empty() && !meetup_id_only.is_empty() {
-        reply += "The following Discord users are in this channel but are not linked to a \
-                      Meetup account. I cannot tell whether they signed up for an upcoming event \
-                      on Meetup or not:\n";
+        reply += "The following Discord users are in this channel but are not linked to a Meetup \
+                  account. I cannot tell whether they signed up for an upcoming event on Meetup \
+                  or not:\n";
         for &discord_id in &discord_id_only {
             reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
         }
