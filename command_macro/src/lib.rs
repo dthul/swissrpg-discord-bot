@@ -53,7 +53,7 @@ impl Parse for RegexAttribute {
         let format_str: syn::LitStr = input.parse()?;
         let format_args = if !input.is_empty() {
             let _: Token![,] = input.parse()?;
-            let idents = Punctuated::<syn::Ident, Token![,]>::parse_separated_nonempty(input)?;
+            let idents = Punctuated::<syn::Ident, Token![,]>::parse_terminated(input)?;
             idents.into_iter().collect()
         } else {
             vec![]
@@ -150,7 +150,7 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #fun
 
         pub(crate) fn #regex_fun_ident(regex_parts: &crate::discord::commands::RegexParts) -> String {
-            format!(#command_regex_format_str, #(#command_regex_format_args = regex_parts.#command_regex_format_args)*)
+            format!(#command_regex_format_str, #(#command_regex_format_args = regex_parts.#command_regex_format_args,)*)
         }
 
         pub(crate) static #static_instance_name: #command_struct_path = #command_struct_path {
