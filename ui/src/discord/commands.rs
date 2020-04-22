@@ -12,11 +12,19 @@ use serenity::{
 use std::sync::Arc;
 
 mod add_user;
+mod end_adventure;
+mod help;
 mod link_meetup;
+mod list_players;
+mod list_subscriptions;
+mod refresh_meetup_token;
 mod remind_expiration;
+mod schedule_session;
 mod stop;
 mod sync_discord;
 mod sync_meetup;
+mod sync_subscriptions;
+mod whois;
 
 static ALL_COMMANDS: &[&Command] = &[
     &stop::STOP_COMMAND,
@@ -31,6 +39,14 @@ static ALL_COMMANDS: &[&Command] = &[
     &add_user::ADD_HOST_COMMAND,
     &add_user::REMOVE_USER_COMMAND,
     &add_user::REMOVE_HOST_COMMAND,
+    &end_adventure::END_ADVENTURE_COMMAND,
+    &help::HELP_COMMAND,
+    &refresh_meetup_token::REFRESH_MEETUP_TOKEN_COMMAND,
+    &schedule_session::SCHEDULE_SESSION_COMMAND,
+    &whois::WHOIS_COMMAND,
+    &list_players::LIST_PLAYERS_COMMAND,
+    &list_subscriptions::LIST_SUBSCRIPTIONS_COMMAND,
+    &sync_subscriptions::SYNC_SUBSCRIPTIONS_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
@@ -65,6 +81,8 @@ pub struct CommandContext<'a> {
     async_runtime: OnceCell<Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>>,
     meetup_client: OnceCell<Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>>,
     task_scheduler: OnceCell<Arc<AsyncMutex<white_rabbit::Scheduler>>>,
+    oauth2_consumer: OnceCell<Arc<lib::meetup::oauth2::OAuth2Consumer>>,
+    stripe_client: OnceCell<Arc<stripe::Client>>,
     bot_id: OnceCell<UserId>,
     channel: OnceCell<Channel>,
 }
@@ -80,6 +98,8 @@ impl<'a> CommandContext<'a> {
             async_runtime: OnceCell::new(),
             meetup_client: OnceCell::new(),
             task_scheduler: OnceCell::new(),
+            oauth2_consumer: OnceCell::new(),
+            stripe_client: OnceCell::new(),
             bot_id: OnceCell::new(),
             channel: OnceCell::new(),
         }
@@ -164,6 +184,26 @@ impl<'a> CommandContext<'a> {
             data.get::<super::bot::TaskSchedulerKey>()
                 .cloned()
                 .ok_or_else(|| simple_error::SimpleError::new("Task scheduler was not set").into())
+        })
+    }
+
+    pub fn oauth2_consumer<'b>(
+        &'b self,
+    ) -> Result<&'b Arc<lib::meetup::oauth2::OAuth2Consumer>, lib::meetup::Error> {
+        self.oauth2_consumer.get_or_try_init(|| {
+            let data = self.ctx.data.read();
+            data.get::<super::bot::OAuth2ConsumerKey>()
+                .cloned()
+                .ok_or_else(|| simple_error::SimpleError::new("OAuth2 consumer was not set").into())
+        })
+    }
+
+    pub fn stripe_client<'b>(&'b self) -> Result<&'b Arc<stripe::Client>, lib::meetup::Error> {
+        self.stripe_client.get_or_try_init(|| {
+            let data = self.ctx.data.read();
+            data.get::<super::bot::StripeClientKey>()
+                .cloned()
+                .ok_or_else(|| simple_error::SimpleError::new("Stripe client was not set").into())
         })
     }
 

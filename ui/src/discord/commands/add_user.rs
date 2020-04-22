@@ -140,7 +140,6 @@ fn channel_add_or_remove_user_impl(
         return Ok(());
     }
     // Managed channels and hosts don't use roles but user-specific permission overwrites
-    let is_host = context.is_host()?;
     let discord_api: CacheAndHttp = context.ctx.into();
     if is_game_channel && !is_managed_channel {
         let channel_roles =
