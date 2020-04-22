@@ -11,8 +11,12 @@ use serenity::{
 };
 use std::sync::Arc;
 
+mod add_user;
 mod link_meetup;
+mod remind_expiration;
 mod stop;
+mod sync_discord;
+mod sync_meetup;
 
 static ALL_COMMANDS: &[&Command] = &[
     &stop::STOP_COMMAND,
@@ -20,6 +24,13 @@ static ALL_COMMANDS: &[&Command] = &[
     &link_meetup::UNLINK_MEETUP_COMMAND,
     &link_meetup::LINK_MEETUP_BOT_ADMIN_COMMAND,
     &link_meetup::UNLINK_MEETUP_BOT_ADMIN_COMMAND,
+    &sync_meetup::SYNC_MEETUP_COMMAND,
+    &sync_discord::SYNC_DISCORD_COMMAND,
+    &remind_expiration::REMIND_EXPIRATION_COMMAND,
+    &add_user::ADD_USER_COMMAND,
+    &add_user::ADD_HOST_COMMAND,
+    &add_user::REMOVE_USER_COMMAND,
+    &add_user::REMOVE_HOST_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
@@ -53,6 +64,7 @@ pub struct CommandContext<'a> {
     async_redis_connection: OnceCell<redis::aio::Connection>,
     async_runtime: OnceCell<Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>>,
     meetup_client: OnceCell<Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>>,
+    task_scheduler: OnceCell<Arc<AsyncMutex<white_rabbit::Scheduler>>>,
     bot_id: OnceCell<UserId>,
     channel: OnceCell<Channel>,
 }
@@ -67,6 +79,7 @@ impl<'a> CommandContext<'a> {
             async_redis_connection: OnceCell::new(),
             async_runtime: OnceCell::new(),
             meetup_client: OnceCell::new(),
+            task_scheduler: OnceCell::new(),
             bot_id: OnceCell::new(),
             channel: OnceCell::new(),
         }
@@ -143,6 +156,17 @@ impl<'a> CommandContext<'a> {
         })
     }
 
+    pub fn task_scheduler<'b>(
+        &'b self,
+    ) -> Result<&'b Arc<AsyncMutex<white_rabbit::Scheduler>>, lib::meetup::Error> {
+        self.task_scheduler.get_or_try_init(|| {
+            let data = self.ctx.data.read();
+            data.get::<super::bot::TaskSchedulerKey>()
+                .cloned()
+                .ok_or_else(|| simple_error::SimpleError::new("Task scheduler was not set").into())
+        })
+    }
+
     pub fn bot_id<'b>(&'b self) -> Result<UserId, lib::meetup::Error> {
         self.bot_id
             .get_or_try_init(|| {
@@ -188,6 +212,13 @@ impl<'a> CommandContext<'a> {
         Ok(self
             .redis_connection()?
             .sismember("discord_channels", channel_id)?)
+    }
+
+    pub fn is_managed_channel(&mut self) -> Result<bool, lib::meetup::Error> {
+        let channel_id = self.msg.channel_id.0;
+        Ok(self
+            .redis_connection()?
+            .sismember("managed_discord_channels", channel_id)?)
     }
 }
 
