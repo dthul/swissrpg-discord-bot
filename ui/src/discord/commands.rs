@@ -83,6 +83,7 @@ pub(crate) struct Command {
     pub regex: fn(&RegexParts) -> String,
     pub level: CommandLevel,
     pub fun: fn(CommandContext, regex::Captures) -> Result<(), lib::meetup::Error>,
+    pub help: Option<&'static str>,
 }
 
 pub struct CommandContext<'a> {

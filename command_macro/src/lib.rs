@@ -90,6 +90,7 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut command_regex = None;
     let mut command_level = None;
     let mut unknown_attrs = vec![];
+    let mut help_text = None;
     for attribute in &command_fun.attributes {
         // let meta_attribute = propagate_err!(attribute.parse_meta());
         let attr_ident = match attribute.path.get_ident() {
@@ -119,6 +120,14 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
                 command_regex = Some((regex_attribute.format_str, regex_attribute.format_args));
             }
+            "help" => {
+                let parser = |input: ParseStream<'_>| -> syn::Result<syn::LitStr> { input.parse() };
+                let text = propagate_err!(attribute.parse_args_with(parser));
+                if help_text.is_some() {
+                    panic!("Multiple help texts specified for the same command");
+                }
+                help_text = Some(text);
+            }
             _ => {
                 unknown_attrs.push(attribute);
                 continue;
@@ -146,6 +155,11 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let static_instance_name = format_ident!("{}_COMMAND", fun_ident.to_string().to_uppercase());
     let fun = command_fun.fun;
     let command_struct_path = quote!(crate::discord::commands::Command);
+    let help_text = if let Some(help_text) = help_text {
+        quote! { Some(#help_text) }
+    } else {
+        quote! { None }
+    };
     let output = quote! {
         #(#unknown_attrs)*
         #fun
@@ -158,6 +172,7 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
             regex: #regex_fun_ident,
             level: #command_level,
             fun: #fun_ident,
+            help: #help_text,
         };
     };
     // println!("{}", output.to_string());
