@@ -129,7 +129,7 @@ pub fn add_channel_user_permissions(
 
 // True if permissions changed, false otherwise
 pub fn remove_channel_user_permissions(
-    discord_api: CacheAndHttp,
+    discord_api: &CacheAndHttp,
     channel_id: ChannelId,
     user_id: UserId,
     permissions: Permissions,

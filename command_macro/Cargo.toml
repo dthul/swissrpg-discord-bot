@@ -1,8 +1,11 @@
 [package]
-name = "swissrpg-ui"
+name = "swissrpg-command-macro"
 version = "0.1.0"
 authors = ["Daniel Thul <daniel.thul@gmail.com>"]
 edition = "2018"
+
+[lib]
+proc-macro = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
@@ -13,28 +16,11 @@ bottest = ["lib/bottest"]
 
 [dependencies]
 lib = { path = "../lib", package = "swissrpg-lib" }
-command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
-askama = "0.9"
-bytes = "0.5"
-chrono = "0.4"
-chrono-tz = "0.5"
-cookie = "0.13"
-futures = "0.3"
-futures-channel = "0.3"
-futures-util = { version = "0.3" }
-hyper = "0.13"
-num-traits = "0.2"
 oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03", "reqwest-010"] }
-once_cell = "1.3"
-rand = "0.7"
 redis = "0.15"
 regex = "1"
-serde = "1.0"
-serde_json = "1.0"
 serenity = "0.8"
 simple-error = "0.2"
 stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "api2019-11-05", default-features = false, features = ["billing", "webhook-events", "async"] }
-time = "0.2"
-tokio = { version = "0.2", default-features = false, features = ["rt-threaded", "time"] }
-warp = "0.2"
-white_rabbit = "0.1"
+quote = "1.0"
+syn = { version = "1.0", features = ["full"] }
