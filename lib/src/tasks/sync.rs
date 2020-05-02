@@ -6,10 +6,11 @@ use tokio::time::{Duration, Instant};
 
 pub async fn create_recurring_syncing_task(
     redis_client: redis::Client,
-    meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
-    discord_api: lib::discord::CacheAndHttp,
+    meetup_client: Arc<Mutex<Option<Arc<crate::meetup::api::AsyncClient>>>>,
+    discord_api: crate::discord::CacheAndHttp,
     bot_id: UserId,
     task_scheduler: Arc<Mutex<white_rabbit::Scheduler>>,
+    static_file_prefix: &'static str,
 ) -> ! {
     let mut interval_timer = tokio::time::interval_at(
         Instant::now() + Duration::from_secs(15 * 60),
@@ -25,12 +26,14 @@ pub async fn create_recurring_syncing_task(
         let task_scheduler = task_scheduler.clone();
         tokio::spawn(async move {
             let mut redis_connection = redis_client.get_async_connection().await?;
-            tokio::time::timeout(
+            let event_collector = tokio::time::timeout(
                 Duration::from_secs(360),
-                lib::meetup::sync::sync_task(meetup_client, &mut redis_connection).map_err(|err| {
-                    eprintln!("Syncing task failed: {}", err);
-                    err
-                }),
+                crate::meetup::sync::sync_task(meetup_client, &mut redis_connection).map_err(
+                    |err| {
+                        eprintln!("Syncing task failed: {}", err);
+                        err
+                    },
+                ),
             )
             .map_err(|err| {
                 eprintln!("Syncing task timed out: {}", err);
@@ -41,14 +44,25 @@ pub async fn create_recurring_syncing_task(
             let mut guard = task_scheduler.lock().await;
             guard.add_task_datetime(
                 white_rabbit::Utc::now(),
-                lib::discord::sync::create_sync_discord_task(
+                crate::discord::sync::create_sync_discord_task(
                     redis_client,
-                    discord_api,
+                    discord_api.clone(),
                     bot_id.0,
                     /*recurring*/ false,
                 ),
             );
-            Ok::<_, lib::BoxedError>(())
+            drop(guard);
+            // Finally, update Discord with the information on open spots.
+            if let Some(channel_id) = crate::discord::sync::ids::FREE_SPOTS_CHANNEL_ID {
+                if let Err(err) =
+                    event_collector.update_channel(&discord_api, channel_id, static_file_prefix)
+                {
+                    eprintln!("Error when posting open game spots:\n{:#?}", err);
+                }
+            } else {
+                eprintln!("No channel configured for posting open game spots");
+            }
+            Ok::<_, crate::BoxedError>(())
         });
     }
 }

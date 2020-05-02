@@ -324,6 +324,7 @@ impl EventHandler for Handler {
                             let mut redis_connection = redis_client.get_async_connection().await?;
                             lib::meetup::sync::sync_task(async_meetup_client, &mut redis_connection)
                                 .await
+                                .map(|_| ())
                         };
                         // Wrap the task in a timeout
                         tokio::time::timeout(

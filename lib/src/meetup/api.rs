@@ -69,6 +69,7 @@ pub struct Event {
     pub group: Group,
     pub description: String,
     pub rsvp_limit: Option<u16>,
+    pub yes_rsvp_count: Option<u16>,
     pub simple_html_description: Option<String>,
     pub how_to_find_us: Option<String>,
     pub venue: Option<Venue>,
@@ -183,6 +184,7 @@ impl<'de> Deserialize<'de> for RSVPResponse {
 #[derive(Debug, Deserialize, Clone)]
 pub struct RSVPRules {
     pub guest_limit: u16,
+    pub closed: bool,
 }
 
 #[derive(Debug)]
@@ -317,9 +319,9 @@ impl AsyncClient {
     // this does not matter for us anyway
     pub fn get_upcoming_events(&self, urlname: &str) -> impl Stream<Item = Result<Event, Error>> {
         let url = format!(
-            "{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts&\
+            "{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts,rsvp_rules&\
              has_ended=false&status=upcoming&only=description,event_hosts.id,event_hosts.name,id,\
-             link,time,name,group.urlname",
+             link,time,name,group.urlname,rsvp_limit,yes_rsvp_count,venue,rsvp_rules",
             BASE_URL, urlname
         );
         let request = self.client.get(&url);

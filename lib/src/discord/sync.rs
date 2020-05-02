@@ -25,6 +25,7 @@ pub mod ids {
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561949651402772)];
     pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(601070848446824512);
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650656330390175764));
+    pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(704988201038643270));
 }
 
 #[cfg(not(feature = "bottest"))]
@@ -42,6 +43,7 @@ pub mod ids {
         &[ChannelId(414074722259828736), ChannelId(651006290998329354)];
     pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(401856511233753110);
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
+    pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = None;
 }
 
 use ids::*;

@@ -31,7 +31,7 @@ lazy_static! {
 pub async fn sync_task(
     meetup_client: Arc<Mutex<Option<Arc<super::api::AsyncClient>>>>,
     redis_connection: &mut redis::aio::Connection,
-) -> Result<(), super::Error> {
+) -> Result<crate::free_spots::EventCollector, super::Error> {
     let meetup_client = {
         let guard = meetup_client.lock().await;
         match *guard {
@@ -44,13 +44,19 @@ pub async fn sync_task(
     futures::pin_mut!(upcoming_events);
     // Sync events
     // For loops for streams not supported (yet?)
+    // While looping over the upcoming events, we also keep information about
+    // free spots. This information will be posted to Discord.
+    let mut event_collector = crate::free_spots::EventCollector::new();
     while let Some(event) = upcoming_events.next().await {
         match event {
             Err(err) => eprintln!("Couldn't query upcoming event: {}", err),
-            Ok(event) => match sync_event(event, redis_connection).await {
-                Err(err) => eprintln!("Event sync failed: {}", err),
-                _ => (),
-            },
+            Ok(event) => {
+                event_collector.add_event(&event);
+                match sync_event(event, redis_connection).await {
+                    Err(err) => eprintln!("Event sync failed: {}", err),
+                    _ => (),
+                }
+            }
         }
     }
     // Sync event series
@@ -63,7 +69,7 @@ pub async fn sync_task(
         // Add a 250ms delay between each item as a naive rate limit for the Meetup API
         tokio::time::delay_for(std::time::Duration::from_millis(250)).await;
     }
-    Ok(())
+    Ok(event_collector)
 }
 
 // This function is supposed to be idempotent, so calling it with the same

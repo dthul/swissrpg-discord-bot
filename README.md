@@ -2,13 +2,15 @@
 
 Use the following URL:
 
-`https://discordapp.com/api/oauth2/authorize?client_id=600752105518792716&permissions=297937168&scope=bot`
+`https://discordapp.com/api/oauth2/authorize?client_id=600752105518792716&permissions=834873616&scope=bot`
 
 ## Permissions
 
 The bot needs the following permissions:
 * Manage Roles
 * Manage Channels
+* Manage Webhooks
+* Read Message History
 * Send Messages
 * Manage Messages
 * Mention @everyone
@@ -16,6 +18,8 @@ The bot needs the following permissions:
 * Move Members
 * Deafen Members
 * Priority Speaker
+
+Permission Calculator: https://discordapi.com/permissions.html#834873616
 
 # Build using Docker
 

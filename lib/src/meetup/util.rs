@@ -265,7 +265,7 @@ pub async fn get_group_profiles(
 // The "length" of a Unicode string is no well-defined concept. Meetup (at least
 // the form on the website) seems to use the number of UTF-16 code units as the
 // length of the string, so this is what this method uses (see
-// https://hsivonen.fi/string-length/ for some details Unicode string lengths).
+// https://hsivonen.fi/string-length/ for some details on Unicode string lengths).
 pub fn truncate_str(mut string: String, max_len: usize) -> String {
     // Count the number of characters that are allowed
     let mut utf16_length = 0;

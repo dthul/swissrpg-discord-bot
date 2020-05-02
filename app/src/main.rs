@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-mod sync_task;
 
 use futures::future;
 use redis::Commands;
@@ -173,7 +172,8 @@ fn main() {
     task_scheduler_guard.add_task_datetime(next_end_of_game_task_time, end_of_game_task);
     drop(task_scheduler_guard);
 
-    let syncing_task = crate::sync_task::create_recurring_syncing_task(
+    let static_file_prefix = Box::leak(format!("{}/static/", lib::urls::BASE_URL).into_boxed_str());
+    let syncing_task = lib::tasks::sync::create_recurring_syncing_task(
         redis_client.clone(),
         async_meetup_client.clone(),
         discord_api.clone(),
@@ -183,6 +183,7 @@ fn main() {
             .expect("Bot ID was not set")
             .clone(),
         task_scheduler.clone(),
+        static_file_prefix,
     );
 
     let stripe_subscription_refresh_task =

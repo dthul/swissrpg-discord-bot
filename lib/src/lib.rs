@@ -2,6 +2,7 @@
 pub mod discord;
 pub mod error;
 pub mod flow;
+mod free_spots;
 pub mod meetup;
 pub mod redis;
 pub mod strings;
