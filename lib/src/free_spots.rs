@@ -3,9 +3,16 @@
 
 use crate::meetup::api::Event;
 use geo::{euclidean_distance::EuclideanDistance, Point};
+use lazy_static::lazy_static;
 use serenity::model::id::ChannelId;
 use std::collections::HashMap;
 use std::fmt::Write;
+
+pub const CLOSED_PATTERN: &'static str = r"(?i)\[\s*closed\s*\]";
+
+lazy_static! {
+    pub static ref CLOSED_REGEX: regex::Regex = regex::Regex::new(CLOSED_PATTERN).unwrap();
+}
 
 #[derive(Debug, Clone)]
 pub struct EventCollector {
@@ -185,11 +192,13 @@ impl EventCollector {
             let events: Vec<&(Event, u16)> = events
                 .into_iter()
                 .filter(|(event, _)| {
-                    event
+                    let closed_event = event
                         .rsvp_rules
                         .as_ref()
-                        .map(|rules| !rules.closed)
-                        .unwrap_or(true)
+                        .map(|rules| rules.closed)
+                        .unwrap_or(false)
+                        || CLOSED_REGEX.is_match(&event.description);
+                    !closed_event
                 })
                 .collect();
             // Try to find an existing message that corresponds to this location
