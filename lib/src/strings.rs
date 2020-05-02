@@ -90,39 +90,20 @@ pub const HELP_MESSAGE_PLAYER_EMBED_CONTENT: &'static str =
 
 // ** Welcome messages **
 
-pub const WELCOME_MESSAGE_PART1: &'static str =
-    "Welcome to **SwissRPG**! We hope you'll enjoy rolling dice with us. Here is some basic info \
-     to get you started.
-
-**Got a question about SwissRPG?**
-Ask at the tavern and someone will help you out. If you need help, please reach out to our \\@Community Managers.
-
-**Are you a Game Master or aspire to be one?**
-- If you would like be a GM for our community, please get in touch directly with an \\@Organiser. We offer \
-     great resources to our GMs like access to public venues, most D&D books on DnDBeyond and a library of one shot adventures.
-- If you're interested in being a GM but don't feel ready, let us know. We've provided support to \
-     many beginner GMs to get them started.
-
-**Support our group**
-SwissRPG aims to enable people to play role playing games. If you find value in what we do, please \
-     consider supporting us here (https://rebi.me/swissrpg) with a donation. Every donation makes \
-     a big difference. Thank you for your support.
-
-**Basic rules of our community**
-**1.** If you would like to mention or link to an event, another tabletop group, a discord server \
-     etc. please ask an \\@Admin first.
-**2.** Be inclusive and respectful of others and their differences.
-**3.** Stay positive and love each other. Life is good.
-
-**_Don’t forget to introduce yourself to our community in the tavern channel. Don't be shy, we're \
-     all very nice._**";
-
-pub const WELCOME_MESSAGE_PART2_EMBED_TITLE: &'static str = "**Get access to a game's channel**";
-pub const WELCOME_MESSAGE_PART2_EMBED_CONTENT: &'static str =
-    "If you've signed up for a game, or plan to do so soon, you'll need access to the adventure's \
-     channel. To do that, please link your Meetup profile to your Discord profile. Let’s try this \
-     now shall we?
-Reply with ***link meetup*** here to get the process started.";
+pub const WELCOME_MESSAGE: &'static str =
+    "Welcome adventurer.\n\nAllow me to introduce myself: My name is Hyperion and I am your \
+     friendly SwissRPG bot, here to make your life easier.
+    
+There's a few things you should do in order to enjoy the SwissRPG community and games. Let me keep \
+     it short for you:
+    
+:one: Go check the <#608263283329204234> channel and read our rules and how to gain access to all \
+     our channels.
+:two: Go say hi in the <#401856511233753109>.
+:three: Link with Hyperion (that's me) to gain access to the games' channels that you signed up \
+     for. That last one is easy, just type \"link meetup\" below and I'll help you out.
+    
+If you have any questions, please ask around on our server. We're happy to help. Enjoy.";
 
 // ** End of one-shot **
 

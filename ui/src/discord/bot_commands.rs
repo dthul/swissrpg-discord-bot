@@ -1010,14 +1010,7 @@ impl super::bot::Handler {
 
     pub fn send_welcome_message(ctx: &Context, user: &User) {
         let _ = user.direct_message(ctx, |message_builder| {
-            message_builder
-                .content(strings::WELCOME_MESSAGE_PART1)
-                .embed(|embed_builder| {
-                    embed_builder
-                        .colour(serenity::utils::Colour::new(0xFF1744))
-                        .title(strings::WELCOME_MESSAGE_PART2_EMBED_TITLE)
-                        .description(strings::WELCOME_MESSAGE_PART2_EMBED_CONTENT)
-                })
+            message_builder.content(strings::WELCOME_MESSAGE)
         });
     }
 
