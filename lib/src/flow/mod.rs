@@ -139,7 +139,12 @@ impl ScheduleSessionFlow {
         let description = new_event.description;
         let description = crate::meetup::sync::NEW_ADVENTURE_REGEX.replace_all(&description, "");
         let description = crate::meetup::sync::NEW_CAMPAIGN_REGEX.replace_all(&description, "");
-        let description = crate::meetup::sync::ONLINE_REGEX.replace_all(&description, "");
+        // We don't remove the [online] shortcode from descriptions anymore,
+        // such that the "free game spots" feature has an easy way to tell
+        // whether an event is online or not. This is mostly due to the fact
+        // that at the time of this writing, we can not use the official Meetup
+        // feature (yet?) for marking events as being online.
+        // let description = crate::meetup::sync::ONLINE_REGEX.replace_all(&description, "");
         let mut description = crate::meetup::sync::CHANNEL_REGEX
             .replace_all(&description, "")
             .into_owned();
