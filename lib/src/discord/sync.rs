@@ -41,7 +41,7 @@ pub mod ids {
         &[ChannelId(414074722259828736), ChannelId(651006290998329354)];
     pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(401856511233753110);
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
-    pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = None;
+    pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(706131908102324345));
 }
 
 use ids::*;
