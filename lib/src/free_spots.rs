@@ -5,8 +5,7 @@ use crate::meetup::api::Event;
 use geo::{euclidean_distance::EuclideanDistance, Point};
 use lazy_static::lazy_static;
 use serenity::model::id::ChannelId;
-use std::collections::HashMap;
-use std::fmt::Write;
+use std::{collections::HashMap, fmt::Write};
 
 pub const CLOSED_PATTERN: &'static str = r"(?i)\[\s*closed\s*\]";
 
@@ -163,13 +162,28 @@ impl EventCollector {
     }
 
     pub fn add_event(&mut self, event: &Event) {
-        // Do a quick pre-filtering and discard events which don't have free spots
+        // Do a quick pre-filtering.
+        // Discard events which don't have free spots
         let num_free_spots = match (event.rsvp_limit, event.yes_rsvp_count) {
             (Some(rsvp_limit), Some(yes_rsvp_count)) if rsvp_limit > yes_rsvp_count => {
                 rsvp_limit - yes_rsvp_count
             }
             _ => return,
         };
+        // Filter out events for which RSVPs are not open
+        let is_closed_event = event
+            .rsvp_rules
+            .as_ref()
+            .map(|rules| rules.closed)
+            .unwrap_or(false)
+            || CLOSED_REGEX.is_match(&event.description);
+        if is_closed_event {
+            return;
+        }
+        // Keep no events which are too far in the future
+        if event.time > chrono::Utc::now() + chrono::Duration::days(30) {
+            return;
+        }
         self.events.push((event.clone(), num_free_spots));
     }
 
@@ -188,19 +202,6 @@ impl EventCollector {
                 .get(location)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
-            // Filter out all events for which RSVPs are not open
-            let events: Vec<&(Event, u16)> = events
-                .into_iter()
-                .filter(|(event, _)| {
-                    let closed_event = event
-                        .rsvp_rules
-                        .as_ref()
-                        .map(|rules| rules.closed)
-                        .unwrap_or(false)
-                        || CLOSED_REGEX.is_match(&event.description);
-                    !closed_event
-                })
-                .collect();
             // Try to find an existing message that corresponds to this location
             let embed_author = location.name();
             let location_message = latest_messages.iter_mut().find(|message| {
@@ -215,14 +216,14 @@ impl EventCollector {
                 // Edit the existing message
                 message.edit(discord_api, |message| {
                     message.embed(|embed| {
-                        Self::build_embed(static_file_prefix, *location, events.as_slice(), embed)
+                        Self::build_embed(static_file_prefix, *location, events, embed)
                     })
                 })?;
             } else {
                 // Post a new message
                 channel_id.send_message(&discord_api.http, |message| {
                     message.embed(|embed| {
-                        Self::build_embed(static_file_prefix, *location, events.as_slice(), embed)
+                        Self::build_embed(static_file_prefix, *location, events, embed)
                     })
                 })?;
             }
@@ -233,7 +234,7 @@ impl EventCollector {
     fn build_embed<'a>(
         static_file_prefix: &'_ str,
         location: Location,
-        events: &'_ [&(Event, u16)],
+        events: &'_ [(Event, u16)],
         embed_builder: &'a mut serenity::builder::CreateEmbed,
     ) -> &'a mut serenity::builder::CreateEmbed {
         let footer_text = chrono::Utc::now()
