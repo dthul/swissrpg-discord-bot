@@ -4,8 +4,8 @@ use command_macro::command;
 #[regex(r"sync\s*discord")]
 #[level(admin)]
 fn sync_discord(
-    context: super::CommandContext,
-    _: regex::Captures,
+    context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let redis_client = context.redis_client()?.clone();
     let task_scheduler_mutex = context.task_scheduler()?;

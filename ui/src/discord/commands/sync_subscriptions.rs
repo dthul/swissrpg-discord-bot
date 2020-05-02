@@ -4,8 +4,8 @@ use command_macro::command;
 #[regex(r"sync\s*subscriptions")]
 #[level(admin)]
 fn sync_subscriptions(
-    context: super::CommandContext,
-    _: regex::Captures,
+    context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let runtime_mutex = context.async_runtime()?;
     let runtime_guard = futures::executor::block_on(runtime_mutex.read());

@@ -5,8 +5,8 @@ use redis::Commands;
 #[regex(r"snooze\s+(?P<num_days>[0-9]+)\s*d(ay)?s?")]
 #[level(admin)]
 fn snooze(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let num_days: u32 = captures
         .name("num_days")

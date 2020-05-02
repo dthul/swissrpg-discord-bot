@@ -11,8 +11,8 @@ use serenity::model::id::UserId;
 )]
 #[level(admin)]
 fn whois(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     if let Some(capture) = captures.name("mention_id") {
         // Look up by Discord ID
@@ -53,7 +53,7 @@ fn whois(
 }
 
 fn whois_by_discord_id(
-    context: &mut super::CommandContext,
+    context: &mut super::CommandContext<'_>,
     user_id: UserId,
 ) -> Result<(), lib::meetup::Error> {
     let redis_discord_meetup_key = format!("discord_user:{}:meetup_user", user_id.0);
@@ -82,7 +82,7 @@ fn whois_by_discord_id(
 }
 
 pub fn whois_by_discord_username_tag(
-    context: &mut super::CommandContext,
+    context: &mut super::CommandContext<'_>,
     username_tag: &str,
 ) -> Result<(), lib::meetup::Error> {
     if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(context.ctx) {
@@ -109,7 +109,7 @@ pub fn whois_by_discord_username_tag(
 }
 
 pub fn whois_by_meetup_id(
-    context: &mut super::CommandContext,
+    context: &mut super::CommandContext<'_>,
     meetup_id: u64,
 ) -> Result<(), lib::meetup::Error> {
     let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);

@@ -82,9 +82,9 @@ pub struct RegexParts<'a> {
 }
 
 pub(crate) struct Command {
-    pub regex: fn(&RegexParts) -> String,
+    pub regex: fn(&RegexParts<'_>) -> String,
     pub level: CommandLevel,
-    pub fun: fn(CommandContext, regex::Captures) -> Result<(), lib::meetup::Error>,
+    pub fun: fn(CommandContext<'_>, regex::Captures<'_>) -> Result<(), lib::meetup::Error>,
     pub help: Option<&'static str>,
 }
 

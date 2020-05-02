@@ -7,8 +7,8 @@ use serenity::model::{channel::PermissionOverwriteType, id::UserId, permissions:
 #[regex(r"add\s+{mention_pattern}", mention_pattern)]
 #[level(host)]
 fn add_user(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Get the Discord ID of the user that is supposed to
     // be added to the channel
@@ -36,8 +36,8 @@ fn add_user(
 #[regex(r"add\s*host\s+{mention_pattern}", mention_pattern)]
 #[level(host)]
 fn add_host(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Get the Discord ID of the user that is supposed to
     // be added to the channel
@@ -65,8 +65,8 @@ fn add_host(
 #[regex(r"remove\s+{mention_pattern}", mention_pattern)]
 #[level(host)]
 fn remove_user(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Get the Discord ID of the user that is supposed to
     // be added to the channel
@@ -94,8 +94,8 @@ fn remove_user(
 #[regex(r"remove\s*host\s+{mention_pattern}", mention_pattern)]
 #[level(host)]
 fn remove_host(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Get the Discord ID of the user that is supposed to
     // be added to the channel
@@ -120,7 +120,7 @@ fn remove_host(
 }
 
 fn channel_add_or_remove_user_impl(
-    context: &mut super::CommandContext,
+    context: &mut super::CommandContext<'_>,
     discord_id: u64,
     add: bool,
     as_host: bool,

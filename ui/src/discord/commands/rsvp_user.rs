@@ -8,8 +8,8 @@ use redis::Commands;
 )]
 #[level(admin)]
 fn rsvp_user(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Get the mentioned Discord ID
     let discord_id = captures.name("mention_id").unwrap().as_str();

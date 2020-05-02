@@ -6,8 +6,8 @@ use std::time::Duration;
 #[regex(r"sync\s*meetup")]
 #[level(admin)]
 fn sync_meetup(
-    context: super::CommandContext,
-    _: regex::Captures,
+    context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Send the syncing future to the executor
     let runtime_lock = context.async_runtime()?.clone();

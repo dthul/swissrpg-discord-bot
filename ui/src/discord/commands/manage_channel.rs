@@ -9,8 +9,8 @@ use serenity::model::{
 #[regex(r"manage\s*channel")]
 #[level(admin)]
 fn manage_channel(
-    mut context: super::CommandContext,
-    _: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let channel_id = context.msg.channel_id;
     // Step 1: Try to mark this channel as managed

@@ -6,8 +6,8 @@ use std::borrow::Cow;
 #[command]
 #[regex(r"link[ -]?meetup")]
 fn link_meetup(
-    mut context: super::CommandContext,
-    _: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let redis_key_d2m = format!("discord_user:{}:meetup_user", context.msg.author.id.0);
     // Check if there is already a meetup id linked to this user
@@ -97,8 +97,8 @@ fn link_meetup(
 #[command]
 #[regex(r"unlink[ -]?meetup")]
 fn unlink_meetup(
-    mut context: super::CommandContext,
-    _: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let user_id = context.msg.author.id;
     unlink_meetup_impl(&mut context, /*is_bot_admin_command*/ false, user_id)
@@ -111,8 +111,8 @@ fn unlink_meetup(
 )]
 #[level(admin)]
 fn link_meetup_bot_admin(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let discord_id = captures.name("mention_id").unwrap().as_str();
     let meetup_id = captures.name("meetupid").unwrap().as_str();
@@ -267,8 +267,8 @@ fn link_meetup_bot_admin(
 #[regex(r"unlink[ -]?meetup\s+{mention_pattern}", mention_pattern)]
 #[level(admin)]
 fn unlink_meetup_bot_admin(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
@@ -286,7 +286,7 @@ fn unlink_meetup_bot_admin(
 }
 
 fn unlink_meetup_impl(
-    context: &mut super::CommandContext,
+    context: &mut super::CommandContext<'_>,
     is_bot_admin_command: bool,
     user_id: UserId,
 ) -> Result<(), lib::meetup::Error> {

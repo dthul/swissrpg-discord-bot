@@ -7,8 +7,8 @@ use std::collections::HashMap;
 #[regex(r"list\s*players")]
 #[level(host)]
 fn list_players(
-    mut context: super::CommandContext,
-    _: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Check whether this is a bot controlled channel
     let channel_roles =

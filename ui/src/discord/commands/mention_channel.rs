@@ -4,8 +4,8 @@ use command_macro::command;
 #[regex(r"mention\s*channel")]
 #[level(host)]
 fn mention_channel(
-    mut context: super::CommandContext,
-    _: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let channel_roles =
         lib::get_channel_roles(context.msg.channel_id.0, context.redis_connection()?)?;

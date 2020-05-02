@@ -3,7 +3,10 @@ use command_macro::command;
 // TODO: auto-generate the help command
 #[command]
 #[regex(r"help")]
-fn help(context: super::CommandContext, _: regex::Captures) -> Result<(), lib::meetup::Error> {
+fn help(
+    context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
+) -> Result<(), lib::meetup::Error> {
     let is_bot_admin = context.is_admin().unwrap_or(false);
     let bot_id = context.bot_id()?;
     let mut dm_result = context

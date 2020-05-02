@@ -5,8 +5,8 @@ use redis::Commands;
 #[regex(r"end\s*adventure")]
 #[level(host)]
 fn end_adventure(
-    mut context: super::CommandContext,
-    _: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // TODO: make this a macro check
     // Check whether this is a game channel

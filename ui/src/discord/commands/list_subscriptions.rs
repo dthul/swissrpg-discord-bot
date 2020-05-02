@@ -4,8 +4,8 @@ use command_macro::command;
 #[regex(r"list\s*subscriptions")]
 #[level(admin)]
 fn list_subscriptions(
-    context: super::CommandContext,
-    _: regex::Captures,
+    context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     let _ = context
         .msg

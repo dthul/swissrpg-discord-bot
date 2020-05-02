@@ -5,8 +5,8 @@ use redis::Commands;
 #[regex(r"refresh\s*meetup(-|\s*)token\s+{mention_pattern}", mention_pattern)]
 #[level(admin)]
 fn refresh_meetup_token(
-    mut context: super::CommandContext,
-    captures: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Get the mentioned Discord ID
     let discord_id = captures.name("mention_id").unwrap().as_str();

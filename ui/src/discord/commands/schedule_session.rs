@@ -5,8 +5,8 @@ use redis::Commands;
 #[regex(r"schedule\s*session")]
 #[level(host)]
 fn schedule_session(
-    mut context: super::CommandContext,
-    _: regex::Captures,
+    mut context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // TODO: make macro check
     // Check whether this is a game channel

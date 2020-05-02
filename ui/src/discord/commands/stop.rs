@@ -3,7 +3,10 @@ use command_macro::command;
 #[command]
 #[regex(r"stop")]
 #[level(admin)]
-pub fn stop(context: super::CommandContext, _: regex::Captures) -> Result<(), lib::meetup::Error> {
+pub fn stop(
+    context: super::CommandContext<'_>,
+    _: regex::Captures<'_>,
+) -> Result<(), lib::meetup::Error> {
     match std::process::Command::new("sudo")
         .args(&["systemctl", "stop", "bot"])
         .output()

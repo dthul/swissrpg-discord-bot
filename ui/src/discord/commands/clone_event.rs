@@ -4,8 +4,8 @@ use command_macro::command;
 #[regex(r"clone\s+event\s+(?P<meetup_event_id>[^\s]+)")]
 #[level(admin)]
 fn clone_event(
-    context: super::CommandContext,
-    captures: regex::Captures,
+    context: super::CommandContext<'_>,
+    captures: regex::Captures<'_>,
 ) -> Result<(), lib::meetup::Error> {
     // Get the mentioned Meetup event
     let meetup_event_id = captures.name("meetup_event_id").unwrap().as_str();
