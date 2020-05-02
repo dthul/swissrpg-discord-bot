@@ -1167,6 +1167,7 @@ impl super::bot::Handler {
                     new_event,
                     date_time,
                     meetup_event_id,
+                    false,
                 )
             });
             let new_event = lib::meetup::util::clone_event(

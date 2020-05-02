@@ -17,7 +17,6 @@ pub mod ids {
     // Test server:
     pub const GUILD_ID: GuildId = GuildId(601070848446824509);
     pub const BOT_ADMIN_ID: RoleId = RoleId(606829075226689536);
-    pub const PUBLISHER_ID: RoleId = RoleId(613769364990066699);
     pub const ORGANISER_ID: RoleId = RoleId(689914933357314090);
     pub const GAME_MASTER_ID: RoleId = RoleId(606913167439822987);
     pub const DICE_ROLLER_BOT_ID: Option<RoleId> = None;
@@ -34,7 +33,6 @@ pub mod ids {
     // SwissRPG server:
     pub const GUILD_ID: GuildId = GuildId(401856510709202945);
     pub const BOT_ADMIN_ID: RoleId = RoleId(610541498852966436);
-    pub const PUBLISHER_ID: RoleId = RoleId(611290948395073585);
     pub const ORGANISER_ID: RoleId = RoleId(539447673988841492);
     pub const GAME_MASTER_ID: RoleId = RoleId(412946716892069888);
     pub const DICE_ROLLER_BOT_ID: Option<RoleId> = Some(RoleId(600612886368223274));

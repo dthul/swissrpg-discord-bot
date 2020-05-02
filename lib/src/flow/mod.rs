@@ -46,6 +46,7 @@ impl ScheduleSessionFlow {
         meetup_client: &crate::meetup::api::AsyncClient,
         oauth2_consumer: &crate::meetup::oauth2::OAuth2Consumer,
         date_time: chrono::DateTime<chrono::Utc>,
+        is_open_event: bool,
     ) -> Result<
         (
             crate::meetup::api::Event,
@@ -72,8 +73,9 @@ impl ScheduleSessionFlow {
             }
         };
         // Clone the event
-        let new_event_hook =
-            Box::new(|new_event| Self::new_event_hook(new_event, date_time, &latest_event.id));
+        let new_event_hook = Box::new(|new_event| {
+            Self::new_event_hook(new_event, date_time, &latest_event.id, is_open_event)
+        });
         let new_event = crate::meetup::util::clone_event(
             &latest_event.urlname,
             &latest_event.id,
@@ -134,6 +136,7 @@ impl ScheduleSessionFlow {
         mut new_event: crate::meetup::api::NewEvent,
         new_date_time: chrono::DateTime<chrono::Utc>,
         old_event_id: &str,
+        is_open_event: bool,
     ) -> Result<crate::meetup::api::NewEvent, crate::meetup::Error> {
         // Remove unnecessary shortcodes from follow-up sessions
         let description = new_event.description;
@@ -148,6 +151,13 @@ impl ScheduleSessionFlow {
         let mut description = crate::meetup::sync::CHANNEL_REGEX
             .replace_all(&description, "")
             .into_owned();
+        // If this event is an "open event", make sure that there is no [closed] shortcode.
+        // (We don't add it automatically here for closed events though)
+        if is_open_event {
+            description = crate::free_spots::CLOSED_REGEX
+                .replace_all(&description, "")
+                .into_owned()
+        }
         // Add an event series shortcode if there is none yet
         if !crate::meetup::sync::EVENT_SERIES_REGEX.is_match(&description) {
             description.push_str(&format!("\n[campaign {}]", old_event_id));

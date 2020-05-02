@@ -210,6 +210,10 @@ async fn handle_schedule_session_post(
         .get("transfer_rsvps")
         .map(|value| value == "yes")
         .unwrap_or(false);
+    let is_open_game = form_data
+        .get("open_game")
+        .map(|value| value == "yes")
+        .unwrap_or(false);
     let (year, month, day, hour, minute) = match (
         form_data.get("year"),
         form_data.get("month"),
@@ -287,7 +291,12 @@ async fn handle_schedule_session_post(
         let new_event_hook = Box::new(|mut new_event: lib::meetup::api::NewEvent| {
             new_event.duration_ms = Some(1000 * 60 * duration as u64);
             new_event.published = true;
-            lib::flow::ScheduleSessionFlow::new_event_hook(new_event, date_time, &event.id)
+            lib::flow::ScheduleSessionFlow::new_event_hook(
+                new_event,
+                date_time,
+                &event.id,
+                is_open_game,
+            )
         });
         let new_event = match lib::meetup::util::clone_event(
             &event.urlname,
@@ -387,12 +396,12 @@ async fn handle_schedule_session_post(
             );
         }
         // If RSVPs were not transferred, announce the new session in the bot alerts channel
-        if !transfer_rsvps {
+        if is_open_game {
             let message = format!(
-                "<@&{publisher_id}>, a new session has been scheduled:\n{link}.\nPlease announce \
+                "<@&{organiser_id}>, a new session has been scheduled:\n{link}.\nPlease announce \
                  this session for new players to join. Don't forget to **open RSVPs** when you do \
                  that.",
-                publisher_id = lib::discord::sync::ids::PUBLISHER_ID.0,
+                organiser_id = lib::discord::sync::ids::ORGANISER_ID.0,
                 link = &new_event.link,
             );
             if let Err(err) =
