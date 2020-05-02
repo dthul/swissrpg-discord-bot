@@ -95,12 +95,11 @@ pub const WELCOME_MESSAGE: &'static str =
      friendly SwissRPG bot, here to make your life easier.
     
 There's a few things you should do in order to enjoy the SwissRPG community and games. Let me keep \
-     it short for you:
-    
-:one: Go check the <#608263283329204234> channel and read our rules and how to gain access to all \
+     it short for you: 
+:one:  Go check the <#608263283329204234> channel and read our rules and how to gain access to all \
      our channels.
-:two: Go say hi in the <#401856511233753109>.
-:three: Link with Hyperion (that's me) to gain access to the games' channels that you signed up \
+:two:  Go say hi in the <#401856511233753109>.
+:three:  Link with Hyperion (that's me) to gain access to the games' channels that you signed up \
      for. That last one is easy, just type \"link meetup\" below and I'll help you out.
     
 If you have any questions, please ask around on our server. We're happy to help. Enjoy.";
