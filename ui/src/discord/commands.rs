@@ -31,6 +31,7 @@ mod stop;
 mod sync_discord;
 mod sync_meetup;
 mod sync_subscriptions;
+mod test;
 mod whois;
 
 static ALL_COMMANDS: &[&Command] = &[
@@ -61,6 +62,7 @@ static ALL_COMMANDS: &[&Command] = &[
     &list_inactive::LIST_INACTIVE_COMMAND,
     &clone_event::CLONE_EVENT_COMMAND,
     &rsvp_user::RSVP_USER_COMMAND,
+    &test::TEST_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
