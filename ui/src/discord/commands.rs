@@ -152,7 +152,7 @@ impl<'a> CommandContext<'a> {
         }
     }
 
-    pub fn async_redis_connection<'b>(
+    pub async fn async_redis_connection<'b>(
         &'b mut self,
     ) -> Result<&'b mut redis::aio::Connection, lib::meetup::Error> {
         if self.async_redis_connection.get().is_some() {
@@ -162,8 +162,7 @@ impl<'a> CommandContext<'a> {
                 .expect("Async redis connection not set. This is a bug."))
         } else {
             let redis_client = self.redis_client()?;
-            let async_redis_connection =
-                futures::executor::block_on(async { redis_client.get_async_connection().await })?;
+            let async_redis_connection = redis_client.get_async_connection().await?;
             self.async_redis_connection
                 .set(async_redis_connection)
                 .map_err(|_| ())

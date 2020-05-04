@@ -71,7 +71,7 @@ fn link_meetup(
     let url = async_runtime.enter(|| {
         futures::executor::block_on(async {
             let user_id = context.msg.author.id.0;
-            let async_redis_connection = context.async_redis_connection()?;
+            let async_redis_connection = context.async_redis_connection().await?;
             lib::meetup::oauth2::generate_meetup_linking_link(async_redis_connection, user_id).await
         })
     })?;
