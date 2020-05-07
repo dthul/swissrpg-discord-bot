@@ -1,5 +1,5 @@
 use crate::{discord::sync::ChannelType, strings};
-use redis::Commands;
+use redis::AsyncCommands;
 use serenity::model::id::{ChannelId, RoleId, UserId};
 use simple_error::SimpleError;
 
@@ -198,9 +198,9 @@ fn update_series_channel_expiration(
     Ok(())
 }
 
-fn send_channel_expiration_reminder(
+async fn send_channel_expiration_reminder(
     channel_id: u64,
-    con: &mut redis::Connection,
+    con: &mut redis::aio::Connection,
     discord_api: &mut crate::discord::CacheAndHttp,
     bot_id: u64,
 ) -> Result<(), crate::meetup::Error> {
@@ -214,11 +214,13 @@ fn send_channel_expiration_reminder(
         Option<String>,
         Option<String>,
         Option<String>,
-    ) = con.get(&[
-        &redis_channel_expiration_key,
-        &redis_channel_snooze_key,
-        &redis_channel_reminder_time,
-    ])?;
+    ) = con
+        .get(&[
+            &redis_channel_expiration_key,
+            &redis_channel_snooze_key,
+            &redis_channel_reminder_time,
+        ])
+        .await?;
     let expiration_time = expiration_time
         .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
         .transpose()?
@@ -245,10 +247,11 @@ fn send_channel_expiration_reminder(
         }
         // Check if this is a one-shot or a campaign series
         let is_campaign = {
-            let series_id: String =
-                con.get(format!("discord_channel:{}:event_series", channel_id))?;
+            let series_id: String = con
+                .get(format!("discord_channel:{}:event_series", channel_id))
+                .await?;
             let redis_series_type_key = format!("event_series:{}:type", &series_id);
-            let series_type: Option<String> = con.get(&redis_series_type_key)?;
+            let series_type: Option<String> = con.get(&redis_series_type_key).await?;
             match series_type.as_ref().map(String::as_str) {
                 Some("campaign") => true,
                 _ => false,
@@ -271,15 +274,18 @@ fn send_channel_expiration_reminder(
         println!("Reminding channel {} of its expiration", channel_id);
         let channel_roles = crate::get_channel_roles(channel_id, con)?;
         let user_role = channel_roles.map(|roles| roles.user);
-        ChannelId(channel_id).send_message(&discord_api.http, |message_builder| {
-            if is_campaign {
-                message_builder.content(strings::END_OF_CAMPAIGN_MESSAGE(bot_id, user_role))
-            } else {
-                message_builder.content(strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role))
-            }
-        })?;
+        ChannelId(channel_id)
+            .send_message(&discord_api.http, |message_builder| {
+                if is_campaign {
+                    message_builder.content(strings::END_OF_CAMPAIGN_MESSAGE(bot_id, user_role))
+                } else {
+                    message_builder.content(strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role))
+                }
+            })
+            .await?;
         let last_reminder_time = chrono::Utc::now().to_rfc3339();
-        con.set(&redis_channel_reminder_time, last_reminder_time)?;
+        con.set(&redis_channel_reminder_time, last_reminder_time)
+            .await?;
         println!(
             "Updated channel's {} latest expiration reminder time",
             channel_id

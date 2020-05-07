@@ -82,11 +82,8 @@ async fn handle_new_subscription(
     let customer = stripe::Customer::retrieve(stripe_client, &customer.id, &[]).await?;
     if let Some(username) = customer.metadata.get("Discord") {
         // Try to find the Discord user associated with this subscription
-        let ids = lib::tasks::subscription_roles::discord_usernames_to_ids(
-            discord_api,
-            &[username.clone()],
-        )?;
-        if let Some(discord_id) = ids.first() {
+        let id = lib::tasks::subscription_roles::discord_username_to_id(discord_api, username)?;
+        if let Some(discord_id) = id {
             // TODO: might block
             let discord_user = discord_id.to_user(discord_api)?;
             let is_champion_product = product.name.as_ref().map_or(false, |name| {

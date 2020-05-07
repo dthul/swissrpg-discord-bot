@@ -30,12 +30,14 @@ pub struct ChannelRoles {
     pub host: Option<u64>,
 }
 
-pub fn get_channel_roles(
+pub async fn get_channel_roles(
     channel_id: u64,
-    redis_connection: &mut ::redis::Connection,
+    redis_connection: &mut ::redis::aio::Connection,
 ) -> Result<Option<ChannelRoles>, crate::meetup::Error> {
     // Figure out whether this is a game channel
-    let is_game_channel: bool = redis_connection.sismember("discord_channels", channel_id)?;
+    let is_game_channel: bool = redis_connection
+        .sismember("discord_channels", channel_id)
+        .await?;
     if !is_game_channel {
         return Ok(None);
     }
@@ -45,7 +47,8 @@ pub fn get_channel_roles(
     let channel_roles: ::redis::RedisResult<(Option<u64>, Option<u64>)> = ::redis::pipe()
         .get(redis_channel_role_key)
         .get(redis_channel_host_role_key)
-        .query(redis_connection);
+        .query_async(redis_connection)
+        .await;
     match channel_roles {
         Ok((Some(role), host_role)) => Ok(Some(ChannelRoles {
             user: role,

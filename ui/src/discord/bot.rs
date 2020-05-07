@@ -1,6 +1,7 @@
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use serenity::{
+    async_trait,
     model::{
         channel::Message,
         gateway::Ready,
@@ -117,6 +118,7 @@ impl TypeMapKey for PreparedCommandsKey {
 
 pub struct Handler;
 
+#[async_trait]
 impl EventHandler for Handler {
     // Set a handler for the `message` event - so that whenever a new message
     // is received - the closure (or function) passed will be called.

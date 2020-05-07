@@ -119,10 +119,11 @@ pub async fn update_roles(
     let guild = discord_api
         .cache
         .read()
+        .await
         .guild(crate::discord::sync::ids::GUILD_ID)
         .ok_or_else(|| simple_error::SimpleError::new("Did not find guild in cache"))?;
     // TODO: blocking
-    for (&user_id, member) in &guild.read().members {
+    for (&user_id, member) in &guild.read().await.members {
         let is_champion = member.roles.contains(&ids::CHAMPION_ID);
         let is_gm_champion = member.roles.contains(&ids::GM_CHAMPION_ID);
         let is_insider = member.roles.contains(&ids::INSIDER_ID);
@@ -263,9 +264,18 @@ async fn ensure_customer_has_discord_id(
         // it in the Stripe metadata.
         let discord_username = match customer.metadata.get("Discord") {
             None => return Ok(None),
-            Some(username) => username.clone(),
+            Some(username) => username,
         };
-        let discord_id = discord_usernames_to_ids(discord_api, &[discord_username])?[0];
+        let discord_id = match discord_username_to_id(discord_api, discord_username).await? {
+            Some(id) => id,
+            None => {
+                eprintln!(
+                    "Could not find Discord ID for username `{}`",
+                    discord_username
+                );
+                return Ok(None);
+            }
+        };
         // Try to store the Discord ID in Stripe.
         // Don't fail this method if it doesn't work, just log it.
         let mut new_metadata = HashMap::new();
@@ -294,49 +304,47 @@ async fn ensure_customer_has_discord_id(
 }
 
 // TODO: move to discord utils
-pub fn discord_usernames_to_ids(
+pub async fn discord_username_to_id(
     discord_api: &crate::discord::CacheAndHttp,
-    usernames: &[String],
-) -> Result<Vec<UserId>, crate::meetup::Error> {
-    let guild = match crate::discord::sync::ids::GUILD_ID.to_guild_cached(&discord_api.cache) {
+    username: &str,
+) -> Result<Option<UserId>, crate::meetup::Error> {
+    let guild = match crate::discord::sync::ids::GUILD_ID
+        .to_guild_cached(&discord_api.cache)
+        .await
+    {
         Some(guild) => guild,
         None => {
             eprintln!(
-                "discord_usernames_to_ids: Could not find a guild with ID {}",
+                "discord_username_to_id: Could not find a guild with ID {}",
                 crate::discord::sync::ids::GUILD_ID
             );
             return Err(simple_error::SimpleError::new("Guild not found").into());
         }
     };
-    let discord_ids = usernames
-        .iter()
-        .filter_map(|username| {
-            match guild.read().member_named(username).and_then(|member| {
-                // Serenity does fuzzy matching.
-                // We want to filter any results which don't match exactly.
-                if &format!(
-                    "{}#{}",
-                    member.user.read().name,
-                    member.user.read().discriminator
-                ) != username
-                {
-                    None
-                } else {
-                    Some(member)
-                }
-            }) {
-                Some(member) => Some(member.user.read().id),
-                None => {
-                    eprintln!(
-                        "Subscription roles: Could not find a Discord ID for username {}",
-                        username
-                    );
-                    None
-                }
+    let discord_id = match guild
+        .read()
+        .await
+        .member_named(username)
+        .await
+        .and_then(|member| {
+            // Serenity does fuzzy matching.
+            // We want to filter any results which don't match exactly.
+            if &format!("{}#{}", member.user.name, member.user.discriminator) != username {
+                None
+            } else {
+                Some(member)
             }
-        })
-        .collect();
-    Ok(discord_ids)
+        }) {
+        Some(member) => Some(member.user.id),
+        None => {
+            eprintln!(
+                "Subscription roles: Could not find a Discord ID for username {}",
+                username
+            );
+            None
+        }
+    };
+    Ok(discord_id)
 }
 
 // TODO: move to discord utils
@@ -345,24 +353,23 @@ pub async fn add_member_role(
     user_id: UserId,
     role_id: RoleId,
 ) -> Result<(), crate::meetup::Error> {
-    match tokio::task::spawn_blocking(move || {
-        discord_api.http().add_member_role(
-            crate::discord::sync::ids::GUILD_ID.0,
-            user_id.0,
-            role_id.0,
-        )
-    })
-    .await?
+    match discord_api
+        .http()
+        .add_member_role(crate::discord::sync::ids::GUILD_ID.0, user_id.0, role_id.0)
+        .await
     {
         Ok(_) => {
             println!("Assigned user {} to role {}", user_id.0, role_id.0);
+            Ok(())
         }
-        Err(err) => eprintln!(
-            "Could not assign user {} to role {}:\n{:#?}",
-            user_id.0, role_id.0, err
-        ),
+        Err(err) => {
+            eprintln!(
+                "Could not assign user {} to role {}:\n{:#?}",
+                user_id.0, role_id.0, err
+            );
+            Err(err.into())
+        }
     }
-    Ok(())
 }
 
 // TODO: move to discord utils
@@ -371,22 +378,21 @@ async fn remove_member_role(
     user_id: UserId,
     role_id: RoleId,
 ) -> Result<(), crate::meetup::Error> {
-    match tokio::task::spawn_blocking(move || {
-        discord_api.http().remove_member_role(
-            crate::discord::sync::ids::GUILD_ID.0,
-            user_id.0,
-            role_id.0,
-        )
-    })
-    .await?
+    match discord_api
+        .http()
+        .remove_member_role(crate::discord::sync::ids::GUILD_ID.0, user_id.0, role_id.0)
+        .await
     {
         Ok(_) => {
             println!("Removed role {} from user {}", role_id.0, user_id.0);
+            Ok(())
         }
-        Err(err) => eprintln!(
-            "Could not remove role {} from user {}:\n{:#?}",
-            role_id.0, user_id.0, err
-        ),
+        Err(err) => {
+            eprintln!(
+                "Could not remove role {} from user {}:\n{:#?}",
+                role_id.0, user_id.0, err
+            );
+            Err(err.into())
+        }
     }
-    Ok(())
 }

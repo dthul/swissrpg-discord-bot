@@ -85,10 +85,10 @@ pub async fn delete_event(
 
 // Return a list of Meetup IDs of all participants of the specified events.
 // If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
-pub fn get_events_participants(
+pub async fn get_events_participants(
     event_ids: &[&str],
     hosts: bool,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
 ) -> Result<Vec<u64>, crate::meetup::Error> {
     // Find all Meetup users RSVP'd to the specified events
     let redis_event_users_keys: Vec<_> = event_ids
@@ -103,29 +103,29 @@ pub fn get_events_participants(
         .collect();
     let (meetup_user_ids,): (Vec<u64>,) = redis::pipe()
         .sunion(redis_event_users_keys)
-        .query(redis_connection)?;
+        .query_async(redis_connection)
+        .await?;
     Ok(meetup_user_ids)
 }
 
 // Try to translate Meetup user IDs to Discord user IDs. Returns mappings from
 // the Meetup ID to a Discord ID or None if the user is not linked. The order of
 // the mapping is the same as the input order.
-pub fn meetup_to_discord_ids(
+pub async fn meetup_to_discord_ids(
     meetup_user_ids: &[u64],
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
 ) -> Result<Vec<(u64, Option<u64>)>, crate::meetup::Error> {
     // Try to associate the RSVP'd Meetup users with Discord users
-    let discord_user_ids: Result<Vec<Option<u64>>, _> = meetup_user_ids
-        .iter()
-        .map(|meetup_id| {
-            let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
-            redis_connection.get(&redis_meetup_discord_key)
-        })
-        .collect();
+    let mut discord_user_ids = Vec::with_capacity(meetup_user_ids.len());
+    for meetup_id in meetup_user_ids {
+        let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
+        let discord_id: Option<u64> = redis_connection.get(&redis_meetup_discord_key).await?;
+        discord_user_ids.push(discord_id);
+    }
     Ok(meetup_user_ids
         .iter()
         .cloned()
-        .zip(discord_user_ids?.into_iter())
+        .zip(discord_user_ids.into_iter())
         .collect())
 }
 

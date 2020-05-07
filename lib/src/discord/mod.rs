@@ -41,22 +41,22 @@ impl From<&serenity::client::Context> for CacheAndHttp {
     }
 }
 
-pub fn is_host(
+pub async fn is_host(
     discord_api: &CacheAndHttp,
     channel_id: ChannelId,
     user_id: UserId,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
 ) -> Result<bool, crate::meetup::Error> {
-    let channel =
-        if let Some(Channel::Guild(channel)) = discord_api.cache.read().channel(channel_id) {
-            channel.clone()
-        } else {
-            return Err(simple_error::SimpleError::new("Could not find this channel").into());
-        };
+    let channel = if let Some(Channel::Guild(channel)) =
+        discord_api.cache.read().await.channel(channel_id).await
+    {
+        channel
+    } else {
+        return Err(simple_error::SimpleError::new("Could not find this channel").into());
+    };
     // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
     // MENTION_EVERYONE permission are channel hosts
     let user_permission_overwrites = channel
-        .read()
         .permission_overwrites
         .iter()
         .find(|overwrite| PermissionOverwriteType::Member(user_id) == overwrite.kind)
@@ -70,15 +70,16 @@ pub fn is_host(
     });
     if !is_host {
         // Maybe the user is still on the old host roles
-        let channel_roles = crate::get_channel_roles(channel_id.0, redis_connection)?;
+        let channel_roles = crate::get_channel_roles(channel_id.0, redis_connection).await?;
         if let Some(crate::ChannelRoles {
             host: Some(host_role),
             ..
         }) = channel_roles
         {
-            let user = user_id.to_user(discord_api)?;
+            let user = user_id.to_user(discord_api).await?;
             let is_host = user
                 .has_role(discord_api, sync::ids::GUILD_ID, host_role)
+                .await
                 .unwrap_or(false);
             return Ok(is_host);
         } else {
@@ -89,7 +90,7 @@ pub fn is_host(
 }
 
 // True if permissions changed, false otherwise
-pub fn add_channel_user_permissions(
+pub async fn add_channel_user_permissions(
     discord_api: &CacheAndHttp,
     channel_id: ChannelId,
     user_id: UserId,
@@ -98,14 +99,14 @@ pub fn add_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel =
-        if let Some(Channel::Guild(channel)) = discord_api.cache.read().channel(channel_id) {
-            channel.clone()
-        } else {
-            return Err(simple_error::SimpleError::new("Could not find this channel").into());
-        };
+    let channel = if let Some(Channel::Guild(channel)) =
+        discord_api.cache.read().await.channel(channel_id).await
+    {
+        channel
+    } else {
+        return Err(simple_error::SimpleError::new("Could not find this channel").into());
+    };
     let current_permission_overwrites = channel
-        .read()
         .permission_overwrites
         .iter()
         .find(|overwrite| PermissionOverwriteType::Member(user_id) == overwrite.kind)
@@ -119,8 +120,8 @@ pub fn add_channel_user_permissions(
     new_permission_overwrites.allow |= permissions;
     if new_permission_overwrites.allow != current_permission_overwrites.allow {
         channel
-            .read()
-            .create_permission(&discord_api.http, &new_permission_overwrites)?;
+            .create_permission(&discord_api.http, &new_permission_overwrites)
+            .await?;
         Ok(true)
     } else {
         Ok(false)
@@ -128,7 +129,7 @@ pub fn add_channel_user_permissions(
 }
 
 // True if permissions changed, false otherwise
-pub fn remove_channel_user_permissions(
+pub async fn remove_channel_user_permissions(
     discord_api: &CacheAndHttp,
     channel_id: ChannelId,
     user_id: UserId,
@@ -137,14 +138,14 @@ pub fn remove_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel =
-        if let Some(Channel::Guild(channel)) = discord_api.cache.read().channel(channel_id) {
-            channel.clone()
-        } else {
-            return Err(simple_error::SimpleError::new("Could not find this channel").into());
-        };
+    let channel = if let Some(Channel::Guild(channel)) =
+        discord_api.cache.read().await.channel(channel_id).await
+    {
+        channel
+    } else {
+        return Err(simple_error::SimpleError::new("Could not find this channel").into());
+    };
     let current_permission_overwrites = channel
-        .read()
         .permission_overwrites
         .iter()
         .find(|overwrite| PermissionOverwriteType::Member(user_id) == overwrite.kind)
@@ -161,12 +162,12 @@ pub fn remove_channel_user_permissions(
             && new_permission_overwrites.deny == Permissions::empty()
         {
             channel
-                .read()
-                .delete_permission(&discord_api.http, new_permission_overwrites.kind)?;
+                .delete_permission(&discord_api.http, new_permission_overwrites.kind)
+                .await?;
         } else {
             channel
-                .read()
-                .create_permission(&discord_api.http, &new_permission_overwrites)?;
+                .create_permission(&discord_api.http, &new_permission_overwrites)
+                .await?;
         }
         Ok(true)
     } else {

@@ -1,5 +1,8 @@
+use futures::stream;
+use futures::FutureExt;
+use futures::StreamExt;
 use lazy_static::lazy_static;
-use redis::{self, Commands};
+use redis::{self, AsyncCommands};
 use serenity::{
     http::CacheHttp,
     model::{
@@ -122,45 +125,42 @@ For each event series:
   - assign the users (including hosts) the player role
   - assign the hosts the host role
 */
-fn sync_event_series(
+async fn sync_event_series(
     series_id: &str,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
     bot_id: u64,
 ) -> Result<(), crate::meetup::Error> {
     // Only sync event series that have events in the future
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
-    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
+    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key).await?;
     let event_id_refs: Vec<&str> = event_ids.iter().map(AsRef::as_ref).collect();
-    let events: Vec<_> = event_ids
-        .iter()
-        .filter_map(|event_id| {
-            let redis_event_key = format!("meetup_event:{}", event_id);
-            let tuple: redis::RedisResult<(String, String, String)> =
-                redis_connection.hget(&redis_event_key, &["time", "name", "link"]);
-            match tuple {
-                Ok((time, name, link)) => match chrono::DateTime::parse_from_rfc3339(&time) {
-                    Ok(time) => Some(Event {
-                        id: event_id.clone(),
-                        name: name,
-                        time: time.with_timezone(&chrono::Utc),
-                        link: link,
-                    }),
-                    Err(err) => {
-                        eprintln!("Error parsing event time for event {}: {}", time, err);
-                        None
-                    }
-                },
+    let mut events = Vec::with_capacity(event_ids.len());
+    for event_id in &event_ids {
+        let redis_event_key = format!("meetup_event:{}", event_id);
+        let tuple: redis::RedisResult<(String, String, String)> = redis_connection
+            .hget(&redis_event_key, &["time", "name", "link"])
+            .await;
+        match tuple {
+            Ok((time, name, link)) => match chrono::DateTime::parse_from_rfc3339(&time) {
+                Ok(time) => events.push(Event {
+                    id: event_id.clone(),
+                    name,
+                    time: time.with_timezone(&chrono::Utc),
+                    link,
+                }),
                 Err(err) => {
-                    eprintln!("Redis error when querying event time: {}", err);
-                    None
+                    eprintln!("Error parsing event time for event {}: {}", time, err);
                 }
+            },
+            Err(err) => {
+                eprintln!("Redis error when querying event time: {}", err);
             }
-        })
-        .collect();
+        }
+    }
     // Upgrade this event series to a campaign if there is more than one event
     let redis_series_type_key = format!("event_series:{}:type", series_id);
-    let current_series_type: Option<String> = redis_connection.get(&redis_series_type_key)?;
+    let current_series_type: Option<String> = redis_connection.get(&redis_series_type_key).await?;
     if event_ids.len() > 1 {
         let needs_update = if let Some(current_series_type) = current_series_type {
             current_series_type != "campaign"
@@ -168,7 +168,9 @@ fn sync_event_series(
             true
         };
         if needs_update {
-            let _: () = redis_connection.set(&redis_series_type_key, "campaign")?;
+            let _: () = redis_connection
+                .set(&redis_series_type_key, "campaign")
+                .await?;
         }
     }
     // Filter past events
@@ -193,7 +195,7 @@ fn sync_event_series(
     let event_name = &next_event.name;
     // Check whether this is an online event series
     let redis_series_is_online_key = format!("event_series:{}:is_online", &series_id);
-    let is_online: Option<String> = redis_connection.get(&redis_series_is_online_key)?;
+    let is_online: Option<String> = redis_connection.get(&redis_series_is_online_key).await?;
     let is_online = is_online.map(|v| v == "true").unwrap_or(false);
 
     // Figure out the title of this event series
@@ -220,15 +222,18 @@ fn sync_event_series(
         &event_id_refs,
         /*hosts*/ false,
         redis_connection,
-    )?;
+    )
+    .await?;
     let meetup_host_ids = crate::redis::get_events_participants(
         &event_id_refs,
         /*hosts*/ true,
         redis_connection,
-    )?;
+    )
+    .await?;
     let discord_guest_ids =
-        crate::redis::meetup_to_discord_ids(&meetup_guest_ids, redis_connection)?;
-    let discord_host_ids = crate::redis::meetup_to_discord_ids(&meetup_host_ids, redis_connection)?;
+        crate::redis::meetup_to_discord_ids(&meetup_guest_ids, redis_connection).await?;
+    let discord_host_ids =
+        crate::redis::meetup_to_discord_ids(&meetup_host_ids, redis_connection).await?;
     // Filter the None values
     let discord_guest_ids: Vec<_> = discord_guest_ids
         .into_iter()
@@ -240,22 +245,24 @@ fn sync_event_series(
         .collect();
 
     // Step 0: Make sure that event hosts have the guild's game master role
-    sync_game_master_role(series_id, redis_connection, discord_api)?;
+    sync_game_master_role(series_id, redis_connection, discord_api).await?;
     // Convert host IDs to user objects
-    let discord_hosts: Vec<_> = discord_host_ids
-        .iter()
-        .map(|&host_id| UserId(host_id).to_user(discord_api))
-        .filter_map(|res| match res {
-            Ok(user) => Some(user),
-            Err(err) => {
-                eprintln!(
-                    "Error converting Discord host ID to Discord user object: {}",
-                    err
-                );
-                None
+    let discord_hosts: Vec<_> = stream::iter(&discord_host_ids)
+        .then(|&host_id| UserId(host_id).to_user(discord_api))
+        .filter_map(|res| async {
+            match res {
+                Ok(user) => Some(user),
+                Err(err) => {
+                    eprintln!(
+                        "Error converting Discord host ID to Discord user object: {}",
+                        err
+                    );
+                    None
+                }
             }
         })
-        .collect();
+        .collect()
+        .await;
     // Step 1: Sync the channel
     let channel_id = sync_channel(
         ChannelType::Text,
@@ -264,7 +271,8 @@ fn sync_event_series(
         bot_id,
         redis_connection,
         discord_api,
-    )?;
+    )
+    .await?;
     // Step 2: Sync the channel's associated role
     let guest_tag = if discord_hosts.is_empty() {
         "Player".to_string()
@@ -306,7 +314,8 @@ fn sync_event_series(
             bot_id,
             redis_connection,
             discord_api,
-        )?;
+        )
+        .await?;
         sync_channel_permissions(
             voice_channel_id,
             ChannelType::Voice,
@@ -352,7 +361,7 @@ fn sync_role(
     role_name: &str,
     is_host_role: bool,
     channel_id: ChannelId,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
     let max_retries = 1;
@@ -530,16 +539,16 @@ pub(crate) enum ChannelType {
     Voice,
 }
 
-fn sync_channel(
+async fn sync_channel(
     channel_type: ChannelType,
     channel_name: &str,
     event_series_id: &str,
     bot_id: u64,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<ChannelId, crate::meetup::Error> {
-    let max_retries = 1;
-    let mut current_num_try = 0;
+    let max_retries: u32 = 1;
+    let mut current_num_try: u32 = 0;
     loop {
         if current_num_try > max_retries {
             return Err(SimpleError::new("Channel sync failed, max retries reached").into());
@@ -552,9 +561,10 @@ fn sync_channel(
             bot_id,
             redis_connection,
             discord_api,
-        )?;
+        )
+        .await?;
         // Make sure that the channel ID that was returned actually exists on Discord
-        let channel_exists = match channel.to_channel(discord_api) {
+        let channel_exists = match channel.to_channel(discord_api).await {
             Ok(_) => true,
             Err(err) => {
                 if let serenity::Error::Http(http_err) = &err {
@@ -591,24 +601,30 @@ fn sync_channel(
                     format!("event_series:{}:discord_voice_channel", event_series_id)
                 }
             };
-            redis::transaction(
+            crate::redis::async_redis_transaction(
                 redis_connection,
                 &[&redis_series_channel_key],
                 |con, pipe| {
-                    let current_channel: Option<u64> = con.get(&redis_series_channel_key)?;
-                    if current_channel == Some(channel.0) {
-                        // Remove the broken channel from Redis
-                        pipe.del(&redis_series_channel_key)
-                            .del(&redis_channel_series_key)
-                            .srem(redis_discord_channels_key, channel.0)
-                            .query(con)
-                    } else {
-                        // It seems like the channel changed in the meantime
-                        // Don't remove it and retry the loop instead
-                        pipe.query(con)
+                    async {
+                        let current_channel: Option<u64> =
+                            con.get(&redis_series_channel_key).await?;
+                        if current_channel == Some(channel.0) {
+                            // Remove the broken channel from Redis
+                            pipe.del(&redis_series_channel_key)
+                                .del(&redis_channel_series_key)
+                                .srem(redis_discord_channels_key, channel.0)
+                                .query_async(con)
+                                .await
+                        } else {
+                            // It seems like the channel changed in the meantime
+                            // Don't remove it and retry the loop instead
+                            pipe.query_async(con).await
+                        }
                     }
+                    .boxed()
                 },
-            )?;
+            )
+            .await?;
             continue;
         } else {
             // The channel exists on Discord, so everything is good
@@ -617,12 +633,12 @@ fn sync_channel(
     }
 }
 
-fn sync_channel_impl(
+async fn sync_channel_impl(
     channel_type: ChannelType,
     channel_name: &str,
     event_series_id: &str,
     bot_id: u64,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<ChannelId, crate::meetup::Error> {
     let redis_series_channel_key = match channel_type {
@@ -631,7 +647,7 @@ fn sync_channel_impl(
     };
     // Check if the channel already exists
     {
-        let channel: Option<u64> = redis_connection.get(&redis_series_channel_key)?;
+        let channel: Option<u64> = redis_connection.get(&redis_series_channel_key).await?;
         if let Some(channel) = channel {
             // The channel already exists
             return Ok(ChannelId(channel));
@@ -666,19 +682,21 @@ fn sync_channel_impl(
             },
         ],
     };
-    let temp_channel = GUILD_ID.create_channel(discord_api.http(), |channel_builder| {
-        let kind = match channel_type {
-            ChannelType::Text => serenity::model::channel::ChannelType::Text,
-            ChannelType::Voice => serenity::model::channel::ChannelType::Voice,
-        };
-        if channel_type == ChannelType::Voice {
-            channel_builder.category(VOICE_CHANNELS_CATEGORY_ID);
-        }
-        channel_builder
-            .name(channel_name)
-            .kind(kind)
-            .permissions(permission_overwrites)
-    })?;
+    let temp_channel = GUILD_ID
+        .create_channel(discord_api.http(), |channel_builder| {
+            let kind = match channel_type {
+                ChannelType::Text => serenity::model::channel::ChannelType::Text,
+                ChannelType::Voice => serenity::model::channel::ChannelType::Voice,
+            };
+            if channel_type == ChannelType::Voice {
+                channel_builder.category(VOICE_CHANNELS_CATEGORY_ID);
+            }
+            channel_builder
+                .name(channel_name)
+                .kind(kind)
+                .permissions(permission_overwrites)
+        })
+        .await?;
     println!(
         "Discord event sync: created new temporary channel {} \"{}\"",
         temp_channel.id.0, &temp_channel.name
@@ -691,27 +709,33 @@ fn sync_channel_impl(
         ChannelType::Text => format!("discord_channel:{}:event_series", temp_channel.id.0),
         ChannelType::Voice => format!("discord_voice_channel:{}:event_series", temp_channel.id.0),
     };
-    let channel: redis::RedisResult<(u64,)> = redis::transaction(
+    let channel: redis::RedisResult<(u64,)> = crate::redis::async_redis_transaction(
         redis_connection,
         &[&redis_series_channel_key],
         |con, pipe| {
-            let channel: Option<u64> = con.get(&redis_series_channel_key)?;
-            if channel.is_some() {
-                // Some channel already exists in Redis -> return it
-                pipe.get(&redis_series_channel_key).query(con)
-            } else {
-                // Persist the new channel to Redis
-                pipe.sadd(redis_discord_channels_key, temp_channel.id.0)
-                    .ignore()
-                    .set(&redis_series_channel_key, temp_channel.id.0)
-                    .ignore()
-                    .set(&redis_channel_series_key, event_series_id)
-                    .ignore()
-                    .get(&redis_series_channel_key)
-                    .query(con)
+            let event_series_id = event_series_id.to_string();
+            async {
+                let channel: Option<u64> = con.get(&redis_series_channel_key).await?;
+                if channel.is_some() {
+                    // Some channel already exists in Redis -> return it
+                    pipe.get(&redis_series_channel_key).query_async(con).await
+                } else {
+                    // Persist the new channel to Redis
+                    pipe.sadd(redis_discord_channels_key, temp_channel.id.0)
+                        .ignore()
+                        .set(&redis_series_channel_key, temp_channel.id.0)
+                        .ignore()
+                        .set(&redis_channel_series_key, event_series_id)
+                        .ignore()
+                        .get(&redis_series_channel_key)
+                        .query_async(con)
+                        .await
+                }
             }
+            .boxed()
         },
-    );
+    )
+    .await;
     // In case the Redis transaction failed or the channel ID returned by Redis
     // doesn't match the newly created channel, delete it
     let delete_temp_channel = match channel {
@@ -720,7 +744,7 @@ fn sync_channel_impl(
     };
     if delete_temp_channel {
         println!("Trying to delete temporary channel");
-        match discord_api.http().delete_channel(temp_channel.id.0) {
+        match discord_api.http().delete_channel(temp_channel.id.0).await {
             Ok(_) => println!("Successfully deleted temporary channel"),
             Err(_) => {
                 eprintln!("Could not delete temporary channel {}", temp_channel.id.0);
@@ -729,7 +753,10 @@ fn sync_channel_impl(
                     ChannelType::Text => "orphaned_discord_channels",
                     ChannelType::Voice => "orphaned_discord_voice_channels",
                 };
-                match redis_connection.sadd(redis_orphaned_channels_key, temp_channel.id.0) {
+                match redis_connection
+                    .sadd(redis_orphaned_channels_key, temp_channel.id.0)
+                    .await
+                {
                     Err(_) => eprintln!("Could not record orphaned channel {}", temp_channel.id.0),
                     Ok(()) => println!("Recorded orphaned channel {}", temp_channel.id.0),
                 }
@@ -858,7 +885,7 @@ fn sync_role_assignments_permissions(
     channel_id: ChannelId,
     voice_channel_id: Option<ChannelId>,
     user_role: RoleId,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // Check whether any users have manually removed roles and don't add them back
@@ -985,14 +1012,14 @@ fn sync_role_assignments_permissions(
     Ok(())
 }
 
-fn sync_game_master_role(
+async fn sync_game_master_role(
     event_series_id: &str,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // First, find all events belonging to this event series
     let redis_series_events_key = format!("event_series:{}:meetup_events", &event_series_id);
-    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key)?;
+    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key).await?;
     if event_ids.is_empty() {
         return Ok(());
     }
@@ -1003,7 +1030,8 @@ fn sync_game_master_role(
         .collect();
     let (meetup_host_ids,): (Vec<u64>,) = redis::pipe()
         .sunion(redis_event_hosts_keys)
-        .query(redis_connection)?;
+        .query_async(redis_connection)
+        .await?;
     // Now, try to associate the hosts with Discord users
     let redis_meetup_host_discord_keys: Vec<_> = meetup_host_ids
         .into_iter()
@@ -1011,20 +1039,21 @@ fn sync_game_master_role(
         .collect();
     let discord_host_ids: Vec<Option<u64>> = redis::cmd("MGET")
         .arg(redis_meetup_host_discord_keys)
-        .query(redis_connection)?;
+        .query_async(redis_connection)
+        .await?;
     // Filter the None values
     let discord_host_ids: Vec<_> = discord_host_ids.into_iter().filter_map(|id| id).collect();
     // Lastly, actually assign the Game Master role to the hosts
     for host_id in discord_host_ids {
-        match UserId(host_id).to_user(discord_api) {
-            Ok(user) => match user.has_role(discord_api, GUILD_ID, GAME_MASTER_ID) {
+        match UserId(host_id).to_user(discord_api).await {
+            Ok(user) => match user.has_role(discord_api, GUILD_ID, GAME_MASTER_ID).await {
                 Ok(has_role) => {
                     if !has_role {
-                        match discord_api.http().add_member_role(
-                            GUILD_ID.0,
-                            host_id,
-                            GAME_MASTER_ID.0,
-                        ) {
+                        match discord_api
+                            .http()
+                            .add_member_role(GUILD_ID.0, host_id, GAME_MASTER_ID.0)
+                            .await
+                        {
                             Ok(_) => println!("Assigned user {} to the game master role", host_id),
                             Err(err) => eprintln!(
                                 "Could not assign user {} to the game master role: {}",
@@ -1048,7 +1077,7 @@ fn sync_channel_topic_and_category(
     series_id: &str,
     channel_id: ChannelId,
     next_event: &Event,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // Sync the topic and the category

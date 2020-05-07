@@ -246,9 +246,9 @@ impl<'a> CommandContext<'a> {
             .map(|id| *id)
     }
 
-    pub fn channel<'b>(&'b self) -> Result<&'b Channel, lib::meetup::Error> {
+    pub async fn channel(&self) -> Result<Channel, lib::meetup::Error> {
         self.channel
-            .get_or_try_init(|| Ok(self.msg.channel_id.to_channel(self.ctx)?))
+            .get_or_try_init(|| Ok(self.msg.channel_id.to_channel(self.ctx).await?))
     }
 
     pub fn is_dm(&self) -> Result<bool, lib::meetup::Error> {

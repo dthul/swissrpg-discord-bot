@@ -14,11 +14,11 @@ pub fn create_routes(
             .and_then(move |discord_username: String| {
                 let discord_cache_http = discord_cache_http.clone();
                 async move {
-                    let ids = lib::tasks::subscription_roles::discord_usernames_to_ids(
+                    let id = lib::tasks::subscription_roles::discord_username_to_id(
                         &discord_cache_http,
-                        &[discord_username],
+                        &discord_username,
                     )?;
-                    if ids.is_empty() {
+                    if id.is_none() {
                         // The username seems to be invalid, return a 204 HTTP code
                         Ok::<_, warp::Rejection>(warp::http::StatusCode::NO_CONTENT)
                     } else {
