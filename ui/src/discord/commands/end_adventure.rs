@@ -4,6 +4,10 @@ use redis::Commands;
 #[command]
 #[regex(r"end\s*adventure")]
 #[level(host)]
+#[help(
+    "end adventure",
+    "sets the channel for closure at the end of an adventure. The channel won't be deleted immediately but within 24 hours."
+)]
 fn end_adventure(
     mut context: super::CommandContext<'_>,
     _: regex::Captures<'_>,

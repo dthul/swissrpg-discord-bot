@@ -85,7 +85,12 @@ pub(crate) struct Command {
     pub regex: fn(&RegexParts<'_>) -> String,
     pub level: CommandLevel,
     pub fun: fn(CommandContext<'_>, regex::Captures<'_>) -> Result<(), lib::meetup::Error>,
-    pub help: Option<&'static str>,
+    pub help: &'static [HelpEntry],
+}
+
+pub(crate) struct HelpEntry {
+    pub command: &'static str,
+    pub explanation: &'static str,
 }
 
 pub struct CommandContext<'a> {

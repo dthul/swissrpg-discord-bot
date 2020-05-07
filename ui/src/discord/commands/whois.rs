@@ -10,6 +10,18 @@ use serenity::model::id::UserId;
     meetup_id_pattern
 )]
 #[level(admin)]
+#[help(
+    "whois @some-discord-user",
+    "_(needs proper mention)_ shows the Meetup profile of the mentioned Discord user"
+)]
+#[help(
+    "whois some-discord-username#1234",
+    "_(no mention)_ shows the Meetup profile of the mentioned Discord user"
+)]
+#[help(
+    "whois meetup-ID",
+    "shows the Discord user linked to the provided Meetup profile"
+)]
 fn whois(
     mut context: super::CommandContext<'_>,
     captures: regex::Captures<'_>,

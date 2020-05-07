@@ -33,60 +33,10 @@ pub fn HELP_MESSAGE_INTRO(bot_id: u64) -> String {
 
 pub const HELP_MESSAGE_ADMIN_EMBED_TITLE: &'static str = "**Admin commands**";
 
-#[allow(non_snake_case)]
-pub fn HELP_MESSAGE_ADMIN_EMBED_CONTENT(bot_id: u64) -> String {
-    format!(
-        ":white_small_square: **link meetup `@some-user` `meetup-ID`** - link another user's \
-         Meetup and Discord profile.
-:white_small_square: **link meetup `@some-user`** - unlink another user's Meetup and Discord \
-         profile.
-:white_small_square: **<@{bot_id}> manage channel** - Enable the `[add|remove] user` and \
-         `[add|remove] host` command for this channel.
-:white_small_square: **<@{bot_id}> add host `@some-user`** - _(in game channel or managed \
-         channel)_ makes a user an additional Host. _(Desktop only)_
-:white_small_square: **<@{bot_id}> remove host `@some-user`** - _(in game channel or managed \
-         channel)_ makes a user no longer a Host.
-:white_small_square: **<@{bot_id}> add `@some-user`** - _(in game channel or managed channel)_ \
-         adds a user to the channel.
-:white_small_square: **<@{bot_id}> remove `@some-user`** - _(in game channel or managed channel)_ \
-         removes a user from the channel.
-:white_small_square: **<@{bot_id}> whois @some-discord-user** - _(needs proper mention)_ shows the \
-         Meetup profile of the mentioned Discord user
-:white_small_square: **<@{bot_id}> whois some-discord-username#1234** - _(no mention)_ shows the \
-         Meetup profile of the mentioned Discord user
-:white_small_square: **<@{bot_id}> whois meetup-ID** - shows the Discord user linked to the \
-         provided Meetup profile
-:white_small_square: **<@{bot_id}> snooze _X_ days** - _(in game channel)_ snoozes reminders for \
-         _X_ days",
-        bot_id = bot_id
-    )
-}
-
 pub const HELP_MESSAGE_GM_EMBED_TITLE: &'static str =
     "**Game Master commands** _(use in game channel)_";
 
-#[allow(non_snake_case)]
-pub fn HELP_MESSAGE_GM_EMBED_CONTENT(bot_id: u64) -> String {
-    format!(
-        ":white_small_square: **<@{bot_id}> remove `@some-user`** - removes a user from the \
-         channel.
-:white_small_square: **<@{bot_id}> end adventure** - sets the channel for closure at the end of an \
-         adventure. The channel won't be deleted immediately but within 24 hours.
-:white_small_square: **<@{bot_id}> schedule session** - allows you to schedule a new session for \
-         your adventure.
-:white_small_square: **<@{bot_id}> list players** - shows information about people in this channel \
-         and people signed up for this channel's events on Meetup.",
-        bot_id = bot_id
-    )
-}
-
 pub const HELP_MESSAGE_PLAYER_EMBED_TITLE: &'static str = "**Player commands**";
-
-pub const HELP_MESSAGE_PLAYER_EMBED_CONTENT: &'static str =
-    ":white_small_square: **help** - do I really need to explain this one?
-:white_small_square: **link meetup** - starts the process to link your Meetup and Discord \
-     profiles. If you haven't yet, you should really do that now.
-:white_small_square: **unlink meetup** - unlinks your Meetup and Discord profiles.";
 
 // ** Welcome messages **
 

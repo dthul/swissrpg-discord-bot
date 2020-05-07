@@ -6,6 +6,10 @@ use std::collections::HashMap;
 #[command]
 #[regex(r"list\s*players")]
 #[level(host)]
+#[help(
+    "list players",
+    "shows information about people in this channel and people signed up for this channel's events on Meetup."
+)]
 fn list_players(
     mut context: super::CommandContext<'_>,
     _: regex::Captures<'_>,

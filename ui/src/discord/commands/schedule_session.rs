@@ -4,6 +4,10 @@ use redis::Commands;
 #[command]
 #[regex(r"schedule\s*session")]
 #[level(host)]
+#[help(
+    "schedule session",
+    "allows you to schedule a new session for your adventure."
+)]
 fn schedule_session(
     mut context: super::CommandContext<'_>,
     _: regex::Captures<'_>,

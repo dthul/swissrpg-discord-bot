@@ -4,6 +4,10 @@ use redis::Commands;
 #[command]
 #[regex(r"snooze\s+(?P<num_days>[0-9]+)\s*d(ay)?s?")]
 #[level(admin)]
+#[help(
+    "snooze _X_ days",
+    "_(in game channel)_ snoozes reminders for _X_ days"
+)]
 fn snooze(
     mut context: super::CommandContext<'_>,
     captures: regex::Captures<'_>,

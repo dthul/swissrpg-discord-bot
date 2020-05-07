@@ -5,6 +5,7 @@ use std::borrow::Cow;
 
 #[command]
 #[regex(r"link[ -]?meetup")]
+#[help("link meetup", "starts the process to link your Meetup and Discord profiles. If you haven't yet, you should really do that now.")]
 fn link_meetup(
     mut context: super::CommandContext<'_>,
     _: regex::Captures<'_>,
@@ -96,6 +97,7 @@ fn link_meetup(
 
 #[command]
 #[regex(r"unlink[ -]?meetup")]
+#[help("unlink meetup", "unlinks your Meetup and Discord profiles.")]
 fn unlink_meetup(
     mut context: super::CommandContext<'_>,
     _: regex::Captures<'_>,
@@ -110,6 +112,10 @@ fn unlink_meetup(
     mention_pattern
 )]
 #[level(admin)]
+#[help(
+    "link meetup `@some-user` `meetup-ID`",
+    "link another user's Meetup and Discord profile."
+)]
 fn link_meetup_bot_admin(
     mut context: super::CommandContext<'_>,
     captures: regex::Captures<'_>,
@@ -266,6 +272,10 @@ fn link_meetup_bot_admin(
 #[command]
 #[regex(r"unlink[ -]?meetup\s+{mention_pattern}", mention_pattern)]
 #[level(admin)]
+#[help(
+    "unlink meetup `@some-user`",
+    "unlink another user's Meetup and Discord profile."
+)]
 fn unlink_meetup_bot_admin(
     mut context: super::CommandContext<'_>,
     captures: regex::Captures<'_>,

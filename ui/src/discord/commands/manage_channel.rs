@@ -8,6 +8,10 @@ use serenity::model::{
 #[command]
 #[regex(r"manage\s*channel")]
 #[level(admin)]
+#[help(
+    "manage channel",
+    "Enable the `[add|remove] user` and `[add|remove] host` commands for this channel."
+)]
 fn manage_channel(
     mut context: super::CommandContext<'_>,
     _: regex::Captures<'_>,

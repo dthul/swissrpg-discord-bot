@@ -6,6 +6,10 @@ use serenity::model::{channel::PermissionOverwriteType, id::UserId, permissions:
 #[command]
 #[regex(r"add\s+{mention_pattern}", mention_pattern)]
 #[level(host)]
+#[help(
+    "add `@some-user`",
+    "_(in game channel or managed channel)_ adds a user to the channel."
+)]
 fn add_user(
     mut context: super::CommandContext<'_>,
     captures: regex::Captures<'_>,
@@ -35,6 +39,10 @@ fn add_user(
 #[command]
 #[regex(r"add\s*host\s+{mention_pattern}", mention_pattern)]
 #[level(host)]
+#[help(
+    "add host `@some-user`",
+    "_(in game channel or managed channel)_ makes a user an additional Host. _(Desktop only)_"
+)]
 fn add_host(
     mut context: super::CommandContext<'_>,
     captures: regex::Captures<'_>,
@@ -64,6 +72,10 @@ fn add_host(
 #[command]
 #[regex(r"remove\s+{mention_pattern}", mention_pattern)]
 #[level(host)]
+#[help(
+    "remove `@some-user`",
+    "_(in game channel or managed channel)_ removes a user from the channel."
+)]
 fn remove_user(
     mut context: super::CommandContext<'_>,
     captures: regex::Captures<'_>,
@@ -93,6 +105,10 @@ fn remove_user(
 #[command]
 #[regex(r"remove\s*host\s+{mention_pattern}", mention_pattern)]
 #[level(host)]
+#[help(
+    "remove host `@some-user`",
+    "_(in game channel or managed channel)_ makes a user no longer a Host."
+)]
 fn remove_host(
     mut context: super::CommandContext<'_>,
     captures: regex::Captures<'_>,
