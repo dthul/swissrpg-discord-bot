@@ -4,7 +4,7 @@ use serenity::model::id::UserId;
 
 #[command]
 #[regex(
-    r"whois\s+{mention_pattern}|{username_tag_pattern}|{meetup_id_pattern}",
+    r"whois\s+(?:{mention_pattern}|{username_tag_pattern}|{meetup_id_pattern})",
     mention_pattern,
     username_tag_pattern,
     meetup_id_pattern
