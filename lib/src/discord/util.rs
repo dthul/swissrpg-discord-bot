@@ -37,13 +37,14 @@ pub async fn say_in_event_channel(
     Ok(())
 }
 
-pub fn say_in_bot_alerts_channel(
+pub async fn say_in_bot_alerts_channel(
     message: &str,
     discord_cache_http: &super::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
     if let Some(channel_id) = super::sync::ids::BOT_ALERTS_CHANNEL_ID {
         channel_id
             .say(&discord_cache_http.http, message)
+            .await
             .map(|_| ())
             .map_err(|err| err.into())
     } else {

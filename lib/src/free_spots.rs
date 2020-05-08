@@ -187,15 +187,17 @@ impl EventCollector {
         self.events.push((event.clone(), num_free_spots));
     }
 
-    pub fn update_channel(
+    pub async fn update_channel(
         &self,
         discord_api: &crate::discord::CacheAndHttp,
         channel_id: ChannelId,
         static_file_prefix: &str,
     ) -> Result<(), crate::meetup::Error> {
-        let mut latest_messages = channel_id.messages(&discord_api.http, |query| {
-            query.limit(2 * ALL_LOCATIONS.len() as u64)
-        })?;
+        let mut latest_messages = channel_id
+            .messages(&discord_api.http, |query| {
+                query.limit(2 * ALL_LOCATIONS.len() as u64)
+            })
+            .await?;
         let localized_events = self.localized_events();
         for location in ALL_LOCATIONS {
             let events: &[(Event, u16)] = localized_events
@@ -214,18 +216,22 @@ impl EventCollector {
             });
             if let Some(message) = location_message {
                 // Edit the existing message
-                message.edit(discord_api, |message| {
-                    message.embed(|embed| {
-                        Self::build_embed(static_file_prefix, *location, events, embed)
+                message
+                    .edit(discord_api, |message| {
+                        message.embed(|embed| {
+                            Self::build_embed(static_file_prefix, *location, events, embed)
+                        })
                     })
-                })?;
+                    .await?;
             } else {
                 // Post a new message
-                channel_id.send_message(&discord_api.http, |message| {
-                    message.embed(|embed| {
-                        Self::build_embed(static_file_prefix, *location, events, embed)
+                channel_id
+                    .send_message(&discord_api.http, |message| {
+                        message.embed(|embed| {
+                            Self::build_embed(static_file_prefix, *location, events, embed)
+                        })
                     })
-                })?;
+                    .await?;
             }
         }
         Ok(())

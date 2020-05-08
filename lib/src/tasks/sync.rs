@@ -54,8 +54,9 @@ pub async fn create_recurring_syncing_task(
             drop(guard);
             // Finally, update Discord with the information on open spots.
             if let Some(channel_id) = crate::discord::sync::ids::FREE_SPOTS_CHANNEL_ID {
-                if let Err(err) =
-                    event_collector.update_channel(&discord_api, channel_id, static_file_prefix)
+                if let Err(err) = event_collector
+                    .update_channel(&discord_api, channel_id, static_file_prefix)
+                    .await
                 {
                     eprintln!("Error when posting open game spots:\n{:#?}", err);
                 }

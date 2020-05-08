@@ -98,14 +98,15 @@ pub async fn get_channel_roles_async(
     }
 }
 
-pub fn get_event_series_roles(
+pub async fn get_event_series_roles(
     event_series_id: &str,
-    redis_connection: &mut ::redis::Connection,
+    redis_connection: &mut ::redis::aio::Connection,
 ) -> Result<Option<ChannelRoles>, crate::meetup::Error> {
-    let discord_channel: Option<u64> =
-        redis_connection.get(format!("event_series:{}:discord_channel", event_series_id))?;
+    let discord_channel: Option<u64> = redis_connection
+        .get(format!("event_series:{}:discord_channel", event_series_id))
+        .await?;
     if let Some(discord_channel) = discord_channel {
-        get_channel_roles(discord_channel, redis_connection)
+        get_channel_roles(discord_channel, redis_connection).await
     } else {
         Ok(None)
     }

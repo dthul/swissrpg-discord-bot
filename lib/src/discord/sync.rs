@@ -89,17 +89,16 @@ pub fn create_sync_discord_task(
     }
 }
 
-pub fn sync_discord(
-    redis_client: &redis::Client,
+pub async fn sync_discord(
+    con: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
     bot_id: u64,
 ) -> Result<(), crate::meetup::Error> {
     let redis_series_key = "event_series";
-    let mut con = redis_client.get_connection()?;
-    let event_series: Vec<String> = con.smembers(redis_series_key)?;
+    let event_series: Vec<String> = con.smembers(redis_series_key).await?;
     let mut some_failed = false;
     for series in &event_series {
-        if let Err(err) = sync_event_series(series, &mut con, discord_api, bot_id) {
+        if let Err(err) = sync_event_series(series, con, discord_api, bot_id).await {
             some_failed = true;
             eprintln!("Discord event series syncing task failed: {}", err);
         }
@@ -286,7 +285,8 @@ async fn sync_event_series(
         channel_id,
         redis_connection,
         discord_api,
-    )?;
+    )
+    .await?;
     // Step 3: Sync the channel's associated host role
     // let host_role_name = format!("[Host] {}", series_name);
     // let channel_host_role_id = sync_role(
@@ -357,15 +357,15 @@ async fn sync_event_series(
     Ok(())
 }
 
-fn sync_role(
+async fn sync_role(
     role_name: &str,
     is_host_role: bool,
     channel_id: ChannelId,
     redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
-    let max_retries = 1;
-    let mut current_num_try = 0;
+    let max_retries: u32 = 1;
+    let mut current_num_try: u32 = 0;
     loop {
         if current_num_try > max_retries {
             return Err(SimpleError::new("Role sync failed, max retries reached").into());
@@ -377,18 +377,19 @@ fn sync_role(
             channel_id,
             redis_connection,
             discord_api,
-        )?;
+        )
+        .await?;
         // Make sure that the role ID that was returned actually exists on Discord
         // First, check the cache
-        let role_exists = match GUILD_ID.to_guild_cached(&discord_api.cache) {
-            Some(guild) => guild.read().roles.contains_key(&role),
+        let role_exists = match GUILD_ID.to_guild_cached(&discord_api.cache).await {
+            Some(guild) => guild.read().await.roles.contains_key(&role),
             None => false,
         };
         // If it was not in the cache, check Discord
         let role_exists = if role_exists {
             true
         } else {
-            let guild_roles = discord_api.http().get_guild_roles(GUILD_ID.0)?;
+            let guild_roles = discord_api.http().get_guild_roles(GUILD_ID.0).await?;
             guild_roles
                 .iter()
                 .any(|guild_role| guild_role.id.0 == role.0)
@@ -433,11 +434,11 @@ fn sync_role(
     }
 }
 
-fn sync_role_impl(
+async fn sync_role_impl(
     role_name: &str,
     is_host_role: bool,
     channel_id: ChannelId,
-    redis_connection: &mut redis::Connection,
+    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
     let redis_channel_role_key = if is_host_role {
@@ -447,19 +448,21 @@ fn sync_role_impl(
     };
     // Check if the role already exists
     {
-        let channel_role: Option<u64> = redis_connection.get(&redis_channel_role_key)?;
+        let channel_role: Option<u64> = redis_connection.get(&redis_channel_role_key).await?;
         if let Some(channel_role) = channel_role {
             // The role already exists
             return Ok(RoleId(channel_role));
         }
     }
     // The role doesn't exist yet -> try to create it
-    let temp_channel_role = GUILD_ID.create_role(discord_api.http(), |role_builder| {
-        role_builder
-            .name(role_name)
-            .colour(serenity::utils::Colour::BLUE.0 as u64)
-            .permissions(Permissions::empty())
-    })?;
+    let temp_channel_role = GUILD_ID
+        .create_role(discord_api.http(), |role_builder| {
+            role_builder
+                .name(role_name)
+                .colour(serenity::utils::Colour::BLUE.0 as u64)
+                .permissions(Permissions::empty())
+        })
+        .await?;
     println!(
         "Discord event sync: created new temporary channel role {} \"{}\"",
         temp_channel_role.id.0, &temp_channel_role.name
@@ -479,7 +482,7 @@ fn sync_role_impl(
     };
     let channel_role: redis::RedisResult<(u64,)> =
         redis::transaction(redis_connection, &[&redis_channel_role_key], |con, pipe| {
-            let channel_role: Option<u64> = con.get(&redis_channel_role_key)?;
+            let channel_role: Option<u64> = con.get(&redis_channel_role_key).await?;
             if channel_role.is_some() {
                 // Some role already exists in Redis -> return it
                 pipe.get(&redis_channel_role_key).query(con)
@@ -506,6 +509,7 @@ fn sync_role_impl(
         match discord_api
             .http()
             .delete_role(GUILD_ID.0, temp_channel_role.id.0)
+            .await
         {
             Ok(_) => println!("Successfully deleted temporary channel role"),
             Err(_) => {
@@ -514,7 +518,10 @@ fn sync_role_impl(
                     temp_channel_role.id.0
                 );
                 // Try to persist the information to Redis that we have an orphaned role now
-                match redis_connection.sadd("orphaned_discord_roles", temp_channel_role.id.0) {
+                match redis_connection
+                    .sadd("orphaned_discord_roles", temp_channel_role.id.0)
+                    .await
+                {
                     Err(_) => eprintln!(
                         "Could not record orphaned channel role {}",
                         temp_channel_role.id.0
@@ -604,8 +611,8 @@ async fn sync_channel(
             crate::redis::async_redis_transaction(
                 redis_connection,
                 &[&redis_series_channel_key],
-                |con, pipe| {
-                    async {
+                move |con, pipe| {
+                    async move {
                         let current_channel: Option<u64> =
                             con.get(&redis_series_channel_key).await?;
                         if current_channel == Some(channel.0) {
