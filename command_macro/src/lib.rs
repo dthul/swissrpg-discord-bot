@@ -69,24 +69,6 @@ impl Parse for RegexAttribute {
 #[proc_macro_attribute]
 pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let command_fun = parse_macro_input!(item as CommandFun);
-    // for input in &command_fun.fun.sig.inputs {
-    //     println!("Input: {:#?}", input);
-    //     if let syn::FnArg::Typed(syn::PatType { ty, .. }) = input {
-    //         if let syn::Type::Path(syn::TypePath { path, .. }) = &**ty {
-    //             let redis_client_path: syn::TypePath = syn::parse_str("redis::Client")
-    //                 .expect("Path redis::Client could not be parsed");
-    //             println!("Path: {:#?}", path);
-    //             if path == &redis_client_path.path {
-    //                 println!("Matches!");
-    //             }
-    //         }
-    //     }
-    // }
-    // println!("attr: \"{}\"", attr.to_string());
-    // println!("fun attr: \"{:#?}\"", command_fun.attributes);
-    // println!("fun: \"{:#?}\"", command_fun.fun);
-    // println!("item: \"{}\"", item.to_string());
-
     let mut command_regex = None;
     let mut command_level = None;
     let mut unknown_attrs = vec![];
