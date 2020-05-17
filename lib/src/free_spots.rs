@@ -198,7 +198,7 @@ impl EventCollector {
                 query.limit(2 * ALL_LOCATIONS.len() as u64)
             })
             .await?;
-        let localized_events = self.localized_events();
+        let mut localized_events = self.localized_events();
         for location in ALL_LOCATIONS {
             let events: &mut [(Event, u16)] = localized_events
                 .get_mut(location)
