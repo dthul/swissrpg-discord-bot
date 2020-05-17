@@ -200,10 +200,11 @@ impl EventCollector {
             .await?;
         let localized_events = self.localized_events();
         for location in ALL_LOCATIONS {
-            let events: &[(Event, u16)] = localized_events
-                .get(location)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
+            let events: &mut [(Event, u16)] = localized_events
+                .get_mut(location)
+                .map(Vec::as_mut_slice)
+                .unwrap_or(&mut []);
+            events.sort_unstable_by_key(|(event, _)| event.time);
             // Try to find an existing message that corresponds to this location
             let embed_author = location.name();
             let location_message = latest_messages.iter_mut().find(|message| {
@@ -245,27 +246,25 @@ impl EventCollector {
     ) -> &'a mut serenity::builder::CreateEmbed {
         let footer_text = chrono::Utc::now()
             .with_timezone(&chrono_tz::Europe::Zurich)
-            .format("Last updated at %H:%M")
+            .format("Last update at %H:%M")
             .to_string();
         let mut description = "Updated every 15 minutes".to_string();
         for (event, free_spots) in events {
             description.push_str("\n\n");
+            write!(
+                &mut description,
+                "**{}**\n",
+                // TODO: proper escaping
+                &event.name.replace("*", r"\*")
+            )
+            .ok();
+            description.push_str(&event.time.format("_%a, %b %-d_").to_string());
             if *free_spots == 1 {
-                write!(
-                    &mut description,
-                    "**{}** — {} spot\n",
-                    &event.name, free_spots
-                )
-                .ok();
+                write!(&mut description, " — {} spot\n", free_spots).ok();
             } else {
-                write!(
-                    &mut description,
-                    "**{}** — {} spots\n",
-                    &event.name, free_spots
-                )
-                .ok();
+                write!(&mut description, " — {} spots\n", free_spots).ok();
             }
-            write!(&mut description, "<{}>", &event.link).ok();
+            write!(&mut description, "[Sign up on Meetup](<{}>)", &event.link).ok();
         }
         embed_builder
             .author(|author| {

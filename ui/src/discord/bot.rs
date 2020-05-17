@@ -190,9 +190,12 @@ impl EventHandler for Handler {
                     return Ok(());
                 }
                 [i] => *i, // unique command found
-                _ => {
+                l @ _ => {
                     // multiple commands found
-                    eprintln!("Ambiguous command: {}", &msg.content);
+                    eprintln!(
+                        "Ambiguous command: {}. Matching regexes: {:#?}",
+                        &msg.content, l
+                    );
                     let _ = msg.channel_id.say(
                         &ctx.http,
                         "I can't figure out what to do. This is a bug. Could you please let a bot \

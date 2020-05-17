@@ -17,8 +17,8 @@ ui = { path = "../ui", package = "swissrpg-ui" }
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = { version = "0.3" }
-redis = "0.15"
-serenity = { git = "https://github.com/Lakelezz/serenity", branch = "await", default-features = false, features = ["cache", "client", "model", "rustls_backend"] }
+redis = { version = "0.16", default-features = false, features = ["tokio-comp"] }
+serenity = { git = "https://github.com/Lakelezz/serenity", branch = "await", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend"] }
 signal-hook = "0.1"
 stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "api2019-11-05", default-features = false, features = ["billing", "webhook-events", "async"] }
 tokio = { version = "0.2", default-features = false, features = ["io-driver", "rt-threaded", "time"] }
