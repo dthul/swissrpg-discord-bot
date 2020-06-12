@@ -3,22 +3,29 @@ use command_macro::command;
 #[command]
 #[regex(r"mention\s*channel")]
 #[level(host)]
-fn mention_channel(
-    mut context: super::CommandContext<'_>,
-    _: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
-    let channel_roles =
-        lib::get_channel_roles(context.msg.channel_id.0, context.redis_connection()?)?;
+fn mention_channel<'a>(
+    mut context: super::CommandContext,
+    _: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
+    let channel_roles = lib::get_channel_roles(
+        context.msg.channel_id.0,
+        context.async_redis_connection().await?,
+    )
+    .await?;
     if let Some(channel_roles) = channel_roles {
-        let _ = context
+        context
             .msg
             .channel_id
-            .say(context.ctx, format!("<@&{}>", channel_roles.user));
+            .say(context.ctx, format!("<@&{}>", channel_roles.user))
+            .await
+            .ok();
     } else {
-        let _ = context
+        context
             .msg
             .channel_id
-            .say(context.ctx, format!("This channel has no role"));
+            .say(context.ctx, format!("This channel has no role"))
+            .await
+            .ok();
     }
     Ok(())
 }

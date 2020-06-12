@@ -11,7 +11,7 @@ pub mod stripe;
 pub mod tasks;
 pub mod urls;
 
-use ::redis::{AsyncCommands, Commands};
+use ::redis::AsyncCommands;
 pub use error::BoxedError;
 use rand::Rng;
 use serenity::model::id::ChannelId;
@@ -126,25 +126,28 @@ pub async fn get_event_series_roles_async(
     }
 }
 
-pub fn get_series_voice_channel(
+pub async fn get_series_voice_channel(
     event_series_id: &str,
-    redis_connection: &mut ::redis::Connection,
+    redis_connection: &mut ::redis::aio::Connection,
 ) -> Result<Option<ChannelId>, crate::meetup::Error> {
     let redis_event_series_voice_channel_key =
         format!("event_series:{}:discord_voice_channel", event_series_id);
-    let voice_channel_id: Option<u64> =
-        redis_connection.get(&redis_event_series_voice_channel_key)?;
+    let voice_channel_id: Option<u64> = redis_connection
+        .get(&redis_event_series_voice_channel_key)
+        .await?;
     Ok(voice_channel_id.map(|id| ChannelId(id)))
 }
 
-pub fn get_channel_voice_channel(
+pub async fn get_channel_voice_channel(
     channel_id: ChannelId,
-    redis_connection: &mut ::redis::Connection,
+    redis_connection: &mut ::redis::aio::Connection,
 ) -> Result<Option<ChannelId>, crate::meetup::Error> {
     let redis_channel_event_series_key = format!("discord_channel:{}:event_series", channel_id.0);
-    let event_series_id: Option<String> = redis_connection.get(&redis_channel_event_series_key)?;
+    let event_series_id: Option<String> = redis_connection
+        .get(&redis_channel_event_series_key)
+        .await?;
     if let Some(event_series_id) = event_series_id {
-        get_series_voice_channel(&event_series_id, redis_connection)
+        get_series_voice_channel(&event_series_id, redis_connection).await
     } else {
         Ok(None)
     }

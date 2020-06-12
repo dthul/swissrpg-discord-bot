@@ -1,3 +1,5 @@
+use super::commands::CommandContext;
+use super::commands::PreparedCommands;
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use serenity::{
@@ -16,11 +18,10 @@ use std::sync::{
     Arc,
 };
 
-pub fn create_discord_client(
+pub async fn create_discord_client(
     discord_token: &str,
     redis_client: redis::Client,
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
-    task_scheduler: Arc<AsyncMutex<white_rabbit::Scheduler>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     stripe_client: Arc<stripe::Client>,
     async_runtime: Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>,
@@ -29,16 +30,17 @@ pub fn create_discord_client(
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let client = Client::new(&discord_token, Handler)?;
+    let client = Client::new(&discord_token).event_handler(Handler).await?;
 
     // We will fetch the bot's id.
     let (bot_id, bot_name) = client
         .cache_and_http
         .http
         .get_current_user()
+        .await
         .map(|info| (info.id, info.name))?;
     println!("Bot ID: {}", bot_id.0);
-    println!("Bot name: {}", &bot_name);
+    println!("Bot name: {}", bot_name);
 
     // Prepare the commands
     let prepared_commands = Arc::new(super::commands::prepare_commands(bot_id, &bot_name)?);
@@ -48,14 +50,13 @@ pub fn create_discord_client(
 
     // Store the bot's id in the client for easy access
     {
-        let mut data = client.data.write();
+        let mut data = client.data.write().await;
         data.insert::<BotIdKey>(bot_id);
         data.insert::<BotNameKey>(bot_name);
         // data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(redis_connection)));
         // data.insert::<RegexesKey>(Arc::new(regexes));
         data.insert::<AsyncMeetupClientKey>(async_meetup_client);
         data.insert::<RedisClientKey>(redis_client);
-        data.insert::<TaskSchedulerKey>(task_scheduler);
         data.insert::<OAuth2ConsumerKey>(oauth2_consumer);
         data.insert::<StripeClientKey>(stripe_client);
         data.insert::<AsyncRuntimeKey>(async_runtime);
@@ -86,11 +87,6 @@ impl TypeMapKey for RedisClientKey {
     type Value = redis::Client;
 }
 
-pub struct TaskSchedulerKey;
-impl TypeMapKey for TaskSchedulerKey {
-    type Value = Arc<AsyncMutex<white_rabbit::Scheduler>>;
-}
-
 pub struct OAuth2ConsumerKey;
 impl TypeMapKey for OAuth2ConsumerKey {
     type Value = Arc<lib::meetup::oauth2::OAuth2Consumer>;
@@ -113,10 +109,100 @@ impl TypeMapKey for AsyncRuntimeKey {
 
 pub(crate) struct PreparedCommandsKey;
 impl TypeMapKey for PreparedCommandsKey {
-    type Value = Arc<super::commands::PreparedCommands>;
+    type Value = Arc<PreparedCommands>;
 }
 
 pub struct Handler;
+
+impl Handler {
+    async fn handle_message(
+        cmdctx: &mut CommandContext,
+        commands: Arc<PreparedCommands>,
+    ) -> Result<(), lib::meetup::Error> {
+        // Figure out which command matches
+        let matches: Vec<_> = commands
+            .regex_set
+            .matches(&cmdctx.msg.content)
+            .into_iter()
+            .collect();
+        let bot_id = cmdctx.bot_id().await?;
+        let i = match matches.as_slice() {
+            [] => {
+                // unknown command
+                eprintln!("Unrecognized command: {}", &cmdctx.msg.content);
+                cmdctx
+                    .msg
+                    .channel_id
+                    .say(&cmdctx.ctx, strings::INVALID_COMMAND(bot_id.0))
+                    .await
+                    .ok();
+                return Ok(());
+            }
+            [i] => *i, // unique command found
+            l @ _ => {
+                // multiple commands found
+                eprintln!(
+                    "Ambiguous command: {}. Matching regexes: {:#?}",
+                    &cmdctx.msg.content, l
+                );
+                let _ = cmdctx.msg.channel_id.say(
+                    &cmdctx.ctx,
+                    "I can't figure out what to do. This is a bug. Could you please let a bot \
+             admin know about this?",
+                );
+                return Ok(());
+            }
+        };
+        // We clone the message's content here, such that we don't keep a
+        // reference to the message object
+        let message_content = cmdctx.msg.content.clone();
+        let captures = match commands.regexes[i].captures(&message_content) {
+            Some(captures) => captures,
+            None => {
+                // This should not happen
+                eprintln!("Unmatcheable command: {}", &message_content);
+                let _ = cmdctx.msg.channel_id.say(
+                    &cmdctx.ctx,
+                    "I can't parse your command. This is a bug. Could you please let a bot \
+             admin know about this?",
+                );
+                return Ok(());
+            }
+        };
+        // Check whether the user has the required permissions
+        let command = commands.commands[i];
+        match command.level {
+            super::commands::CommandLevel::Everybody => (),
+            super::commands::CommandLevel::AdminOnly => {
+                if !cmdctx.is_admin().await? {
+                    cmdctx
+                        .msg
+                        .channel_id
+                        .say(&cmdctx.ctx, strings::NOT_A_BOT_ADMIN)
+                        .await
+                        .ok();
+                    return Ok(());
+                }
+            }
+            super::commands::CommandLevel::HostAndAdminOnly => {
+                let is_admin = cmdctx.is_admin().await?;
+                let is_host = cmdctx.is_host().await?;
+                if !is_admin && !is_host {
+                    cmdctx
+                        .msg
+                        .channel_id
+                        .say(&cmdctx.ctx, strings::NOT_A_CHANNEL_ADMIN)
+                        .await
+                        .ok();
+                    return Ok(());
+                }
+            }
+        }
+        // Call the command
+        (command.fun)(cmdctx, captures).await?;
+        Ok(())
+    }
+}
 
 #[async_trait]
 impl EventHandler for Handler {
@@ -125,9 +211,9 @@ impl EventHandler for Handler {
     //
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
-    fn message(&self, ctx: Context, msg: Message) {
+    async fn message(&self, ctx: Context, msg: Message) {
         let (bot_id, shutdown_signal) = {
-            let data = ctx.data.read();
+            let data = ctx.data.read().await;
             let bot_id = data.get::<BotIdKey>().expect("Bot ID was not set").clone();
             let shutdown_signal = data
                 .get::<ShutdownSignalKey>()
@@ -150,99 +236,52 @@ impl EventHandler for Handler {
         let commands = ctx
             .data
             .read()
+            .await
             .get::<PreparedCommandsKey>()
             .cloned()
             .expect("Prepared commands have not been set");
         // Wrap Serenity's context and message objects into a CommandContext
         // for access to convenience functions.
-        let mut cmdctx = super::commands::CommandContext::new(&ctx, &msg);
-        // Poor man's try block
-        let res: Result<(), lib::meetup::Error> = (|| {
-            // Is this a direct message to the bot?
-            let is_dm = cmdctx.is_dm()?;
-            // Does the message start with a mention of the bot?
-            let is_mention = commands.bot_mention.is_match(&msg.content);
-            // If the message is not a direct message and does not start with a
-            // mention of the bot, ignore it
-            if !is_dm && !is_mention {
-                return Ok(());
-            }
-            if shutdown_signal {
-                let _ = msg.channel_id.say(
-                    &ctx,
-                    "Sorry, I can not help you right now. I am about to shut down!",
+        let mut cmdctx = CommandContext::new(ctx, msg);
+        // Is this a direct message to the bot?
+        let is_dm = match cmdctx.is_dm().await {
+            Ok(is_dm) => is_dm,
+            Err(err) => {
+                eprintln!(
+                    "Could not figure out whether this message is a DM:\n{:#?}",
+                    err
                 );
-                return Ok(());
+                cmdctx
+                    .msg
+                    .channel_id
+                    .say(&cmdctx.ctx, lib::strings::UNSPECIFIED_ERROR)
+                    .await
+                    .ok();
+                return;
             }
-            // Figure out which command matches
-            let matches: Vec<_> = commands
-                .regex_set
-                .matches(&msg.content)
-                .into_iter()
-                .collect();
-            let i = match matches.as_slice() {
-                [] => {
-                    // unknown command
-                    eprintln!("Unrecognized command: {}", &msg.content);
-                    let _ = msg
-                        .channel_id
-                        .say(&ctx.http, strings::INVALID_COMMAND(bot_id.0));
-                    return Ok(());
-                }
-                [i] => *i, // unique command found
-                l @ _ => {
-                    // multiple commands found
-                    eprintln!(
-                        "Ambiguous command: {}. Matching regexes: {:#?}",
-                        &msg.content, l
-                    );
-                    let _ = msg.channel_id.say(
-                        &ctx.http,
-                        "I can't figure out what to do. This is a bug. Could you please let a bot \
-                         admin know about this?",
-                    );
-                    return Ok(());
-                }
-            };
-            let captures = match commands.regexes[i].captures(&msg.content) {
-                Some(captures) => captures,
-                None => {
-                    // This should not happen
-                    eprintln!("Unmatcheable command: {}", &msg.content);
-                    let _ = msg.channel_id.say(
-                        &ctx.http,
-                        "I can't parse your command. This is a bug. Could you please let a bot \
-                         admin know about this?",
-                    );
-                    return Ok(());
-                }
-            };
-            // Check whether the user has the required permissions
-            let command = commands.commands[i];
-            match command.level {
-                super::commands::CommandLevel::Everybody => (),
-                super::commands::CommandLevel::AdminOnly => {
-                    if !cmdctx.is_admin()? {
-                        let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_BOT_ADMIN);
-                        return Ok(());
-                    }
-                }
-                super::commands::CommandLevel::HostAndAdminOnly => {
-                    let is_admin = cmdctx.is_admin()?;
-                    let is_host = cmdctx.is_host()?;
-                    if !is_admin && !is_host {
-                        let _ = msg.channel_id.say(&ctx.http, strings::NOT_A_CHANNEL_ADMIN);
-                        return Ok(());
-                    }
-                }
-            }
-            // Call the command
-            (command.fun)(cmdctx, captures)?;
-            Ok(())
-        })();
+        };
+        // Does the message start with a mention of the bot?
+        let is_mention = commands.bot_mention.is_match(&cmdctx.msg.content);
+        // If the message is not a direct message and does not start with a
+        // mention of the bot, ignore it
+        if !is_dm && !is_mention {
+            return;
+        }
+        if shutdown_signal {
+            let _ = cmdctx.msg.channel_id.say(
+                &cmdctx.ctx,
+                "Sorry, I can not help you right now. I am about to shut down!",
+            );
+            return;
+        }
+        // Poor man's try block
+        let res: Result<(), lib::meetup::Error> = Self::handle_message(&mut cmdctx, commands).await;
         if let Err(err) = res {
             eprintln!("Error in message handler:\n{:#?}", err);
-            let _ = msg.channel_id.say(&ctx, lib::strings::UNSPECIFIED_ERROR);
+            let _ = cmdctx
+                .msg
+                .channel_id
+                .say(&cmdctx.ctx, lib::strings::UNSPECIFIED_ERROR);
         }
     }
 
@@ -252,15 +291,15 @@ impl EventHandler for Handler {
     // private channels, and more.
     //
     // In this case, just print what the current user's username is.
-    fn ready(&self, _: Context, ready: Ready) {
+    async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
     }
 
-    fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
+    async fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
         if guild_id != lib::discord::sync::ids::GUILD_ID {
             return;
         }
-        Self::send_welcome_message(&ctx, &new_member.user.read());
+        Self::send_welcome_message(&ctx, &new_member.user);
     }
 }
 

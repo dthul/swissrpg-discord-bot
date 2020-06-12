@@ -3,27 +3,22 @@ use command_macro::command;
 #[command]
 #[regex(r"sync\s*discord")]
 #[level(admin)]
-fn sync_discord(
-    context: super::CommandContext<'_>,
-    _: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
-    let redis_client = context.redis_client()?.clone();
-    let task_scheduler_mutex = context.task_scheduler()?;
-    // Send the syncing task to the scheduler
-    let mut task_scheduler_guard = futures::executor::block_on(task_scheduler_mutex.lock());
-    task_scheduler_guard.add_task_datetime(
-        white_rabbit::Utc::now(),
-        lib::discord::sync::create_sync_discord_task(
-            redis_client,
-            context.ctx.into(),
-            context.bot_id()?.0,
-            /*recurring*/ false,
-        ),
-    );
-    drop(task_scheduler_guard);
-    let _ = context
+fn sync_discord<'a>(
+    context: super::CommandContext,
+    _: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
+    let redis_connection = context.redis_client().await?.get_async_connection().await?;
+    let discord_api = (&context.ctx).into();
+    let bot_id = context.bot_id()?;
+    // Spawn the syncing task
+    tokio::spawn(async move {
+        lib::discord::sync::sync_discord(&mut redis_connection, &mut discord_api, bot_id.0).await
+    });
+    context
         .msg
         .channel_id
-        .say(context.ctx, "Started Discord synchronization task");
+        .say(context.ctx, "Started Discord synchronization task")
+        .await
+        .ok();
     Ok(())
 }

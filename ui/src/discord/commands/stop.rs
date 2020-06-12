@@ -3,17 +3,22 @@ use command_macro::command;
 #[command]
 #[regex(r"stop")]
 #[level(admin)]
-pub fn stop(
-    context: super::CommandContext<'_>,
-    _: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
+pub fn stop<'a>(
+    context: &'a mut super::CommandContext,
+    _: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
     match std::process::Command::new("sudo")
         .args(&["systemctl", "stop", "bot"])
         .output()
     {
         Ok(_) => {
             eprintln!("STOP command issued");
-            let _ = context.msg.channel_id.say(&context.ctx, "Shutting down");
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx, "Shutting down")
+                .await
+                .ok();
             Ok(())
         }
         Err(err) => {

@@ -7,14 +7,11 @@ use std::fmt::Write;
 #[command]
 #[regex(r"help")]
 #[help("help", "do I really need to explain this one?")]
-fn help(
-    context: super::CommandContext<'_>,
-    _: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
+fn help<'a>(context: super::CommandContext, _: regex::Captures<'a>) -> super::CommandResult<'a> {
     let help_texts = compile_help_texts(context.bot_id()?);
     let is_bot_admin = context.is_admin().unwrap_or(false);
     let bot_id = context.bot_id()?;
-    let mut dm_result = context
+    context
         .msg
         .author
         .direct_message(context.ctx, |message_builder| {
@@ -27,35 +24,37 @@ fn help(
                         .description(&help_texts.user)
                 })
         })
-        .and_then(|_| {
-            context
-                .msg
-                .author
-                .direct_message(context.ctx, |message_builder| {
-                    message_builder.embed(|embed_builder| {
-                        embed_builder
-                            .colour(serenity::utils::Colour::DARK_GREEN)
-                            .title(lib::strings::HELP_MESSAGE_GM_EMBED_TITLE)
-                            .description(&help_texts.gm)
-                    })
-                })
-        });
+        .await
+        .ok();
+    context
+        .msg
+        .author
+        .direct_message(context.ctx, |message_builder| {
+            message_builder.embed(|embed_builder| {
+                embed_builder
+                    .colour(serenity::utils::Colour::DARK_GREEN)
+                    .title(lib::strings::HELP_MESSAGE_GM_EMBED_TITLE)
+                    .description(&help_texts.gm)
+            })
+        })
+        .await
+        .ok();
     if is_bot_admin {
-        dm_result = dm_result.and_then(|_| {
-            context
-                .msg
-                .author
-                .direct_message(context.ctx, |message_builder| {
-                    message_builder.embed(|embed_builder| {
-                        embed_builder
-                            .colour(serenity::utils::Colour::from_rgb(255, 23, 68))
-                            .title(lib::strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
-                            .description(&help_texts.admin)
-                    })
+        context
+            .msg
+            .author
+            .direct_message(context.ctx, |message_builder| {
+                message_builder.embed(|embed_builder| {
+                    embed_builder
+                        .colour(serenity::utils::Colour::from_rgb(255, 23, 68))
+                        .title(lib::strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
+                        .description(&help_texts.admin)
                 })
-        });
+            })
+            .await
+            .ok();
     }
-    Ok(dm_result.map(|_| ())?)
+    Ok(())
 }
 
 struct HelpTexts {

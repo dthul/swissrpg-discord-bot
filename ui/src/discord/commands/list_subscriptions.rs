@@ -3,34 +3,19 @@ use command_macro::command;
 #[command]
 #[regex(r"list\s*subscriptions")]
 #[level(admin)]
-fn list_subscriptions(
-    context: super::CommandContext<'_>,
-    _: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
-    let _ = context
+fn list_subscriptions<'a>(
+    context: super::CommandContext,
+    _: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
+    context
         .msg
         .author
         .direct_message(context.ctx, |message_builder| {
             message_builder.content("Sure! This might take a moment...")
-        });
-    let runtime_mutex = context.async_runtime()?.clone();
-    let runtime_guard = futures::executor::block_on(runtime_mutex.read());
-    let async_runtime = match *runtime_guard {
-        Some(ref async_runtime) => async_runtime,
-        None => {
-            let _ = context.msg.channel_id.say(
-                context.ctx,
-                "Could not submit asynchronous list subscription task",
-            );
-            return Ok(());
-        }
-    };
-    let subscriptions = {
-        let stripe_client = context.stripe_client()?;
-        async_runtime.enter(|| {
-            futures::executor::block_on(lib::stripe::list_active_subscriptions(stripe_client))
-        })?
-    };
+        })
+        .await
+        .ok();
+    let subscriptions = lib::stripe::list_active_subscriptions(context.stripe_client()?).await?;
     let mut message = String::new();
     for subscription in &subscriptions {
         // First, figure out which product was bought
@@ -40,16 +25,9 @@ fn list_subscriptions(
                 Some(product) => match product {
                     stripe::Expandable::Object(product) => Some(*product.clone()),
                     stripe::Expandable::Id(product_id) => {
-                        let product = {
-                            let stripe_client = context.stripe_client()?;
-                            async_runtime.enter(|| {
-                                futures::executor::block_on(stripe::Product::retrieve(
-                                    stripe_client,
-                                    product_id,
-                                    &[],
-                                ))
-                            })?
-                        };
+                        let product =
+                            stripe::Product::retrieve(context.stripe_client()?, product_id, &[])
+                                .await?;
                         Some(product)
                     }
                 },
@@ -61,16 +39,8 @@ fn list_subscriptions(
         let customer = match &subscription.customer {
             stripe::Expandable::Object(customer) => *customer.clone(),
             stripe::Expandable::Id(customer_id) => {
-                let customer = {
-                    let stripe_client = context.stripe_client()?;
-                    async_runtime.enter(|| {
-                        futures::executor::block_on(stripe::Customer::retrieve(
-                            stripe_client,
-                            customer_id,
-                            &[],
-                        ))
-                    })?
-                };
+                let customer =
+                    stripe::Customer::retrieve(context.stripe_client()?, customer_id, &[]).await?;
                 customer
             }
         };

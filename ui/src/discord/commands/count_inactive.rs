@@ -3,13 +3,15 @@ use command_macro::command;
 #[command]
 #[regex(r"count\s*inactive")]
 #[level(admin)]
-fn count_inactive(
-    context: super::CommandContext<'_>,
-    _: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(context.ctx) {
+fn count_inactive<'a>(
+    context: super::CommandContext,
+    _: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
+    if let Some(guild) = lib::discord::sync::ids::GUILD_ID
+        .to_guild_cached(context.ctx)
+        .await
+    {
         let num_inactive_users = &guild
-            .read()
             .members
             .iter()
             .filter(|(_id, member)| member.roles.is_empty())

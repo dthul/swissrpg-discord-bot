@@ -87,27 +87,45 @@ fn main() {
             .expect("Could not create tokio runtime"),
     )));
 
-    // Create a task scheduler and schedule the refresh token task
-    let task_scheduler = Arc::new(futures_util::lock::Mutex::new(
-        white_rabbit::Scheduler::new(/*thread_count*/ 1),
-    ));
-
     let bot_shutdown_signal = Arc::new(AtomicBool::new(false));
-    let mut bot = ui::discord::bot::create_discord_client(
-        &discord_token,
-        redis_client.clone(),
-        async_meetup_client.clone(),
-        task_scheduler.clone(),
-        meetup_oauth2_consumer.clone(),
-        stripe_client.clone(),
-        async_runtime.clone(),
-        bot_shutdown_signal.clone(),
-    )
-    .expect("Could not create the Discord bot");
+    let mut bot = {
+        let runtime_guard = futures::executor::block_on(async_runtime.read());
+        let runtime = match *runtime_guard {
+            Some(ref async_runtime) => async_runtime,
+            None => panic!("Async runtime not available"),
+        };
+        runtime
+            .block_on(ui::discord::bot::create_discord_client(
+                &discord_token,
+                redis_client.clone(),
+                async_meetup_client.clone(),
+                meetup_oauth2_consumer.clone(),
+                stripe_client.clone(),
+                async_runtime.clone(),
+                bot_shutdown_signal.clone(),
+            ))
+            .expect("Could not create the Discord bot")
+    };
     let discord_api = lib::discord::CacheAndHttp {
         cache: bot.cache_and_http.cache.clone().into(),
         http: bot.cache_and_http.http.clone(),
     };
+    let bot_id = futures::executor::block_on(async {
+        bot.data
+            .read()
+            .await
+            .get::<ui::discord::bot::BotIdKey>()
+            .copied()
+            .expect("Bot ID was not set")
+    });
+    let bot_name = futures::executor::block_on(async {
+        bot.data
+            .read()
+            .await
+            .get::<ui::discord::bot::BotNameKey>()
+            .expect("Bot name was not set")
+            .clone()
+    });
 
     // Start a server to handle Meetup OAuth2 logins
     let port = if cfg!(feature = "bottest") {
@@ -125,11 +143,7 @@ fn main() {
         redis_client.clone(),
         async_meetup_client.clone(),
         discord_api.clone(),
-        bot.data
-            .read()
-            .get::<ui::discord::bot::BotNameKey>()
-            .expect("Bot name was not set")
-            .clone(),
+        bot_name,
         stripe_webhook_signing_secret,
         stripe_client.clone(),
         api_key,
@@ -150,40 +164,18 @@ fn main() {
     );
 
     // Schedule the end of game task
-    let end_of_game_task = lib::tasks::end_of_game::create_end_of_game_task(
+    let end_of_game_task = lib::tasks::end_of_game::create_recurring_end_of_game_task(
         redis_client.clone(),
         discord_api.clone(),
-        bot.data
-            .read()
-            .get::<ui::discord::bot::BotIdKey>()
-            .expect("Bot ID was not set")
-            .clone(),
-        /*recurring*/ true,
+        bot_id,
     );
-    let next_end_of_game_task_time = {
-        let mut task_time = white_rabbit::Utc::now().date().and_hms(18, 30, 0);
-        // Check if it is later than 6:30pm
-        // In that case, run the task tomorrow
-        if white_rabbit::Utc::now() > task_time {
-            task_time = task_time + white_rabbit::Duration::days(1);
-        }
-        task_time
-    };
-    let mut task_scheduler_guard = futures::executor::block_on(task_scheduler.lock());
-    task_scheduler_guard.add_task_datetime(next_end_of_game_task_time, end_of_game_task);
-    drop(task_scheduler_guard);
 
     let static_file_prefix = Box::leak(format!("{}/static/", lib::urls::BASE_URL).into_boxed_str());
     let syncing_task = lib::tasks::sync::create_recurring_syncing_task(
         redis_client.clone(),
         async_meetup_client.clone(),
         discord_api.clone(),
-        bot.data
-            .read()
-            .get::<ui::discord::bot::BotIdKey>()
-            .expect("Bot ID was not set")
-            .clone(),
-        task_scheduler.clone(),
+        bot_id,
         static_file_prefix,
     );
 

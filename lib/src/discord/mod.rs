@@ -10,12 +10,12 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct CacheAndHttp {
-    pub cache: serenity::cache::CacheRwLock,
+    pub cache: Arc<serenity::cache::Cache>,
     pub http: Arc<serenity::http::client::Http>,
 }
 
 impl serenity::http::CacheHttp for CacheAndHttp {
-    fn cache(&self) -> Option<&serenity::cache::CacheRwLock> {
+    fn cache(&self) -> Option<&Arc<serenity::cache::Cache>> {
         Some(&self.cache)
     }
     fn http(&self) -> &serenity::http::client::Http {
@@ -24,7 +24,7 @@ impl serenity::http::CacheHttp for CacheAndHttp {
 }
 
 impl serenity::http::CacheHttp for &CacheAndHttp {
-    fn cache(&self) -> Option<&serenity::cache::CacheRwLock> {
+    fn cache(&self) -> Option<&Arc<serenity::cache::Cache>> {
         Some(&self.cache)
     }
     fn http(&self) -> &serenity::http::client::Http {
@@ -47,8 +47,7 @@ pub async fn is_host(
     user_id: UserId,
     redis_connection: &mut redis::aio::Connection,
 ) -> Result<bool, crate::meetup::Error> {
-    let channel = if let Some(Channel::Guild(channel)) =
-        discord_api.cache.read().await.channel(channel_id).await
+    let channel = if let Some(Channel::Guild(channel)) = discord_api.cache.channel(channel_id).await
     {
         channel
     } else {
@@ -99,8 +98,7 @@ pub async fn add_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Some(Channel::Guild(channel)) =
-        discord_api.cache.read().await.channel(channel_id).await
+    let channel = if let Some(Channel::Guild(channel)) = discord_api.cache.channel(channel_id).await
     {
         channel
     } else {
@@ -138,8 +136,7 @@ pub async fn remove_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Some(Channel::Guild(channel)) =
-        discord_api.cache.read().await.channel(channel_id).await
+    let channel = if let Some(Channel::Guild(channel)) = discord_api.cache.channel(channel_id).await
     {
         channel
     } else {

@@ -63,32 +63,6 @@ struct Event {
 }
 
 // Syncs Discord with the state of the Redis database
-pub fn create_sync_discord_task(
-    redis_client: redis::Client,
-    discord_api: super::CacheAndHttp,
-    bot_id: u64,
-    recurring: bool,
-) -> impl FnMut(&mut white_rabbit::Context) -> white_rabbit::DateResult + Send + Sync + 'static {
-    move |_ctx| {
-        let next_sync_time = match sync_discord(&redis_client, &discord_api, bot_id) {
-            Err(err) => {
-                eprintln!("Discord syncing task failed: {}", err);
-                // Retry in a minute
-                white_rabbit::Utc::now() + white_rabbit::Duration::minutes(1)
-            }
-            _ => {
-                // Do another sync in 15 minutes
-                white_rabbit::Utc::now() + white_rabbit::Duration::minutes(15)
-            }
-        };
-        if recurring {
-            white_rabbit::DateResult::Repeat(next_sync_time)
-        } else {
-            white_rabbit::DateResult::Done
-        }
-    }
-}
-
 pub async fn sync_discord(
     con: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
@@ -304,7 +278,8 @@ async fn sync_event_series(
         // &discord_host_ids,
         bot_id,
         discord_api,
-    )?;
+    )
+    .await?;
     // Step 7: If this is an online campaign, also create a voice channel
     let voice_channel_id = if is_online {
         let voice_channel_id = sync_channel(
@@ -323,7 +298,8 @@ async fn sync_event_series(
             // &discord_host_ids,
             bot_id,
             discord_api,
-        )?;
+        )
+        .await?;
         Some(voice_channel_id)
     } else {
         None
@@ -345,7 +321,8 @@ async fn sync_event_series(
         channel_role_id,
         redis_connection,
         discord_api,
-    )?;
+    )
+    .await?;
     // Step 6: Keep the channel's topic up-to-date
     sync_channel_topic_and_category(
         series_id,
@@ -353,7 +330,8 @@ async fn sync_event_series(
         next_event,
         redis_connection,
         discord_api,
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
@@ -382,7 +360,7 @@ async fn sync_role(
         // Make sure that the role ID that was returned actually exists on Discord
         // First, check the cache
         let role_exists = match GUILD_ID.to_guild_cached(&discord_api.cache).await {
-            Some(guild) => guild.read().await.roles.contains_key(&role),
+            Some(guild) => guild.roles.contains_key(&role),
             None => false,
         };
         // If it was not in the cache, check Discord
@@ -412,20 +390,31 @@ async fn sync_role(
             } else {
                 format!("discord_channel:{}:discord_role", channel_id.0)
             };
-            redis::transaction(redis_connection, &[&redis_channel_role_key], |con, pipe| {
-                let current_role: Option<u64> = con.get(&redis_channel_role_key)?;
-                if current_role == Some(role.0) {
-                    // Remove the broken role from Redis
-                    pipe.del(&redis_channel_role_key)
-                        .del(&redis_role_channel_key)
-                        .srem(redis_discord_roles_key, role.0)
-                        .query(con)
-                } else {
-                    // It seems like the role changed in the meantime
-                    // Don't remove it and retry the loop instead
-                    pipe.query(con)
-                }
-            })?;
+            crate::redis::async_redis_transaction(
+                redis_connection,
+                &[&redis_channel_role_key],
+                |con, mut pipe| {
+                    let redis_channel_role_key = redis_channel_role_key.clone();
+                    let redis_role_channel_key = redis_role_channel_key.clone();
+                    async move {
+                        let current_role: Option<u64> = con.get(&redis_channel_role_key).await?;
+                        if current_role == Some(role.0) {
+                            // Remove the broken role from Redis
+                            pipe.del(&redis_channel_role_key)
+                                .del(&redis_role_channel_key)
+                                .srem(redis_discord_roles_key, role.0)
+                                .query_async(con)
+                                .await
+                        } else {
+                            // It seems like the role changed in the meantime
+                            // Don't remove it and retry the loop instead
+                            pipe.query_async(con).await
+                        }
+                    }
+                    .boxed()
+                },
+            )
+            .await?;
             continue;
         } else {
             // The role exists on Discord, so everything is good
@@ -480,24 +469,35 @@ async fn sync_role_impl(
     } else {
         format!("discord_role:{}:discord_channel", temp_channel_role.id.0)
     };
-    let channel_role: redis::RedisResult<(u64,)> =
-        redis::transaction(redis_connection, &[&redis_channel_role_key], |con, pipe| {
-            let channel_role: Option<u64> = con.get(&redis_channel_role_key).await?;
-            if channel_role.is_some() {
-                // Some role already exists in Redis -> return it
-                pipe.get(&redis_channel_role_key).query(con)
-            } else {
-                // Persist the new role to Redis
-                pipe.sadd(redis_discord_roles_key, temp_channel_role.id.0)
-                    .ignore()
-                    .set(&redis_channel_role_key, temp_channel_role.id.0)
-                    .ignore()
-                    .set(&redis_role_channel_key, channel_id.0)
-                    .ignore()
-                    .get(&redis_channel_role_key)
-                    .query(con)
+    let channel_role: redis::RedisResult<(u64,)> = crate::redis::async_redis_transaction(
+        redis_connection,
+        &[&redis_channel_role_key],
+        |con, mut pipe| {
+            let redis_channel_role_key = redis_channel_role_key.clone();
+            let redis_role_channel_key = redis_role_channel_key.clone();
+            let temp_channel_role = temp_channel_role.clone();
+            async move {
+                let channel_role: Option<u64> = con.get(&redis_channel_role_key).await?;
+                if channel_role.is_some() {
+                    // Some role already exists in Redis -> return it
+                    pipe.get(&redis_channel_role_key).query_async(con).await
+                } else {
+                    // Persist the new role to Redis
+                    pipe.sadd(redis_discord_roles_key, temp_channel_role.id.0)
+                        .ignore()
+                        .set(&redis_channel_role_key, temp_channel_role.id.0)
+                        .ignore()
+                        .set(&redis_role_channel_key, channel_id.0)
+                        .ignore()
+                        .get(&redis_channel_role_key)
+                        .query_async(con)
+                        .await
+                }
             }
-        });
+            .boxed()
+        },
+    )
+    .await;
     // In case the Redis transaction failed or the role ID returned by Redis
     // doesn't match the newly created role, delete it
     let delete_temp_role = match channel_role {
@@ -611,7 +611,9 @@ async fn sync_channel(
             crate::redis::async_redis_transaction(
                 redis_connection,
                 &[&redis_series_channel_key],
-                move |con, pipe| {
+                |con, mut pipe| {
+                    let redis_series_channel_key = redis_series_channel_key.clone();
+                    let redis_channel_series_key = redis_channel_series_key.clone();
                     async move {
                         let current_channel: Option<u64> =
                             con.get(&redis_series_channel_key).await?;
@@ -719,9 +721,12 @@ async fn sync_channel_impl(
     let channel: redis::RedisResult<(u64,)> = crate::redis::async_redis_transaction(
         redis_connection,
         &[&redis_series_channel_key],
-        |con, pipe| {
+        |con, mut pipe| {
             let event_series_id = event_series_id.to_string();
-            async {
+            let redis_series_channel_key = redis_series_channel_key.clone();
+            let redis_channel_series_key = redis_channel_series_key.clone();
+            let temp_channel = temp_channel.clone();
+            async move {
                 let channel: Option<u64> = con.get(&redis_series_channel_key).await?;
                 if channel.is_some() {
                     // Some channel already exists in Redis -> return it
@@ -781,7 +786,7 @@ async fn sync_channel_impl(
 // overwrites for the channel's role and host role.
 // Specifically does not remove any additional permission overwrites
 // that the channel might have.
-fn sync_channel_permissions(
+async fn sync_channel_permissions(
     channel_id: ChannelId,
     channel_type: ChannelType,
     role_id: RoleId,
@@ -881,12 +886,14 @@ fn sync_channel_permissions(
         }
     };
     for permission_overwrite in &permission_overwrites {
-        channel_id.create_permission(discord_api.http(), permission_overwrite)?;
+        channel_id
+            .create_permission(discord_api.http(), permission_overwrite)
+            .await?;
     }
     Ok(())
 }
 
-fn sync_role_assignments_permissions(
+async fn sync_role_assignments_permissions(
     discord_user_ids: &[u64],
     discord_host_ids: &[u64],
     channel_id: ChannelId,
@@ -900,27 +907,31 @@ fn sync_role_assignments_permissions(
     let redis_channel_removed_users_key = format!("discord_channel:{}:removed_users", channel_id.0);
     // Don't automatically assign the user role to user that have been
     // manually removed from a channel
-    let ignore_discord_user_ids: Vec<u64> =
-        redis_connection.smembers(&redis_channel_removed_users_key)?;
+    let ignore_discord_user_ids: Vec<u64> = redis_connection
+        .smembers(&redis_channel_removed_users_key)
+        .await?;
     // Don't automatically assign the host role to users that have either
     // been manually removed as a host or as a user from a channel
-    let ignore_discord_host_ids: Vec<u64> = redis_connection.sunion(&[
-        &redis_channel_removed_hosts_key,
-        &redis_channel_removed_users_key,
-    ])?;
+    let ignore_discord_host_ids: Vec<u64> = redis_connection
+        .sunion(&[
+            &redis_channel_removed_hosts_key,
+            &redis_channel_removed_users_key,
+        ])
+        .await?;
     // Assign the role to the Discord users
     let mut newly_added_user_ids = vec![];
     for &user_id in discord_user_ids {
         if ignore_discord_user_ids.contains(&user_id) {
             continue;
         }
-        match UserId(user_id).to_user(discord_api) {
-            Ok(user) => match user.has_role(discord_api, GUILD_ID, user_role) {
+        match UserId(user_id).to_user(discord_api).await {
+            Ok(user) => match user.has_role(discord_api, GUILD_ID, user_role).await {
                 Ok(has_role) => {
                     if !has_role {
                         match discord_api
                             .http()
                             .add_member_role(GUILD_ID.0, user_id, user_role.0)
+                            .await
                         {
                             Ok(_) => {
                                 println!("Assigned user {} to role {}", user_id, user_role.0);
@@ -956,7 +967,9 @@ fn sync_role_assignments_permissions(
             channel_id,
             UserId(host_id),
             new_permissions,
-        ) {
+        )
+        .await
+        {
             Ok(true) => {
                 println!("Assigned user {} host permissions in text channel", host_id);
                 newly_added_host_ids.push(host_id);
@@ -980,7 +993,9 @@ fn sync_role_assignments_permissions(
                 voice_channel_id,
                 UserId(host_id),
                 new_permissions,
-            ) {
+            )
+            .await
+            {
                 Ok(true) => {
                     println!(
                         "Assigned user {} host permissions in voice channel",
@@ -997,9 +1012,12 @@ fn sync_role_assignments_permissions(
     }
     // Announce the newly added users
     if !newly_added_host_ids.is_empty() {
-        if let Err(err) = channel_id.send_message(&discord_api.http, |message_builder| {
-            message_builder.content(crate::strings::CHANNEL_ADDED_HOSTS(&newly_added_host_ids))
-        }) {
+        if let Err(err) = channel_id
+            .send_message(&discord_api.http, |message_builder| {
+                message_builder.content(crate::strings::CHANNEL_ADDED_HOSTS(&newly_added_host_ids))
+            })
+            .await
+        {
             eprintln!(
                 "Could not announce new hosts in channel {}:\n{:#?}",
                 channel_id.0, err
@@ -1007,9 +1025,13 @@ fn sync_role_assignments_permissions(
         };
     }
     if !newly_added_user_ids.is_empty() {
-        if let Err(err) = channel_id.send_message(&discord_api.http, |message_builder| {
-            message_builder.content(crate::strings::CHANNEL_ADDED_PLAYERS(&newly_added_user_ids))
-        }) {
+        if let Err(err) = channel_id
+            .send_message(&discord_api.http, |message_builder| {
+                message_builder
+                    .content(crate::strings::CHANNEL_ADDED_PLAYERS(&newly_added_user_ids))
+            })
+            .await
+        {
             eprintln!(
                 "Could not announce new players in channel {}:\n{:#?}",
                 channel_id.0, err
@@ -1080,7 +1102,7 @@ async fn sync_game_master_role(
     Ok(())
 }
 
-fn sync_channel_topic_and_category(
+async fn sync_channel_topic_and_category(
     series_id: &str,
     channel_id: ChannelId,
     next_event: &Event,
@@ -1090,7 +1112,7 @@ fn sync_channel_topic_and_category(
     // Sync the topic and the category
     let topic = format!("Next session: {}", &next_event.link);
     let redis_series_type_key = format!("event_series:{}:type", series_id);
-    let event_type: Option<String> = redis_connection.get(&redis_series_type_key)?;
+    let event_type: Option<String> = redis_connection.get(&redis_series_type_key).await?;
     let categories = match event_type.as_ref().map(String::as_str) {
         Some("campaign") => CAMPAIGN_CATEGORY_IDS,
         Some("adventure") => ONE_SHOT_CATEGORY_IDS,
@@ -1102,37 +1124,40 @@ fn sync_channel_topic_and_category(
             CAMPAIGN_CATEGORY_IDS
         }
     };
-    let channel = channel_id.to_channel(discord_api)?;
+    let channel = channel_id.to_channel(discord_api).await?;
     if let serenity::model::channel::Channel::Guild(channel) = channel {
         let (topic_needs_update, category_needs_update) = {
-            let channel_lock = channel.read();
-            let current_topic = &channel_lock.topic;
-            let topic_needs_update = if let Some(current_topic) = current_topic {
-                current_topic != &topic
+            let topic_needs_update = if let Some(current_topic) = channel.topic {
+                current_topic != topic
             } else {
                 true
             };
-            let category_needs_update = match channel_lock.category_id {
+            let category_needs_update = match channel.category_id {
                 Some(channel_category) => !categories.contains(&channel_category),
                 None => true,
             };
             (topic_needs_update, category_needs_update)
         };
         if topic_needs_update {
-            channel_id.edit(&discord_api.http, |channel_edit| {
-                channel_edit.topic(topic);
-                channel_edit
-            })?;
+            channel_id
+                .edit(&discord_api.http, |channel_edit| {
+                    channel_edit.topic(topic);
+                    channel_edit
+                })
+                .await?;
         }
         if category_needs_update {
             // Try the categories in order and put the channel in the first
             // one that works. Meetup has an undocumented limit of 50 channels
             // per category, so an error will be returned if the category is full.
             for category in categories {
-                if let Ok(_) = channel_id.edit(&discord_api.http, |channel_edit| {
-                    channel_edit.category(Some(*category));
-                    channel_edit
-                }) {
+                if let Ok(_) = channel_id
+                    .edit(&discord_api.http, |channel_edit| {
+                        channel_edit.category(Some(*category));
+                        channel_edit
+                    })
+                    .await
+                {
                     break;
                 }
             }

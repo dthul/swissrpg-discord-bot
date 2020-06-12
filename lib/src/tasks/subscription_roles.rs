@@ -118,12 +118,11 @@ pub async fn update_roles(
     // TODO: blocking
     let guild = discord_api
         .cache
-        .read()
-        .await
         .guild(crate::discord::sync::ids::GUILD_ID)
+        .await
         .ok_or_else(|| simple_error::SimpleError::new("Did not find guild in cache"))?;
     // TODO: blocking
-    for (&user_id, member) in &guild.read().await.members {
+    for (&user_id, member) in &guild.members {
         let is_champion = member.roles.contains(&ids::CHAMPION_ID);
         let is_gm_champion = member.roles.contains(&ids::GM_CHAMPION_ID);
         let is_insider = member.roles.contains(&ids::INSIDER_ID);
@@ -321,20 +320,15 @@ pub async fn discord_username_to_id(
             return Err(simple_error::SimpleError::new("Guild not found").into());
         }
     };
-    let discord_id = match guild
-        .read()
-        .await
-        .member_named(username)
-        .await
-        .and_then(|member| {
-            // Serenity does fuzzy matching.
-            // We want to filter any results which don't match exactly.
-            if &format!("{}#{}", member.user.name, member.user.discriminator) != username {
-                None
-            } else {
-                Some(member)
-            }
-        }) {
+    let discord_id = match guild.member_named(username).await.and_then(|member| {
+        // Serenity does fuzzy matching.
+        // We want to filter any results which don't match exactly.
+        if &format!("{}#{}", member.user.name, member.user.discriminator) != username {
+            None
+        } else {
+            Some(member)
+        }
+    }) {
         Some(member) => Some(member.user.id),
         None => {
             eprintln!(

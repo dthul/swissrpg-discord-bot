@@ -1,5 +1,5 @@
 use command_macro::command;
-use redis::Commands;
+use redis::AsyncCommands;
 
 #[command]
 #[regex(r"end\s*adventure")]
@@ -8,10 +8,10 @@ use redis::Commands;
     "end adventure",
     "sets the channel for closure at the end of an adventure. The channel won't be deleted immediately but within 24 hours."
 )]
-fn end_adventure(
-    mut context: super::CommandContext<'_>,
-    _: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
+fn end_adventure<'a>(
+    mut context: super::CommandContext,
+    _: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
     // TODO: make this a macro check
     // Check whether this is a game channel
     let is_game_channel = context.is_game_channel()?;
@@ -23,16 +23,21 @@ fn end_adventure(
         return Ok(());
     };
     // Figure out whether there is an associated voice channel
-    let voice_channel_id =
-        lib::get_channel_voice_channel(context.msg.channel_id, context.redis_connection()?)?;
+    let voice_channel_id = lib::get_channel_voice_channel(
+        context.msg.channel_id,
+        context.async_redis_connection().await?,
+    )
+    .await?;
     // Check if there is a channel expiration time in the future
     let redis_channel_expiration_key = format!(
         "discord_channel:{}:expiration_time",
         context.msg.channel_id.0
     );
     let expiration_time: Option<String> = context
-        .redis_connection()?
-        .get(&redis_channel_expiration_key)?;
+        .async_redis_connection()
+        .await?
+        .get(&redis_channel_expiration_key)
+        .await?;
     let expiration_time = expiration_time
         .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
         .transpose()?
@@ -58,8 +63,10 @@ fn end_adventure(
     let redis_channel_deletion_key =
         format!("discord_channel:{}:deletion_time", context.msg.channel_id.0);
     let current_deletion_time: Option<String> = context
-        .redis_connection()?
-        .get(&redis_channel_deletion_key)?;
+        .async_redis_connection()
+        .await?
+        .get(&redis_channel_deletion_key)
+        .await?;
     let current_deletion_time = current_deletion_time
         .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
         .transpose()?
@@ -84,7 +91,9 @@ fn end_adventure(
             new_deletion_time.to_rfc3339(),
         );
     }
-    let _: () = pipe.query(context.redis_connection()?)?;
+    let _: () = pipe
+        .query_async(context.async_redis_connection().await?)
+        .await?;
     let _ = context
         .msg
         .channel_id

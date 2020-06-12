@@ -9,7 +9,6 @@ pub async fn create_recurring_syncing_task(
     meetup_client: Arc<Mutex<Option<Arc<crate::meetup::api::AsyncClient>>>>,
     discord_api: crate::discord::CacheAndHttp,
     bot_id: UserId,
-    task_scheduler: Arc<Mutex<white_rabbit::Scheduler>>,
     static_file_prefix: &'static str,
 ) -> ! {
     let mut interval_timer = tokio::time::interval_at(
@@ -23,9 +22,9 @@ pub async fn create_recurring_syncing_task(
         let redis_client = redis_client.clone();
         let discord_api = discord_api.clone();
         let meetup_client = meetup_client.clone();
-        let task_scheduler = task_scheduler.clone();
         tokio::spawn(async move {
             let mut redis_connection = redis_client.get_async_connection().await?;
+            // Sync with Meetup
             let event_collector = tokio::time::timeout(
                 Duration::from_secs(360),
                 crate::meetup::sync::sync_task(meetup_client, &mut redis_connection).map_err(
@@ -40,18 +39,13 @@ pub async fn create_recurring_syncing_task(
                 err
             })
             .await??;
-            // Send the Discord syncing task to the scheduler
-            let mut guard = task_scheduler.lock().await;
-            guard.add_task_datetime(
-                white_rabbit::Utc::now(),
-                crate::discord::sync::create_sync_discord_task(
-                    redis_client,
-                    discord_api.clone(),
-                    bot_id.0,
-                    /*recurring*/ false,
-                ),
-            );
-            drop(guard);
+            // Send with Discord
+            if let Err(err) =
+                crate::discord::sync::sync_discord(&mut redis_connection, &discord_api, bot_id.0)
+                    .await
+            {
+                eprintln!("Discord syncing task failed: {}", err);
+            }
             // Finally, update Discord with the information on open spots.
             if let Some(channel_id) = crate::discord::sync::ids::FREE_SPOTS_CHANNEL_ID {
                 if let Err(err) = event_collector

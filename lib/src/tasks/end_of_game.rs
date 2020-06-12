@@ -47,7 +47,7 @@ pub async fn create_recurring_end_of_game_task(
     }
 }
 
-async fn end_of_game_task(
+pub async fn end_of_game_task(
     redis_connection: &mut redis::aio::Connection,
     discord_api: &mut crate::discord::CacheAndHttp,
     bot_id: u64,

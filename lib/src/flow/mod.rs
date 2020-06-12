@@ -8,8 +8,8 @@ pub struct ScheduleSessionFlow {
 }
 
 impl ScheduleSessionFlow {
-    pub fn new(
-        redis_connection: &mut redis::Connection,
+    pub async fn new(
+        redis_connection: &mut redis::aio::Connection,
         event_series_id: String,
     ) -> Result<Self, crate::meetup::Error> {
         let id: u64 = rand::thread_rng().gen();
@@ -19,10 +19,11 @@ impl ScheduleSessionFlow {
             .hset(&redis_key, "event_series_id", &event_series_id)
             .ignore()
             .expire(&redis_key, 10 * 60)
-            .query(redis_connection)?;
+            .query_async(redis_connection)
+            .await?;
         Ok(ScheduleSessionFlow {
-            id: id,
-            event_series_id: event_series_id,
+            id,
+            event_series_id,
         })
     }
 

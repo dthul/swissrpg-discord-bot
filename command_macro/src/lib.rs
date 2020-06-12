@@ -7,7 +7,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input,
+    parse_macro_input, parse_quote,
     punctuated::Punctuated,
     Attribute, ItemFn, Token,
 };
@@ -137,8 +137,13 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let fun_ident = command_fun.fun.sig.ident.clone();
     let regex_fun_ident = format_ident!("{}_regex", fun_ident.to_string());
     let static_instance_name = format_ident!("{}_COMMAND", fun_ident.to_string().to_uppercase());
-    let fun = command_fun.fun;
+    let mut fun = command_fun.fun;
     let command_struct_path = quote!(crate::discord::commands::Command);
+    let block = fun.block.as_ref();
+    let new_fun_block: syn::Block = parse_quote!({::std::boxed::Box::pin(async move {
+        #block
+    })});
+    *fun.block = new_fun_block;
     let help_entries: Vec<_> = help_texts
         .into_iter()
         .map(|(command, explanation)| {
@@ -159,7 +164,7 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
         pub(crate) static #static_instance_name: #command_struct_path = #command_struct_path {
             regex: #regex_fun_ident,
             level: #command_level,
-            fun: #fun_ident,
+            fun: &#fun_ident,
             help: &[#(#help_entries,)*],
         };
     };

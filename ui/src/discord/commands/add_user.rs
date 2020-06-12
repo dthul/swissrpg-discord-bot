@@ -10,10 +10,10 @@ use serenity::model::{channel::PermissionOverwriteType, id::UserId, permissions:
     "add `@some-user`",
     "_(in game channel or managed channel)_ adds a user to the channel."
 )]
-fn add_user(
-    mut context: super::CommandContext<'_>,
-    captures: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
+fn add_user<'a>(
+    mut context: super::CommandContext,
+    captures: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
     // Get the Discord ID of the user that is supposed to
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -43,10 +43,10 @@ fn add_user(
     "add host `@some-user`",
     "_(in game channel or managed channel)_ makes a user an additional Host. _(Desktop only)_"
 )]
-fn add_host(
-    mut context: super::CommandContext<'_>,
-    captures: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
+fn add_host<'a>(
+    mut context: super::CommandContext,
+    captures: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
     // Get the Discord ID of the user that is supposed to
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -76,10 +76,10 @@ fn add_host(
     "remove `@some-user`",
     "_(in game channel or managed channel)_ removes a user from the channel."
 )]
-fn remove_user(
-    mut context: super::CommandContext<'_>,
-    captures: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
+fn remove_user<'a>(
+    mut context: super::CommandContext,
+    captures: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
     // Get the Discord ID of the user that is supposed to
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -109,10 +109,10 @@ fn remove_user(
     "remove host `@some-user`",
     "_(in game channel or managed channel)_ makes a user no longer a Host."
 )]
-fn remove_host(
-    mut context: super::CommandContext<'_>,
-    captures: regex::Captures<'_>,
-) -> Result<(), lib::meetup::Error> {
+fn remove_host<'a>(
+    mut context: super::CommandContext,
+    captures: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
     // Get the Discord ID of the user that is supposed to
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
@@ -136,7 +136,7 @@ fn remove_host(
 }
 
 fn channel_add_or_remove_user_impl(
-    context: &mut super::CommandContext<'_>,
+    context: &mut super::CommandContext,
     discord_id: u64,
     add: bool,
     as_host: bool,

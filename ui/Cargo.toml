@@ -15,6 +15,7 @@ bottest = ["lib/bottest"]
 lib = { path = "../lib", package = "swissrpg-lib" }
 command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
 askama = "0.9"
+assert-impl = "0.1"
 bytes = "0.5"
 chrono = "0.4"
 chrono-tz = "0.5"

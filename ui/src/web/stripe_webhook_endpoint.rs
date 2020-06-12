@@ -82,10 +82,11 @@ async fn handle_new_subscription(
     let customer = stripe::Customer::retrieve(stripe_client, &customer.id, &[]).await?;
     if let Some(username) = customer.metadata.get("Discord") {
         // Try to find the Discord user associated with this subscription
-        let id = lib::tasks::subscription_roles::discord_username_to_id(discord_api, username)?;
+        let id =
+            lib::tasks::subscription_roles::discord_username_to_id(discord_api, username).await?;
         if let Some(discord_id) = id {
             // TODO: might block
-            let discord_user = discord_id.to_user(discord_api)?;
+            let discord_user = discord_id.to_user(discord_api).await?;
             let is_champion_product = product.name.as_ref().map_or(false, |name| {
                 lib::tasks::subscription_roles::CHAMPION_PRODUCT_REGEX.is_match(name)
             });
@@ -93,15 +94,18 @@ async fn handle_new_subscription(
                 lib::tasks::subscription_roles::INSIDER_PRODUCT_REGEX.is_match(name)
             });
             if is_champion_product {
-                if let Ok(true) = discord_user.has_role(
-                    discord_api,
-                    lib::discord::sync::ids::GUILD_ID,
-                    lib::discord::sync::ids::GAME_MASTER_ID,
-                ) {
+                if let Ok(true) = discord_user
+                    .has_role(
+                        discord_api,
+                        lib::discord::sync::ids::GUILD_ID,
+                        lib::discord::sync::ids::GAME_MASTER_ID,
+                    )
+                    .await
+                {
                     println!("Adding GM Champion role");
                     lib::tasks::subscription_roles::add_member_role(
                         discord_api.clone(),
-                        *discord_id,
+                        discord_id,
                         lib::tasks::subscription_roles::ids::GM_CHAMPION_ID,
                     )
                     .await?;
@@ -109,7 +113,7 @@ async fn handle_new_subscription(
                     println!("Adding Champion role");
                     lib::tasks::subscription_roles::add_member_role(
                         discord_api.clone(),
-                        *discord_id,
+                        discord_id,
                         lib::tasks::subscription_roles::ids::CHAMPION_ID,
                     )
                     .await?;
@@ -119,7 +123,7 @@ async fn handle_new_subscription(
                 println!("Adding Insider role");
                 lib::tasks::subscription_roles::add_member_role(
                     discord_api.clone(),
-                    *discord_id,
+                    discord_id,
                     lib::tasks::subscription_roles::ids::INSIDER_ID,
                 )
                 .await?;
