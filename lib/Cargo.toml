@@ -23,7 +23,7 @@ geo = "0.13.0"
 hyper = "0.13"
 itertools = "0.9"
 lazy_static = "1.4"
-oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03", "reqwest-010"] }
+oauth2 = { version = "3.0.0", default-features = false, features = ["futures-03", "reqwest-010"] }
 rand = "0.7"
 redis = { version = "0.16", default-features = false, features = ["tokio-comp"] }
 regex = "1"

@@ -24,7 +24,7 @@ futures-channel = "0.3"
 futures-util = { version = "0.3" }
 hyper = "0.13"
 num-traits = "0.2"
-oauth2 = { version = "3.0.0-alpha.9", default-features = false, features = ["futures-03", "reqwest-010"] }
+oauth2 = { version = "3.0.0", default-features = false, features = ["futures-03", "reqwest-010"] }
 once_cell = "1.4"
 rand = "0.7"
 redis = { version = "0.16", default-features = false, features = ["tokio-comp"] }
