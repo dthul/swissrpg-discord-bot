@@ -20,6 +20,7 @@ pub mod ids {
     pub const ORGANISER_ID: RoleId = RoleId(689914933357314090);
     pub const GAME_MASTER_ID: RoleId = RoleId(606913167439822987);
     pub const DICE_ROLLER_BOT_ID: Option<RoleId> = None;
+    pub const RYTHM_BOT_IDS: &'static [RoleId] = &[RoleId(731075146911187005)];
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561808429056042)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(607561949651402772)];
     pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(601070848446824512);
@@ -36,6 +37,8 @@ pub mod ids {
     pub const ORGANISER_ID: RoleId = RoleId(539447673988841492);
     pub const GAME_MASTER_ID: RoleId = RoleId(412946716892069888);
     pub const DICE_ROLLER_BOT_ID: Option<RoleId> = Some(RoleId(600612886368223274));
+    pub const RYTHM_BOT_IDS: &'static [RoleId] =
+        &[RoleId(731078776502353940), RoleId(731078935319937054)];
     pub const ONE_SHOT_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(562607292176924694)];
     pub const CAMPAIGN_CATEGORY_IDS: &'static [ChannelId] =
         &[ChannelId(414074722259828736), ChannelId(651006290998329354)];
@@ -806,7 +809,7 @@ fn sync_channel_permissions(
             permission_overwrites
         }
         ChannelType::Voice => {
-            let permission_overwrites = vec![
+            let mut permission_overwrites = vec![
                 PermissionOverwrite {
                     allow: Permissions::empty(),
                     deny: Permissions::READ_MESSAGES | Permissions::CONNECT,
@@ -832,6 +835,13 @@ fn sync_channel_permissions(
                     kind: PermissionOverwriteType::Role(ORGANISER_ID),
                 },
             ];
+            for &rythm_bot_id in RYTHM_BOT_IDS {
+                permission_overwrites.push(PermissionOverwrite {
+                    allow: Permissions::READ_MESSAGES | Permissions::CONNECT,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Role(rythm_bot_id),
+                });
+            }
             // for &host_id in discord_host_ids {
             //     permission_overwrites.push(PermissionOverwrite {
             //         allow: Permissions::CONNECT
