@@ -5,7 +5,7 @@ pub mod schedule_session;
 pub mod server;
 pub mod stripe_webhook_endpoint;
 
-use askama::Template;
+use askama_warp::Template;
 
 #[derive(Template)]
 #[template(path = "message.html")]

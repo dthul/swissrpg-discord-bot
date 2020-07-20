@@ -1,6 +1,5 @@
 use oauth2::{
-    basic::BasicClient, AsyncRefreshTokenRequest, AuthUrl, ClientId, ClientSecret, RedirectUrl,
-    TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenResponse, TokenUrl,
 };
 use redis::AsyncCommands;
 use simple_error::SimpleError;

@@ -1,4 +1,4 @@
-use askama::Error as AskamaError;
+use askama_warp::Error as AskamaError;
 use chrono::format::ParseError as ChronoParseError;
 use hyper::http::Error as HttpError;
 use redis::RedisError;
