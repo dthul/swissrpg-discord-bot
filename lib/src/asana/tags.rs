@@ -1,9 +1,6 @@
-use super::api;
+use super::api::*;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::json;
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
-pub struct TagId(String);
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Tag {
@@ -110,17 +107,13 @@ impl Serialize for Color {
     }
 }
 
-impl api::AsyncClient {
+impl AsyncClient {
     // Searches for a tag by name. If a tag with this name does not exist, it
     // is created. The supplied color is only used when a tag is newly created,
     // an existing tag with the specified name will not have its color changed.
     // If there exist several tags with the same name, this functions returns
     // an arbitrary one of them.
-    pub async fn get_or_create_tag_by_name(
-        &self,
-        name: &str,
-        color: &Color,
-    ) -> Result<Tag, api::Error> {
+    pub async fn get_or_create_tag_by_name(&self, name: &str, color: &Color) -> Result<Tag, Error> {
         // Check the cache first
         {
             let tags = self.tags.read().await;
@@ -131,8 +124,7 @@ impl api::AsyncClient {
         // No hit in the cache, get all tags from the Asana API
         let url = format!(
             "{}/workspaces/{}/tags?opt_fields=name,color",
-            api::BASE_URL,
-            self.workspace.0
+            BASE_URL, self.workspace.0
         );
         let all_tags = self.get_all(&url).await?;
         let tag = {
@@ -148,7 +140,7 @@ impl api::AsyncClient {
             // Still no hit? Then this tag doesn't exist.
             // We create it now and hold the write lock on the tag cache while
             // doing so, to prevent a tag from being created multiple times.
-            let url = format!("{}/tags", api::BASE_URL);
+            let url = format!("{}/tags", BASE_URL);
             let new_tag = CreateTag {
                 name: name.to_string(),
                 color: color.clone(),
@@ -161,7 +153,7 @@ impl api::AsyncClient {
                 .body(payload.to_string())
                 .send()
                 .await?;
-            let tag: api::Wrapper<Tag> = Self::try_deserialize(res).await?;
+            let tag: Wrapper<Tag> = Self::try_deserialize(res).await?;
             let tag = tag.data;
             // Store the newly created tag in the cache
             tags.insert(tag.id.clone(), tag.clone());
