@@ -120,13 +120,19 @@ pub fn create_server(
         oauth2_consumer.clone(),
         discord_cache_http.clone(),
     );
+    let create_game_routes = super::create_game::create_routes();
     #[cfg(feature = "bottest")]
     let combined_routes = {
         let static_route = warp::path("static").and(warp::fs::dir("ui/src/web/html/static"));
-        linking_routes.or(schedule_session_routes).or(static_route)
+        linking_routes
+            .or(schedule_session_routes)
+            .or(static_route)
+            .or(create_game_routes)
     };
     #[cfg(not(feature = "bottest"))]
-    let combined_routes = linking_routes.or(schedule_session_routes);
+    let combined_routes = linking_routes
+        .or(schedule_session_routes)
+        .or(create_game_routes);
     let combined_routes: BoxedFilter<(Box<dyn Reply>,)> =
         if let Some(stripe_webhook_secret) = stripe_webhook_secret {
             let stripe_webhook_routes = super::stripe_webhook_endpoint::create_routes(

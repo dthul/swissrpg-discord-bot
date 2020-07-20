@@ -1,4 +1,5 @@
 pub mod api;
+mod create_game;
 pub mod linking;
 pub mod schedule_session;
 pub mod server;

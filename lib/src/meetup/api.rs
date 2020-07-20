@@ -243,7 +243,7 @@ impl AsyncClient {
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()
-                .expect("Could not initialize the reqwest client"),
+                .expect("Could not initialize the reqwest Meetup client"),
         }
     }
 
