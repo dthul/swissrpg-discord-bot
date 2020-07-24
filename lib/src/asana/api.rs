@@ -27,7 +27,7 @@ pub struct ProjectId(pub String);
 pub struct TaskId(pub String);
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
-pub struct TagId(String);
+pub struct TagId(pub String);
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct WorkspaceId(pub String);

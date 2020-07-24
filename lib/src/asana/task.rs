@@ -4,13 +4,13 @@ use serde_json::json;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Task {
     #[serde(rename = "gid")]
-    id: TaskId,
-    name: String,
-    notes: Option<String>,
+    pub id: TaskId,
+    pub name: String,
+    pub notes: Option<String>,
     #[serde(rename = "projects")]
-    project_ids: Option<Vec<ProjectId>>,
+    pub project_ids: Option<Vec<ProjectId>>,
     #[serde(rename = "tags")]
-    tag_ids: Option<Vec<TagId>>,
+    pub tag_ids: Option<Vec<TagId>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -20,12 +20,12 @@ struct Tasks {
 
 #[derive(Debug, Serialize, Clone)]
 pub struct CreateTask {
-    name: String,
-    notes: Option<String>,
+    pub name: String,
+    pub notes: Option<String>,
     #[serde(rename = "projects")]
-    project_ids: Option<Vec<ProjectId>>,
+    pub project_ids: Option<Vec<ProjectId>>,
     #[serde(rename = "tags")]
-    tag_ids: Option<Vec<TagId>>,
+    pub tag_ids: Option<Vec<TagId>>,
 }
 
 impl AsyncClient {
@@ -41,11 +41,7 @@ impl AsyncClient {
         Ok(tasks.data)
     }
 
-    pub async fn create_task(
-        &self,
-        projects: &[ProjectId],
-        task: &CreateTask,
-    ) -> Result<Task, Error> {
+    pub async fn create_task(&self, task: &CreateTask) -> Result<Task, Error> {
         let url = format!("{}/tasks", BASE_URL);
         let payload = json!({ "data": task });
         let res = self

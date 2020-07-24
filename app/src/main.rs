@@ -40,6 +40,16 @@ fn main() {
     if api_key.is_none() {
         eprintln!("No API key set. Will not listen to API requests.");
     }
+    let asana_personal_access_token = env::var("ASANA_PERSONAL_ACCESS_TOKEN").ok();
+    let asana_client = if let Some(asana_personal_access_token) = asana_personal_access_token {
+        Some(Arc::new(lib::asana::api::AsyncClient::new(
+            &asana_personal_access_token,
+            lib::asana::ids::SWISSRPG_WORKSPACE_ID.clone(),
+        )))
+    } else {
+        eprintln!("No Asana personal access token set.");
+        None
+    };
 
     // Connect to the local Redis server
     let redis_url = if cfg!(feature = "bottest") {
@@ -133,6 +143,7 @@ fn main() {
         stripe_webhook_signing_secret,
         stripe_client.clone(),
         api_key,
+        asana_client,
         abort_web_server_signal,
     );
 

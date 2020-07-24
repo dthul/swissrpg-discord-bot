@@ -1,3 +1,4 @@
+use crate::asana::api::Error as AsanaError;
 use askama_warp::Error as AskamaError;
 use backtrace::Backtrace;
 use chrono::format::ParseError as ChronoParseError;
@@ -165,6 +166,15 @@ impl From<Elapsed> for BoxedError {
 
 impl From<crate::meetup::Error> for BoxedError {
     fn from(err: crate::meetup::Error) -> Self {
+        BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
+impl From<AsanaError> for BoxedError {
+    fn from(err: AsanaError) -> Self {
         BoxedError {
             inner: Box::new(err),
             backtrace: Backtrace::new(),

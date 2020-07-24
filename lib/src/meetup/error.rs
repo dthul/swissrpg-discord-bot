@@ -1,3 +1,4 @@
+use crate::asana::api::Error as AsanaError;
 use askama_warp::Error as AskamaError;
 use chrono::format::ParseError as ChronoParseError;
 use hyper::http::Error as HttpError;
@@ -125,6 +126,12 @@ impl From<StripeError> for Error {
 
 impl From<JoinError> for Error {
     fn from(err: JoinError) -> Self {
+        Error::CommonError(err.into())
+    }
+}
+
+impl From<AsanaError> for Error {
+    fn from(err: AsanaError) -> Self {
         Error::CommonError(err.into())
     }
 }

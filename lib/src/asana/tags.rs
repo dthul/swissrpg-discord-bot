@@ -5,15 +5,15 @@ use serde_json::json;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Tag {
     #[serde(rename = "gid")]
-    id: TagId,
-    name: String,
-    color: Color,
+    pub id: TagId,
+    pub name: String,
+    pub color: Color,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CreateTag {
-    name: String,
-    color: Color,
+    pub name: String,
+    pub color: Color,
 }
 
 #[derive(Debug, Deserialize, Clone)]

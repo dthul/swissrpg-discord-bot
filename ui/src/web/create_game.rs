@@ -1,4 +1,6 @@
-use serde::{de::Error, Deserialize};
+use lib::asana::tags::Color;
+use serde::{de, de::Error, Deserialize, Deserializer};
+use std::sync::Arc;
 use warp::Filter;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -17,15 +19,13 @@ struct FormContent {
     game_type: GameType,
     #[serde(rename = "15")]
     rpg_system: RPGSystem,
-    // TODO: bool from "Yes" / "No" string?
-    #[serde(rename = "33")]
+    #[serde(rename = "33", deserialize_with = "bool_from_yes_no")]
     dndbeyond_access: bool,
     #[serde(rename = "33")]
     character_creation: CharacterCreation,
     #[serde(rename = "17")]
     max_players: usize,
-    // TODO: bool from "Yes" / "No" string?
-    #[serde(rename = "37.1")]
+    #[serde(rename = "37.1", deserialize_with = "bool_from_yes_no")]
     beginner_friendly: bool,
     #[serde(rename = "19")]
     title: String,
@@ -47,6 +47,8 @@ struct FormContent {
     // TODO: merge venue from fields 43 and 48 (and later others?)
     #[serde(rename = "43")]
     venue: Venue,
+    #[serde(rename = "48")]
+    venue_name: String,
     #[serde(rename = "26")]
     comments: String,
 }
@@ -92,6 +94,20 @@ enum Venue {
     Own,
     SwissRPG,
     Online,
+}
+
+fn bool_from_yes_no<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match String::deserialize(deserializer)?.as_str() {
+        "Yes" => Ok(true),
+        "No" => Ok(false),
+        other => Err(de::Error::invalid_value(
+            de::Unexpected::Str(other),
+            &"'Yes' or 'No'",
+        )),
+    }
 }
 
 impl<'de> Deserialize<'de> for GameType {
@@ -185,6 +201,7 @@ impl<'de> Deserialize<'de> for City {
 }
 
 pub fn create_routes(
+    asana_client: Arc<lib::asana::api::AsyncClient>,
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let post_route = {
         warp::post()
@@ -193,14 +210,47 @@ pub fn create_routes(
             .and(warp::body::json())
             .and_then(move |body: serde_json::Value| {
                 println!("Got GF form submission:\n{:#?}", body);
+                let asana_client = asana_client.clone();
                 async move {
-                    // let mut redis_connection = redis_client
-                    //     .get_async_connection()
-                    //     .err_into::<lib::meetup::Error>()
-                    //     .await?;
-                    Ok::<_, warp::Rejection>(warp::http::StatusCode::OK)
+                    if let Ok(form_content) = serde_json::from_value::<FormContent>(body) {
+                        println!("Creating Asana task");
+                        create_asana_task(&asana_client, form_content).await?;
+                        println!("Created Asana task");
+                        Ok::<_, warp::Rejection>(warp::http::StatusCode::OK)
+                    } else {
+                        println!("Couldn't parse form content");
+                        Ok::<_, warp::Rejection>(warp::http::StatusCode::BAD_REQUEST)
+                    }
                 }
             })
     };
     post_route
+}
+
+async fn create_asana_task(
+    asana_client: &lib::asana::api::AsyncClient,
+    form_content: FormContent,
+) -> Result<(), lib::meetup::Error> {
+    // Turn the form into an Asana task
+    // Step 1: get the venue Tag
+    let tag = match form_content.venue {
+        Venue::Online => {
+            asana_client
+                .get_or_create_tag_by_name("Online", &Color::DarkPurple)
+                .await?
+        }
+        Venue::SwissRPG | Venue::Own => {
+            asana_client
+                .get_or_create_tag_by_name(&form_content.venue_name, &Color::LightTeal)
+                .await?
+        }
+    };
+    let new_task = lib::asana::task::CreateTask {
+        name: form_content.title,
+        project_ids: Some(vec![lib::asana::ids::PUBLICATIONS_PROJECT_ID.clone()]),
+        tag_ids: Some(vec![tag.id]),
+        notes: Some(form_content.description),
+    };
+    asana_client.create_task(&new_task).await?;
+    Ok(())
 }
