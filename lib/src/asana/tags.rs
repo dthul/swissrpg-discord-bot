@@ -7,13 +7,13 @@ pub struct Tag {
     #[serde(rename = "gid")]
     pub id: TagId,
     pub name: String,
-    pub color: Color,
+    pub color: Optional<Color>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CreateTag {
     pub name: String,
-    pub color: Color,
+    pub color: Option<Color>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -41,7 +41,6 @@ pub enum Color {
     LightTeal,
     LightWarmGray,
     LightYellow,
-    None,
     // Just in case Asana adds new colors:
     Other(String),
 }
@@ -71,7 +70,6 @@ impl<'de> Deserialize<'de> for Color {
             "light-teal" => Ok(Color::LightTeal),
             "light-warm-gray" => Ok(Color::LightWarmGray),
             "light-yellow" => Ok(Color::LightYellow),
-            "none" => Ok(Color::None),
             _ => Ok(Color::Other(s)),
         }
     }
@@ -101,7 +99,6 @@ impl Serialize for Color {
             Color::LightTeal => serializer.serialize_str("light-teal"),
             Color::LightWarmGray => serializer.serialize_str("light-warm-gray"),
             Color::LightYellow => serializer.serialize_str("light-yellow"),
-            Color::None => serializer.serialize_str("none"),
             Color::Other(s) => serializer.serialize_str(s),
         }
     }
@@ -113,7 +110,11 @@ impl AsyncClient {
     // an existing tag with the specified name will not have its color changed.
     // If there exist several tags with the same name, this functions returns
     // an arbitrary one of them.
-    pub async fn get_or_create_tag_by_name(&self, name: &str, color: &Color) -> Result<Tag, Error> {
+    pub async fn get_or_create_tag_by_name(
+        &self,
+        name: &str,
+        color: Option<&Color>,
+    ) -> Result<Tag, Error> {
         // Check the cache first
         {
             let tags = self.tags.read().await;
@@ -143,7 +144,7 @@ impl AsyncClient {
             let url = format!("{}/tags", BASE_URL);
             let new_tag = CreateTag {
                 name: name.to_string(),
-                color: color.clone(),
+                color: color.cloned(),
             };
             let payload = json!({ "data": new_tag });
             let res = self

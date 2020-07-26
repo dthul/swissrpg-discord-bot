@@ -1,16 +1,18 @@
 use super::api::*;
+use super::tags::Tag;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Task {
     #[serde(rename = "gid")]
     pub id: TaskId,
     pub name: String,
     pub notes: Option<String>,
-    #[serde(rename = "projects")]
-    pub project_ids: Option<Vec<ProjectId>>,
+    // #[serde(rename = "projects")]
+    // pub project_ids: Option<Vec<ProjectId>>,
     #[serde(rename = "tags")]
-    pub tag_ids: Option<Vec<TagId>>,
+    pub tag_ids: Option<Vec<Tag>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

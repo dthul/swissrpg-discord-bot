@@ -1,6 +1,6 @@
 use super::tags::Tag;
 use reqwest::header::{HeaderMap, ACCEPT, AUTHORIZATION};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -68,6 +68,50 @@ impl<'de> Deserialize<'de> for ResourceType {
 #[derive(Deserialize)]
 pub(super) struct Wrapper<T> {
     pub(super) data: T,
+}
+
+#[derive(Debug)]
+pub enum Optional<T> {
+    Missing,
+    Null,
+    Value(T),
+}
+
+impl<T> Default for Optional<T> {
+    fn default() -> Self {
+        Optional::Missing
+    }
+}
+
+impl<T: Clone> Clone for Optional<T> {
+    fn clone(&self) -> Optional<T> {
+        match self {
+            Optional::Missing => Optional::Missing,
+            Optional::Null => Optional::Null,
+            Optional::Value(v) => Optional::Value(v.clone()),
+        }
+    }
+}
+
+impl<T> From<Option<T>> for Optional<T> {
+    fn from(opt: Option<T>) -> Optional<T> {
+        match opt {
+            Some(v) => Optional::Value(v),
+            None => Optional::Null,
+        }
+    }
+}
+
+impl<'de, T> Deserialize<'de> for Optional<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::deserialize(deserializer).map(Into::into)
+    }
 }
 
 #[derive(Debug)]
@@ -149,7 +193,7 @@ impl AsyncClient {
         response: reqwest::Response,
     ) -> Result<T, Error> {
         let status = response.status();
-        if status == reqwest::StatusCode::OK {
+        if status == reqwest::StatusCode::OK || status == reqwest::StatusCode::CREATED {
             let text = response.text().await?;
             let value: T = serde_json::from_str(&text).map_err(|err| Error::Serde {
                 error: err,
@@ -157,7 +201,7 @@ impl AsyncClient {
             })?;
             Ok(value)
         } else {
-            // Status code is not OK (200)
+            // Status code is not success
             // Try to get an error object from the response
             let text = response.text().await?;
             let error_details: ErrorDetails =
