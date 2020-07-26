@@ -23,15 +23,6 @@ impl serenity::http::CacheHttp for CacheAndHttp {
     }
 }
 
-impl serenity::http::CacheHttp for &CacheAndHttp {
-    fn cache(&self) -> Option<&Arc<serenity::cache::Cache>> {
-        Some(&self.cache)
-    }
-    fn http(&self) -> &serenity::http::client::Http {
-        &self.http
-    }
-}
-
 impl From<&serenity::client::Context> for CacheAndHttp {
     fn from(ctx: &serenity::client::Context) -> Self {
         CacheAndHttp {

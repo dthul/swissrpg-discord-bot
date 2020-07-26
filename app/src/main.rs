@@ -78,34 +78,24 @@ fn main() {
     ));
 
     // Create a tokio runtime
-    let async_runtime = Arc::new(tokio::sync::RwLock::new(Some(
-        tokio::runtime::Builder::new()
-            .enable_io()
-            .enable_time()
-            .threaded_scheduler()
-            .build()
-            .expect("Could not create tokio runtime"),
-    )));
+    let mut async_runtime = tokio::runtime::Builder::new()
+        .enable_io()
+        .enable_time()
+        .threaded_scheduler()
+        .build()
+        .expect("Could not create tokio runtime");
 
     let bot_shutdown_signal = Arc::new(AtomicBool::new(false));
-    let mut bot = {
-        let runtime_guard = futures::executor::block_on(async_runtime.read());
-        let runtime = match *runtime_guard {
-            Some(ref async_runtime) => async_runtime,
-            None => panic!("Async runtime not available"),
-        };
-        runtime
-            .block_on(ui::discord::bot::create_discord_client(
-                &discord_token,
-                redis_client.clone(),
-                async_meetup_client.clone(),
-                meetup_oauth2_consumer.clone(),
-                stripe_client.clone(),
-                async_runtime.clone(),
-                bot_shutdown_signal.clone(),
-            ))
-            .expect("Could not create the Discord bot")
-    };
+    let mut bot = async_runtime
+        .block_on(ui::discord::bot::create_discord_client(
+            &discord_token,
+            redis_client.clone(),
+            async_meetup_client.clone(),
+            meetup_oauth2_consumer.clone(),
+            stripe_client.clone(),
+            bot_shutdown_signal.clone(),
+        ))
+        .expect("Could not create the Discord bot");
     let discord_api = lib::discord::CacheAndHttp {
         cache: bot.cache_and_http.cache.clone().into(),
         http: bot.cache_and_http.http.clone(),
@@ -190,6 +180,7 @@ fn main() {
         future::abortable(organizer_token_refresh_task);
     let (users_token_refresh_task, abort_handle_users_token_refresh_task) =
         future::abortable(users_token_refresh_task);
+    let (end_of_game_task, abort_handle_end_of_game_task) = future::abortable(end_of_game_task);
     let (syncing_task, abort_handle_syncing_task) = future::abortable(syncing_task);
     let (stripe_subscription_refresh_task, abort_handle_stripe_subscription_refresh_task) =
         future::abortable(stripe_subscription_refresh_task);
@@ -220,42 +211,38 @@ fn main() {
     }
 
     // Spawn all tasks onto the async runtime
-    {
-        let runtime_guard = futures::executor::block_on(async_runtime.read());
-        let async_runtime = match *runtime_guard {
-            Some(ref async_runtime) => async_runtime,
-            None => panic!("Async runtime not available"),
-        };
-        async_runtime.enter(move || {
-            tokio::spawn(async {
-                let _ = organizer_token_refresh_task.await;
-                println!("Organizer token refresh task shut down.");
-            });
-            tokio::spawn(async {
-                let _ = users_token_refresh_task.await;
-                println!("User token refresh task shut down.");
-            });
-            tokio::spawn(async {
-                let _ = syncing_task.await;
-                println!("Syncing task shut down.");
-            });
-            tokio::spawn(async {
-                let _ = stripe_subscription_refresh_task.await;
-                println!("Stripe subscription refresh task shut down.");
-            });
-            tokio::spawn(async {
-                web_server.await;
-                println!("Web server shut down.");
-            });
+    async_runtime.enter(move || {
+        tokio::spawn(async {
+            let _ = organizer_token_refresh_task.await;
+            println!("Organizer token refresh task shut down.");
         });
-        // runtime guard dropped here
-    }
-
-    // Start the Discord bot in another thread
-    std::thread::spawn(move || {
-        if let Err(why) = bot.start() {
-            println!("Client error: {:?}", why);
-        }
+        tokio::spawn(async {
+            let _ = users_token_refresh_task.await;
+            println!("User token refresh task shut down.");
+        });
+        tokio::spawn(async {
+            let _ = end_of_game_task.await;
+            println!("End of game task shut down.");
+        });
+        tokio::spawn(async {
+            let _ = syncing_task.await;
+            println!("Syncing task shut down.");
+        });
+        tokio::spawn(async {
+            let _ = stripe_subscription_refresh_task.await;
+            println!("Stripe subscription refresh task shut down.");
+        });
+        tokio::spawn(async {
+            web_server.await;
+            println!("Web server shut down.");
+        });
+        tokio::spawn(async move {
+            if let Err(why) = bot.start().await {
+                println!("Client error: {:#?}", why);
+            } else {
+                println!("Started async Discord client");
+            }
+        });
     });
 
     // Wait for a signal to exit the main thread
@@ -266,16 +253,14 @@ fn main() {
     bot_shutdown_signal.store(true, Ordering::Release);
     abort_handle_organizer_token_refresh_task.abort();
     abort_handle_users_token_refresh_task.abort();
+    abort_handle_end_of_game_task.abort();
     abort_handle_syncing_task.abort();
     abort_handle_stripe_subscription_refresh_task.abort();
-    let _ = abort_web_server_tx.send(());
-    let mut runtime_guard = futures::executor::block_on(async_runtime.write());
+    abort_web_server_tx.send(()).ok();
     // Give any currently running tasks a chance to finish
     println!("Waiting for tasks to finish.");
     std::thread::sleep(std::time::Duration::from_secs(10));
-    if let Some(async_runtime) = runtime_guard.take() {
-        println!("About to shut down the tokio runtime.");
-        async_runtime.shutdown_timeout(tokio::time::Duration::from_secs(10));
-        println!("Tokio runtime shut down.\nHyperion out.");
-    }
+    println!("About to shut down the tokio runtime.");
+    async_runtime.shutdown_timeout(tokio::time::Duration::from_secs(10));
+    println!("Tokio runtime shut down.\nHyperion out.");
 }

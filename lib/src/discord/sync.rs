@@ -12,7 +12,6 @@ use serenity::{
     },
 };
 use simple_error::SimpleError;
-use white_rabbit;
 
 #[cfg(feature = "bottest")]
 pub mod ids {

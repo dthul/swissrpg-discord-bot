@@ -24,7 +24,6 @@ pub async fn create_discord_client(
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     stripe_client: Arc<stripe::Client>,
-    async_runtime: Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>,
     shutdown_signal: Arc<AtomicBool>,
 ) -> Result<Client, lib::meetup::Error> {
     // Create a new instance of the Client, logging in as a bot. This will
@@ -59,7 +58,6 @@ pub async fn create_discord_client(
         data.insert::<RedisClientKey>(redis_client);
         data.insert::<OAuth2ConsumerKey>(oauth2_consumer);
         data.insert::<StripeClientKey>(stripe_client);
-        data.insert::<AsyncRuntimeKey>(async_runtime);
         data.insert::<ShutdownSignalKey>(shutdown_signal);
         data.insert::<PreparedCommandsKey>(prepared_commands);
     }
@@ -100,11 +98,6 @@ impl TypeMapKey for StripeClientKey {
 pub struct ShutdownSignalKey;
 impl TypeMapKey for ShutdownSignalKey {
     type Value = Arc<AtomicBool>;
-}
-
-pub struct AsyncRuntimeKey;
-impl TypeMapKey for AsyncRuntimeKey {
-    type Value = Arc<tokio::sync::RwLock<Option<tokio::runtime::Runtime>>>;
 }
 
 pub(crate) struct PreparedCommandsKey;

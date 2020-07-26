@@ -26,7 +26,6 @@ macro_rules! propagate_err {
     }};
 }
 
-#[derive(Debug)]
 struct CommandFun {
     /// `#[...]`-style attributes
     pub attributes: Vec<Attribute>,

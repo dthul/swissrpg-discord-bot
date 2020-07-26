@@ -320,7 +320,7 @@ pub async fn discord_username_to_id(
             return Err(simple_error::SimpleError::new("Guild not found").into());
         }
     };
-    let discord_id = match guild.member_named(username).await.and_then(|member| {
+    let discord_id = match guild.member_named(username).and_then(|member| {
         // Serenity does fuzzy matching.
         // We want to filter any results which don't match exactly.
         if &format!("{}#{}", member.user.name, member.user.discriminator) != username {

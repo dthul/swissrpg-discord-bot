@@ -1,6 +1,4 @@
 use crate::{discord::sync::ChannelType, strings};
-use futures::stream;
-use futures::StreamExt;
 use redis::AsyncCommands;
 use serenity::model::id::{ChannelId, RoleId, UserId};
 use simple_error::SimpleError;
