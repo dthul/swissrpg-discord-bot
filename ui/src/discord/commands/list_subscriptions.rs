@@ -3,6 +3,7 @@ use command_macro::command;
 #[command]
 #[regex(r"list\s*subscriptions")]
 #[level(admin)]
+#[help("list subscriptions", "returns a list of active Stripe subscriptions")]
 fn list_subscriptions<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,

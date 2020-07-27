@@ -3,6 +3,7 @@ use command_macro::command;
 #[command]
 #[regex(r"stop")]
 #[level(admin)]
+#[help("stop", "shuts down Hyperion")]
 pub fn stop<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,

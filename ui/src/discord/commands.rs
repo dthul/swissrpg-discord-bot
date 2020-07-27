@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 mod add_user;
 // mod clone_event;
-// mod count_inactive;
+mod count_inactive;
 mod end_adventure;
 mod help;
 mod link_meetup;
@@ -61,7 +61,7 @@ static ALL_COMMANDS: &[&Command] = &[
     &manage_channel::MANAGE_CHANNEL_COMMAND,
     // &mention_channel::MENTION_CHANNEL_COMMAND,
     &snooze::SNOOZE_COMMAND,
-    // &count_inactive::COUNT_INACTIVE_COMMAND,
+    &count_inactive::COUNT_INACTIVE_COMMAND,
     // &clone_event::CLONE_EVENT_COMMAND,
     // &rsvp_user::RSVP_USER_COMMAND,
     // &test::TEST_COMMAND,
