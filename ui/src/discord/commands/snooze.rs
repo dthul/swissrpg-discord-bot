@@ -9,7 +9,7 @@ use redis::AsyncCommands;
     "_(in game channel)_ snoozes reminders for _X_ days"
 )]
 fn snooze<'a>(
-    mut context: super::CommandContext,
+    context: &'a mut super::CommandContext,
     captures: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     let num_days: u32 = captures
@@ -21,12 +21,12 @@ fn snooze<'a>(
         .map_err(|_err| simple_error::SimpleError::new("Invalid number of days specified"))?;
     // Check whether this is a game channel
     // TODO: make this a macro
-    let is_game_channel: bool = context.is_game_channel()?;
+    let is_game_channel: bool = context.is_game_channel().await?;
     if !is_game_channel {
         context
             .msg
             .channel_id
-            .say(context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
+            .say(&context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
             .await
             .ok();
         return Ok(());
@@ -40,10 +40,12 @@ fn snooze<'a>(
             .await?
             .del(&redis_channel_snooze_key)
             .await?;
-        let _ = context
+        context
             .msg
             .channel_id
-            .say(context.ctx, "Disabled snoozing.");
+            .say(&context.ctx, "Disabled snoozing.")
+            .await
+            .ok();
     } else {
         let snooze_until = chrono::Utc::now() + chrono::Duration::days(num_days as i64);
         // Set a new snooze date
@@ -55,7 +57,7 @@ fn snooze<'a>(
         context
             .msg
             .channel_id
-            .say(context.ctx, format!("Snoozing for {} days.", num_days))
+            .say(&context.ctx, format!("Snoozing for {} days.", num_days))
             .await
             .ok();
     }

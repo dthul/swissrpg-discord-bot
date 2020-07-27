@@ -1,5 +1,4 @@
 use command_macro::command;
-use futures::StreamExt;
 use redis::AsyncCommands;
 use serenity::model::id::UserId;
 use std::collections::HashMap;
@@ -12,7 +11,7 @@ use std::collections::HashMap;
     "shows information about people in this channel and people signed up for this channel's events on Meetup."
 )]
 fn list_players<'a>(
-    mut context: super::CommandContext,
+    context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     // Check whether this is a bot controlled channel
@@ -24,10 +23,12 @@ fn list_players<'a>(
     let channel_roles = match channel_roles {
         Some(roles) => roles,
         None => {
-            let _ = context
+            context
                 .msg
                 .channel_id
-                .say(context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED);
+                .say(&context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
+                .await
+                .ok();
             return Ok(());
         }
     };
@@ -46,23 +47,20 @@ fn list_players<'a>(
         .await?
         .smembers(&redis_series_events_key)
         .await?;
-    let mut event_ids_and_time: Vec<_> = {
+    let mut event_ids_and_time = {
         let redis_connection = context.async_redis_connection().await?;
-        futures::stream::iter(event_ids)
-            .filter_map(|id| async {
-                let redis_event_key = format!("meetup_event:{}", id);
-                let time: redis::RedisResult<String> =
-                    redis_connection.hget(&redis_event_key, "time").await;
-                match time {
-                    Ok(time) => match chrono::DateTime::parse_from_rfc3339(time.as_ref()) {
-                        Ok(time) => Some((id, time.with_timezone(&chrono::Utc))),
-                        _ => None,
-                    },
-                    _ => None,
+        let mut event_ids_and_time = vec![];
+        for id in event_ids {
+            let redis_event_key = format!("meetup_event:{}", id);
+            let time: redis::RedisResult<String> =
+                redis_connection.hget(&redis_event_key, "time").await;
+            if let Ok(time) = time {
+                if let Ok(time) = chrono::DateTime::parse_from_rfc3339(time.as_ref()) {
+                    event_ids_and_time.push((id, time.with_timezone(&chrono::Utc)));
                 }
-            })
-            .collect()
-            .await
+            }
+        }
+        event_ids_and_time
     };
     // Sort by date
     event_ids_and_time.sort_unstable_by_key(|(_id, time)| time.clone());
@@ -75,10 +73,12 @@ fn list_players<'a>(
         Some(idx) => &event_ids_and_time[idx..],
         None => {
             if event_ids_and_time.is_empty() {
-                let _ = context
+                context
                     .msg
                     .channel_id
-                    .say(context.ctx, "There are no events");
+                    .say(&context.ctx, "There are no events")
+                    .await
+                    .ok();
                 return Ok(());
             } else {
                 &event_ids_and_time[event_ids_and_time.len() - 1..]
@@ -101,38 +101,34 @@ fn list_players<'a>(
     // TODO: check whether this returns offline members
     let discord_player_ids: Vec<_> =
         if let Some(serenity::model::channel::Channel::Guild(channel)) =
-            context.msg.channel(context.ctx).await
+            context.msg.channel(&context.ctx).await
         {
-            let members = channel.members(context.ctx).await?;
-            futures::stream::iter(members)
-                .filter_map(|member| async move {
-                    match member
-                        .user
-                        .has_role(
-                            &context.ctx,
-                            lib::discord::sync::ids::GUILD_ID,
-                            channel_roles.user,
-                        )
-                        .await
-                    {
-                        Ok(has_role) => {
-                            if has_role {
-                                Some(member.user.id)
-                            } else {
-                                None
-                            }
-                        }
-                        Err(err) => {
-                            eprintln!(
-                                "Error when trying to check whether user has role:\n{:#?}",
-                                err
-                            );
-                            None
+            let mut discord_player_ids = vec![];
+            let members = channel.members(&context.ctx).await?;
+            for member in &members {
+                match member
+                    .user
+                    .has_role(
+                        &context.ctx,
+                        lib::discord::sync::ids::GUILD_ID,
+                        channel_roles.user,
+                    )
+                    .await
+                {
+                    Ok(has_role) => {
+                        if has_role {
+                            discord_player_ids.push(member.user.id);
                         }
                     }
-                })
-                .collect()
-                .await
+                    Err(err) => {
+                        eprintln!(
+                            "Error when trying to check whether user has role:\n{:#?}",
+                            err
+                        );
+                    }
+                }
+            }
+            discord_player_ids
         } else {
             return Ok(());
         };
@@ -257,7 +253,6 @@ fn list_players<'a>(
             reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
         }
     }
-
-    let _ = context.msg.channel_id.say(context.ctx, &reply);
+    context.msg.channel_id.say(&context.ctx, &reply).await.ok();
     Ok(())
 }

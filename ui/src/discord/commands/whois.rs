@@ -23,7 +23,7 @@ use serenity::model::id::UserId;
     "shows the Discord user linked to the provided Meetup profile"
 )]
 fn whois<'a>(
-    mut context: super::CommandContext,
+    context: &'a mut super::CommandContext,
     captures: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     if let Some(capture) = captures.name("mention_id") {
@@ -36,17 +36,17 @@ fn whois<'a>(
                 context
                     .msg
                     .channel_id
-                    .say(context.ctx, lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD)
+                    .say(&context.ctx, lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD)
                     .await
                     .ok();
                 return Ok(());
             }
         };
-        whois_by_discord_id(&mut context, UserId(discord_id))?;
+        whois_by_discord_id(context, UserId(discord_id)).await?;
     } else if let Some(capture) = captures.name("discord_username_tag") {
         let username_tag = capture.as_str();
         // Look up by Discord username and tag
-        whois_by_discord_username_tag(&mut context, &username_tag)?;
+        whois_by_discord_username_tag(context, &username_tag).await?;
     } else if let Some(capture) = captures.name("meetup_user_id") {
         // Look up by Meetup ID
         let meetup_id = capture.as_str();
@@ -54,99 +54,136 @@ fn whois<'a>(
         let meetup_id = match meetup_id.parse::<u64>() {
             Ok(id) => id,
             _ => {
-                let _ = context
+                context
                     .msg
                     .channel_id
-                    .say(context.ctx, lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD);
+                    .say(&context.ctx, lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD)
+                    .await
+                    .ok();
                 return Ok(());
             }
         };
-        whois_by_meetup_id(&mut context, meetup_id)?
+        whois_by_meetup_id(context, meetup_id).await?
     }
     Ok(())
 }
 
-fn whois_by_discord_id(
+async fn whois_by_discord_id(
     context: &mut super::CommandContext,
     user_id: UserId,
 ) -> Result<(), lib::meetup::Error> {
     let redis_discord_meetup_key = format!("discord_user:{}:meetup_user", user_id.0);
-    let res: Option<String> = context.redis_connection()?.get(&redis_discord_meetup_key)?;
+    let res: Option<String> = context
+        .async_redis_connection()
+        .await?
+        .get(&redis_discord_meetup_key)
+        .await?;
     match res {
         Some(meetup_id) => {
-            let _ = context.msg.channel_id.say(
-                context.ctx,
-                format!(
-                    "<@{}> is linked to https://www.meetup.com/members/{}/",
-                    user_id.0, meetup_id
-                ),
-            );
+            context
+                .msg
+                .channel_id
+                .say(
+                    &context.ctx,
+                    format!(
+                        "<@{}> is linked to https://www.meetup.com/members/{}/",
+                        user_id.0, meetup_id
+                    ),
+                )
+                .await
+                .ok();
         }
         None => {
-            let _ = context.msg.channel_id.say(
-                context.ctx,
-                format!(
-                    "<@{}> does not seem to be linked to a Meetup account",
-                    user_id.0
-                ),
-            );
+            context
+                .msg
+                .channel_id
+                .say(
+                    &context.ctx,
+                    format!(
+                        "<@{}> does not seem to be linked to a Meetup account",
+                        user_id.0
+                    ),
+                )
+                .await
+                .ok();
         }
     }
     Ok(())
 }
 
-pub fn whois_by_discord_username_tag(
+async fn whois_by_discord_username_tag(
     context: &mut super::CommandContext,
     username_tag: &str,
 ) -> Result<(), lib::meetup::Error> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(context.ctx) {
-        let discord_id = guild
-            .read()
-            .member_named(username_tag)
-            .map(|m| m.user.read().id);
+    if let Some(guild) = lib::discord::sync::ids::GUILD_ID
+        .to_guild_cached(&context.ctx)
+        .await
+    {
+        let discord_id = guild.member_named(username_tag).map(|m| m.user.id);
         if let Some(discord_id) = discord_id {
             // Look up by Discord ID
-            whois_by_discord_id(context, discord_id)?;
+            whois_by_discord_id(context, discord_id).await?;
         } else {
-            let _ = context.msg.channel_id.say(
-                context.ctx,
-                format!("{} is not a Discord user", username_tag),
-            );
+            context
+                .msg
+                .channel_id
+                .say(
+                    &context.ctx,
+                    format!("{} is not a Discord user", username_tag),
+                )
+                .await
+                .ok();
         }
     } else {
-        let _ = context
+        context
             .msg
             .channel_id
-            .say(context.ctx, "Something went wrong (guild not found)");
+            .say(&context.ctx, "Something went wrong (guild not found)")
+            .await
+            .ok();
     }
     Ok(())
 }
 
-pub fn whois_by_meetup_id(
+async fn whois_by_meetup_id(
     context: &mut super::CommandContext,
     meetup_id: u64,
 ) -> Result<(), lib::meetup::Error> {
     let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
-    let res: Option<String> = context.redis_connection()?.get(&redis_meetup_discord_key)?;
+    let res: Option<String> = context
+        .async_redis_connection()
+        .await?
+        .get(&redis_meetup_discord_key)
+        .await?;
     match res {
         Some(discord_id) => {
-            let _ = context.msg.channel_id.say(
-                context.ctx,
-                format!(
-                    "https://www.meetup.com/members/{}/ is linked to <@{}>",
-                    meetup_id, discord_id
-                ),
-            );
+            context
+                .msg
+                .channel_id
+                .say(
+                    &context.ctx,
+                    format!(
+                        "https://www.meetup.com/members/{}/ is linked to <@{}>",
+                        meetup_id, discord_id
+                    ),
+                )
+                .await
+                .ok();
         }
         None => {
-            let _ = context.msg.channel_id.say(
-                context.ctx,
-                format!(
+            context
+                .msg
+                .channel_id
+                .say(
+                    &context.ctx,
+                    format!(
                     "https://www.meetup.com/members/{}/ does not seem to be linked to a Discord \
                      user",
                     meetup_id
                 ),
-            );
+                )
+                .await
+                .ok();
         }
     }
     Ok(())

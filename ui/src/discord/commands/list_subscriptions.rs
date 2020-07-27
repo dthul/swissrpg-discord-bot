@@ -4,18 +4,19 @@ use command_macro::command;
 #[regex(r"list\s*subscriptions")]
 #[level(admin)]
 fn list_subscriptions<'a>(
-    context: super::CommandContext,
+    context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     context
         .msg
         .author
-        .direct_message(context.ctx, |message_builder| {
+        .direct_message(&context.ctx, |message_builder| {
             message_builder.content("Sure! This might take a moment...")
         })
         .await
         .ok();
-    let subscriptions = lib::stripe::list_active_subscriptions(context.stripe_client()?).await?;
+    let stripe_client = context.stripe_client().await?;
+    let subscriptions = lib::stripe::list_active_subscriptions(&stripe_client).await?;
     let mut message = String::new();
     for subscription in &subscriptions {
         // First, figure out which product was bought
@@ -26,8 +27,7 @@ fn list_subscriptions<'a>(
                     stripe::Expandable::Object(product) => Some(*product.clone()),
                     stripe::Expandable::Id(product_id) => {
                         let product =
-                            stripe::Product::retrieve(context.stripe_client()?, product_id, &[])
-                                .await?;
+                            stripe::Product::retrieve(&stripe_client, product_id, &[]).await?;
                         Some(product)
                     }
                 },
@@ -39,8 +39,7 @@ fn list_subscriptions<'a>(
         let customer = match &subscription.customer {
             stripe::Expandable::Object(customer) => *customer.clone(),
             stripe::Expandable::Id(customer_id) => {
-                let customer =
-                    stripe::Customer::retrieve(context.stripe_client()?, customer_id, &[]).await?;
+                let customer = stripe::Customer::retrieve(&stripe_client, customer_id, &[]).await?;
                 customer
             }
         };
@@ -52,11 +51,13 @@ fn list_subscriptions<'a>(
             product.map(|p| p.name)
         ));
     }
-    let _ = context
+    context
         .msg
         .author
-        .direct_message(context.ctx, |message_builder| {
+        .direct_message(&context.ctx, |message_builder| {
             message_builder.content(format!("Active subscriptions:\n{}", message))
-        });
+        })
+        .await
+        .ok();
     Ok(())
 }

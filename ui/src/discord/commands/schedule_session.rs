@@ -9,17 +9,19 @@ use redis::AsyncCommands;
     "allows you to schedule a new session for your adventure."
 )]
 fn schedule_session<'a>(
-    mut context: super::CommandContext,
+    context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     // TODO: make macro check
     // Check whether this is a game channel
-    let is_game_channel: bool = context.is_game_channel()?;
+    let is_game_channel: bool = context.is_game_channel().await?;
     if !is_game_channel {
-        let _ = context
+        context
             .msg
             .channel_id
-            .say(context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED);
+            .say(&context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
+            .await
+            .ok();
         return Ok(());
     };
     // Find the series belonging to the channel
@@ -35,15 +37,17 @@ fn schedule_session<'a>(
         lib::flow::ScheduleSessionFlow::new(context.async_redis_connection().await?, event_series)
             .await?;
     let link = format!("{}/schedule_session/{}", lib::urls::BASE_URL, flow.id);
-    let _ = context
+    context
         .msg
         .author
-        .direct_message(context.ctx, |message_builder| {
+        .direct_message(&context.ctx, |message_builder| {
             message_builder.content(format!(
                 "Use the following link to schedule your next session:\n{}",
                 link
             ))
-        });
-    context.msg.react(context.ctx, '\u{2705}').await.ok();
+        })
+        .await
+        .ok();
+    context.msg.react(&context.ctx, '\u{2705}').await.ok();
     Ok(())
 }

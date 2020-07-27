@@ -16,25 +16,25 @@ use std::sync::Arc;
 mod add_user;
 // mod clone_event;
 // mod count_inactive;
-// mod end_adventure;
+mod end_adventure;
 mod help;
 mod link_meetup;
-// mod list_players;
-// mod list_subscriptions;
-// mod manage_channel;
+mod list_players;
+mod list_subscriptions;
+mod manage_channel;
 // mod mention_channel;
 // mod numcached;
 // mod refresh_meetup_token;
 // mod remind_expiration;
 // mod rsvp_user;
-// mod schedule_session;
-// mod snooze;
+mod schedule_session;
+mod snooze;
 mod stop;
 // mod sync_discord;
 // mod sync_meetup;
 // mod sync_subscriptions;
 // mod test;
-// mod whois;
+mod whois;
 
 static ALL_COMMANDS: &[&Command] = &[
     &stop::STOP_COMMAND,
@@ -49,18 +49,18 @@ static ALL_COMMANDS: &[&Command] = &[
     &add_user::ADD_HOST_COMMAND,
     &add_user::REMOVE_USER_COMMAND,
     &add_user::REMOVE_HOST_COMMAND,
-    // &end_adventure::END_ADVENTURE_COMMAND,
+    &end_adventure::END_ADVENTURE_COMMAND,
     &help::HELP_COMMAND,
     // &refresh_meetup_token::REFRESH_MEETUP_TOKEN_COMMAND,
-    // &schedule_session::SCHEDULE_SESSION_COMMAND,
-    // &whois::WHOIS_COMMAND,
-    // &list_players::LIST_PLAYERS_COMMAND,
-    // &list_subscriptions::LIST_SUBSCRIPTIONS_COMMAND,
+    &schedule_session::SCHEDULE_SESSION_COMMAND,
+    &whois::WHOIS_COMMAND,
+    &list_players::LIST_PLAYERS_COMMAND,
+    &list_subscriptions::LIST_SUBSCRIPTIONS_COMMAND,
     // &sync_subscriptions::SYNC_SUBSCRIPTIONS_COMMAND,
     // &numcached::NUMCACHED_COMMAND,
-    // &manage_channel::MANAGE_CHANNEL_COMMAND,
+    &manage_channel::MANAGE_CHANNEL_COMMAND,
     // &mention_channel::MENTION_CHANNEL_COMMAND,
-    // &snooze::SNOOZE_COMMAND,
+    &snooze::SNOOZE_COMMAND,
     // &count_inactive::COUNT_INACTIVE_COMMAND,
     // &clone_event::CLONE_EVENT_COMMAND,
     // &rsvp_user::RSVP_USER_COMMAND,

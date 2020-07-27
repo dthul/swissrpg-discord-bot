@@ -14,7 +14,7 @@ use serenity::model::{
     "Enable the `[add|remove] user` and `[add|remove] host` commands for this channel."
 )]
 fn manage_channel<'a>(
-    mut context: super::CommandContext,
+    context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     let channel_id = context.msg.channel_id;
@@ -45,39 +45,40 @@ fn manage_channel<'a>(
         context
             .msg
             .channel_id
-            .say(context.ctx, "Can not manage this channel")
+            .say(&context.ctx, "Can not manage this channel")
             .await
             .ok();
         return Ok(());
     }
-    let channel = if let Some(Channel::Guild(channel)) = context.msg.channel(context.ctx).await {
+    let channel = if let Some(Channel::Guild(channel)) = context.msg.channel(&context.ctx).await {
         channel.clone()
     } else {
         context
             .msg
             .channel_id
-            .say(context.ctx, "Can not manage this channel")
+            .say(&context.ctx, "Can not manage this channel")
             .await
             .ok();
         return Ok(());
     };
     // Step 2: Grant the bot continued access to the channel
+    let bot_id = context.bot_id().await?;
     channel
         .create_permission(
-            context.ctx,
+            &context.ctx,
             &PermissionOverwrite {
                 allow: Permissions::READ_MESSAGES,
                 deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Member(context.bot_id()?),
+                kind: PermissionOverwriteType::Member(bot_id),
             },
         )
         .await?;
     // Step 3: Grant all current users access to the channel
-    let mut current_channel_members = channel.members(context.ctx).await?;
+    let mut current_channel_members = channel.members(&context.ctx).await?;
     for member in &mut current_channel_members {
         // Don't explicitly grant access to admins
         let is_admin = {
-            if let Ok(member_permissions) = member.permissions(context.ctx).await {
+            if let Ok(member_permissions) = member.permissions(&context.ctx).await {
                 member_permissions.administrator()
             } else {
                 false
@@ -88,7 +89,7 @@ fn manage_channel<'a>(
         }
         channel
             .create_permission(
-                context.ctx,
+                &context.ctx,
                 &PermissionOverwrite {
                     allow: Permissions::READ_MESSAGES,
                     deny: Permissions::empty(),
