@@ -13,11 +13,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-// mod add_user;
+mod add_user;
 // mod clone_event;
 // mod count_inactive;
 // mod end_adventure;
-// mod help;
+mod help;
 mod link_meetup;
 // mod list_players;
 // mod list_subscriptions;
@@ -45,12 +45,12 @@ static ALL_COMMANDS: &[&Command] = &[
     // &sync_meetup::SYNC_MEETUP_COMMAND,
     // &sync_discord::SYNC_DISCORD_COMMAND,
     // &remind_expiration::REMIND_EXPIRATION_COMMAND,
-    // &add_user::ADD_USER_COMMAND,
-    // &add_user::ADD_HOST_COMMAND,
-    // &add_user::REMOVE_USER_COMMAND,
-    // &add_user::REMOVE_HOST_COMMAND,
+    &add_user::ADD_USER_COMMAND,
+    &add_user::ADD_HOST_COMMAND,
+    &add_user::REMOVE_USER_COMMAND,
+    &add_user::REMOVE_HOST_COMMAND,
     // &end_adventure::END_ADVENTURE_COMMAND,
-    // &help::HELP_COMMAND,
+    &help::HELP_COMMAND,
     // &refresh_meetup_token::REFRESH_MEETUP_TOKEN_COMMAND,
     // &schedule_session::SCHEDULE_SESSION_COMMAND,
     // &whois::WHOIS_COMMAND,

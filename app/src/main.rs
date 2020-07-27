@@ -239,9 +239,8 @@ fn main() {
         tokio::spawn(async move {
             if let Err(why) = bot.start().await {
                 println!("Client error: {:#?}", why);
-            } else {
-                println!("Started async Discord client");
             }
+            println!("Discord client shut down.");
         });
     });
 

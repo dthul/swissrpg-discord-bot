@@ -7,14 +7,17 @@ use std::fmt::Write;
 #[command]
 #[regex(r"help")]
 #[help("help", "do I really need to explain this one?")]
-fn help<'a>(context: super::CommandContext, _: regex::Captures<'a>) -> super::CommandResult<'a> {
-    let help_texts = compile_help_texts(context.bot_id()?);
-    let is_bot_admin = context.is_admin().unwrap_or(false);
-    let bot_id = context.bot_id()?;
+fn help<'a>(
+    context: &'a mut super::CommandContext,
+    _: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
+    let bot_id = context.bot_id().await?;
+    let help_texts = compile_help_texts(bot_id);
+    let is_bot_admin = context.is_admin().await.unwrap_or(false);
     context
         .msg
         .author
-        .direct_message(context.ctx, |message_builder| {
+        .direct_message(&context.ctx, |message_builder| {
             message_builder
                 .content(lib::strings::HELP_MESSAGE_INTRO(bot_id.0))
                 .embed(|embed_builder| {
@@ -29,7 +32,7 @@ fn help<'a>(context: super::CommandContext, _: regex::Captures<'a>) -> super::Co
     context
         .msg
         .author
-        .direct_message(context.ctx, |message_builder| {
+        .direct_message(&context.ctx, |message_builder| {
             message_builder.embed(|embed_builder| {
                 embed_builder
                     .colour(serenity::utils::Colour::DARK_GREEN)
@@ -43,7 +46,7 @@ fn help<'a>(context: super::CommandContext, _: regex::Captures<'a>) -> super::Co
         context
             .msg
             .author
-            .direct_message(context.ctx, |message_builder| {
+            .direct_message(&context.ctx, |message_builder| {
                 message_builder.embed(|embed_builder| {
                     embed_builder
                         .colour(serenity::utils::Colour::from_rgb(255, 23, 68))
