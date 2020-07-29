@@ -25,7 +25,7 @@ itertools = "0.9"
 lazy_static = "1.4"
 oauth2 = "4.0.0-alpha.1"
 rand = "0.7"
-redis = { version = "0.16", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.17", default-features = false, features = ["tokio-comp"] }
 regex = "1"
 reqwest = { version = "0.10", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = "1.0"

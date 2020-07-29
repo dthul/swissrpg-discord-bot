@@ -17,7 +17,7 @@ ui = { path = "../ui", package = "swissrpg-ui" }
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = { version = "0.3" }
-redis = { version = "0.16", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.17", default-features = false, features = ["tokio-comp"] }
 serenity = "0.8"
 signal-hook = "0.1"
 stripe-rust = { git = "https://github.com/wyyerd/stripe-rs", rev = "1a1798860da5d246f556097d2d37eef44907fb6d", default-features = false, features = ["billing", "webhook-events", "rustls-tls"] }
