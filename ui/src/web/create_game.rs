@@ -1,3 +1,4 @@
+use chrono::{Duration, NaiveDate, NaiveTime, TimeZone};
 use lib::asana::tags::Color;
 use serde::{de, de::Error, Deserialize, Deserializer};
 use std::sync::Arc;
@@ -31,15 +32,12 @@ struct FormContent {
     title: String,
     #[serde(rename = "20")]
     description: String,
-    // TODO: YYYY-MM-DD format
-    #[serde(rename = "34")]
-    date: String,
-    // TODO: HH:MM format (24h)
-    #[serde(rename = "35")]
-    time: String,
-    // TODO: HH:MM format
-    #[serde(rename = "38")]
-    duration: String,
+    #[serde(rename = "34", deserialize_with = "date_yyyymmdd")]
+    date: NaiveDate,
+    #[serde(rename = "35", deserialize_with = "time_hhmm")]
+    time: NaiveTime,
+    #[serde(rename = "38", deserialize_with = "duration_hhmm")]
+    duration: Duration,
     #[serde(rename = "42")]
     city: City,
     #[serde(rename = "45")]
@@ -118,6 +116,65 @@ where
 {
     let s = String::deserialize(deserializer)?;
     T::from_str(&s).map_err(de::Error::custom)
+}
+
+fn time_hhmm<'de, D>(deserializer: D) -> Result<NaiveTime, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match NaiveTime::parse_from_str(&s, "%H:%M") {
+        Ok(time) => Ok(time),
+        Err(_) => Err(D::Error::invalid_value(
+            serde::de::Unexpected::Str(s.as_str()),
+            &"time string in HH:MM format",
+        )),
+    }
+}
+
+fn duration_hhmm<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    let regex = match regex::Regex::new("^([0-9]{1,2}):([0-9]{2})$") {
+        Ok(regex) => regex,
+        Err(err) => {
+            eprintln!("Error when trying to compile duration regex:\n{:#?}", err);
+            return Err(D::Error::custom("Regex compile error"));
+        }
+    };
+    if let Some(captures) = regex.captures(&s) {
+        let hours = captures
+            .get(1)
+            .map(|m| m.as_str().parse::<u8>().ok())
+            .flatten();
+        let minutes = captures
+            .get(2)
+            .map(|m| m.as_str().parse::<u8>().ok())
+            .flatten();
+        if let (Some(hours), Some(minutes)) = (hours, minutes) {
+            return Ok(Duration::minutes(60 * hours as i64 + minutes as i64));
+        }
+    }
+    Err(D::Error::invalid_value(
+        serde::de::Unexpected::Str(s.as_str()),
+        &"duration string in HH:MM format",
+    ))
+}
+
+fn date_yyyymmdd<'de, D>(deserializer: D) -> Result<NaiveDate, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+        Ok(date) => Ok(date),
+        Err(_) => Err(D::Error::invalid_value(
+            serde::de::Unexpected::Str(s.as_str()),
+            &"date string in YYYY-MM-DD format",
+        )),
+    }
 }
 
 impl<'de> Deserialize<'de> for GameType {
@@ -229,6 +286,7 @@ pub fn create_routes(
                                 eprintln!("Asana error:\n{:#?}", err);
                             } else {
                                 println!("Created Asana task");
+                                form_content.discord_user_name
                             }
                             Ok::<_, warp::Rejection>(warp::http::StatusCode::OK)
                         }
@@ -243,9 +301,36 @@ pub fn create_routes(
     post_route
 }
 
+async fn crate_meetup_event(
+    meetup_client: &lib::meetup::api::AsyncClient,
+    form_content: &FormContent,
+) -> Result<(), lib::meetup::Error> {
+    let time = chrono_tz::Europe::Zurich
+        .from_local_datetime(&form_content.date.and_time(form_content.time))
+        .earliest()
+        .ok_or(simple_error::SimpleError::new(
+            "Couldn't convert to local Zurich time",
+        ))?
+        .with_timezone(&chrono::Utc);
+    let new_event = lib::meetup::api::NewEvent {
+        description: form_content.description.clone(),
+        duration_ms: Some(form_content.duration.num_milliseconds() as u64),
+        featured_photo_id: None,
+        hosts: vec![],
+        how_to_find_us: None,
+        name: form_content.title.clone(),
+        rsvp_limit: Some(form_content.max_players as u16),
+        time,
+        venue_id: 0, // TODO
+        guest_limit: None,
+        published: false,
+    };
+    Ok(())
+}
+
 async fn create_asana_task(
     asana_client: &lib::asana::api::AsyncClient,
-    form_content: FormContent,
+    form_content: &FormContent,
 ) -> Result<lib::asana::task::Task, lib::meetup::Error> {
     // Turn the form into an Asana task
     // Step 1: get the venue Tag
@@ -262,10 +347,10 @@ async fn create_asana_task(
         }
     };
     let new_task = lib::asana::task::CreateTask {
-        name: form_content.title,
+        name: form_content.title.clone(),
         project_ids: Some(vec![lib::asana::ids::PUBLICATIONS_PROJECT_ID.clone()]),
         tag_ids: Some(vec![tag.id]),
-        notes: Some(form_content.description),
+        notes: Some(form_content.description.clone()),
     };
     asana_client
         .create_task(&new_task)
