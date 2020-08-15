@@ -18,7 +18,7 @@ futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"
 redis = { version = "0.16", default-features = false, features = ["tokio-comp"] }
-serenity = { git = "https://github.com/acdenisSK/serenity", branch = "await_next", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend"] }
+serenity = { version = "0.9.0-rc.0", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend"] }
 signal-hook = "0.1"
 stripe-rust = { git = "https://github.com/wyyerd/stripe-rs", rev = "1a1798860da5d246f556097d2d37eef44907fb6d", default-features = false, features = ["billing", "webhook-events", "rustls-tls"] }
 tokio = { version = "0.2", default-features = false, features = ["io-driver", "rt-threaded", "time"] }
