@@ -13,6 +13,7 @@ bottest = ["lib/bottest"]
 
 [dependencies]
 lib = { path = "../lib", package = "swissrpg-lib" }
+aho-corasick = "0.7"
 command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
 askama = "0.10"
 askama_warp = "0.10"

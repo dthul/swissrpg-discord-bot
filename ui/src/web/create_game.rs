@@ -282,11 +282,11 @@ pub fn create_routes(
                     match serde_json::from_value::<FormContent>(body) {
                         Ok(form_content) => {
                             println!("Creating Asana task");
-                            if let Err(err) = create_asana_task(&asana_client, form_content).await {
+                            if let Err(err) = create_asana_task(&asana_client, &form_content).await
+                            {
                                 eprintln!("Asana error:\n{:#?}", err);
                             } else {
                                 println!("Created Asana task");
-                                form_content.discord_user_name
                             }
                             Ok::<_, warp::Rejection>(warp::http::StatusCode::OK)
                         }
