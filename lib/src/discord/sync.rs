@@ -28,6 +28,8 @@ pub mod ids {
     pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(601070848446824512);
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650656330390175764));
     pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(704988201038643270));
+    pub const SPAM_ALERT_USER_IDS: &'static [UserId] =
+        &[UserId(401292991307841536), UserId(456545153923022849)];
 }
 
 #[cfg(not(feature = "bottest"))]
@@ -47,6 +49,7 @@ pub mod ids {
     pub const VOICE_CHANNELS_CATEGORY_ID: ChannelId = ChannelId(401856511233753110);
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
     pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(706131908102324345));
+    pub const SPAM_ALERT_USER_IDS: &'static [UserId] = &[UserId(401292991307841536)];
 }
 
 use ids::*;

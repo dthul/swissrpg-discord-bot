@@ -255,6 +255,10 @@ impl EventHandler for Handler {
         };
         // Does the message start with a mention of the bot?
         let is_mention = commands.bot_mention.is_match(&cmdctx.msg.content);
+        if !is_dm {
+            // Forward this message to the spam hook
+            super::spam::message_hook(&mut cmdctx).await.ok();
+        }
         // If the message is not a direct message and does not start with a
         // mention of the bot, ignore it
         if !is_dm && !is_mention {

@@ -2,10 +2,7 @@ use askama::Template;
 use cookie::Cookie;
 use futures_util::{lock::Mutex, FutureExt, TryFutureExt};
 use hyper::Response;
-use oauth2::{
-    basic::BasicClient, AsyncCodeTokenRequest, AuthorizationCode, CsrfToken, RedirectUrl, Scope,
-    TokenResponse,
-};
+use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, RedirectUrl, Scope, TokenResponse};
 use redis::AsyncCommands;
 use serde::Deserialize;
 use std::{borrow::Cow, sync::Arc};
