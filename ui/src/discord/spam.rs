@@ -1,40 +1,32 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use redis::Commands;
-use serenity::model::{channel::PermissionOverwriteType, id::RoleId, permissions::Permissions};
 use serenity::{model::channel::Message, prelude::*};
 use std::sync::Arc;
 
-type SpamList = Arc<RwLock<(Vec<String>, AhoCorasick)>>;
+type SpamList = Arc<(Vec<String>, AhoCorasick)>;
+struct GameChannelsList {
+    channel_ids: Vec<u64>,
+    last_updated: std::time::Instant,
+}
 
-pub(crate) struct SpamListKey;
+struct SpamListKey;
 impl TypeMapKey for SpamListKey {
     type Value = SpamList;
 }
 
+struct GameChannelsListKey;
+impl TypeMapKey for GameChannelsListKey {
+    type Value = Arc<GameChannelsList>;
+}
+
 pub fn message_hook(ctx: &Context, msg: &Message) -> Result<(), lib::meetup::Error> {
-    // Check whether this channel is public (otherwise return)
-    let is_private_channel = msg
-        .channel(&ctx)
-        .map(|channel| channel.guild())
-        .flatten()
-        .map(|channel| {
-            let permissions = &channel.read().permission_overwrites;
-            permissions
-                .iter()
-                .find(|perm| {
-                    perm.kind
-                        == PermissionOverwriteType::Role(RoleId(
-                            lib::discord::sync::ids::GUILD_ID.0,
-                        ))
-                })
-                .map_or(false, |perm| perm.deny.contains(Permissions::READ_MESSAGES))
-        })
-        .unwrap_or(true);
-    if is_private_channel {
+    // Ignore messages from game channels
+    let game_channels = get_game_channels_list(ctx)?;
+    if game_channels.channel_ids.contains(&msg.channel_id.0) {
         return Ok(());
     }
     let spam_list = get_spam_list(ctx)?;
-    let (word_list, spam_matcher) = &*spam_list.read();
+    let (word_list, spam_matcher) = &*spam_list;
     if let Some(mat) = spam_matcher.find(&msg.content) {
         let word = &word_list[mat.pattern()];
         for user_id in lib::discord::sync::ids::SPAM_ALERT_USER_IDS {
@@ -72,7 +64,7 @@ fn get_spam_list(ctx: &Context) -> Result<SpamList, lib::meetup::Error> {
         .get_mut::<super::bot::RedisClientKey>()
         .ok_or_else(|| {
             simple_error::SimpleError::new(
-                "SpamListKey entry not present. This should never happen.",
+                "RedisClientKey entry not present. This should never happen.",
             )
         })?;
     let word_list: Vec<String> = redis_client.lrange("spam_word_list", 0, -1)?;
@@ -81,7 +73,35 @@ fn get_spam_list(ctx: &Context) -> Result<SpamList, lib::meetup::Error> {
         .ascii_case_insensitive(true)
         .dfa(true)
         .build(&word_list);
-    let spam_list = Arc::new(RwLock::new((word_list, word_matcher)));
+    let spam_list = Arc::new((word_list, word_matcher));
     data_lock.insert::<SpamListKey>(spam_list.clone());
     Ok(spam_list)
+}
+
+fn get_game_channels_list(ctx: &Context) -> Result<Arc<GameChannelsList>, lib::meetup::Error> {
+    // Check if the channels list is already in the data map and up-to-date
+    if let Some(games_list) = ctx.data.read().get::<GameChannelsListKey>() {
+        if (std::time::Instant::now() - games_list.last_updated)
+            < std::time::Duration::from_secs(5 * 60)
+        {
+            return Ok(games_list.clone());
+        }
+    }
+    // There is no games list in the data map yet or it is outdated -> get a write lock on the data map
+    let mut data_lock = ctx.data.write();
+    // Query the channel list form Redis
+    let redis_client = data_lock
+        .get_mut::<super::bot::RedisClientKey>()
+        .ok_or_else(|| {
+            simple_error::SimpleError::new(
+                "RedisClientKey entry not present. This should never happen.",
+            )
+        })?;
+    let channel_ids: Vec<u64> = redis_client.smembers("discord_channels")?;
+    let channels_list = Arc::new(GameChannelsList {
+        channel_ids,
+        last_updated: std::time::Instant::now(),
+    });
+    data_lock.insert::<GameChannelsListKey>(channels_list.clone());
+    Ok(channels_list)
 }
