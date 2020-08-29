@@ -41,18 +41,11 @@ pub const HELP_MESSAGE_PLAYER_EMBED_TITLE: &'static str = "**Player commands**";
 // ** Welcome messages **
 
 pub const WELCOME_MESSAGE: &'static str =
-    "Welcome adventurer.\n\nAllow me to introduce myself: My name is Hyperion and I am your \
-     friendly SwissRPG bot, here to make your life easier.
-    
-There's a few things you should do in order to enjoy the SwissRPG community and games. Let me keep \
-     it short for you: 
-:one:  Go check the <#608263283329204234> channel and read our rules and how to gain access to all \
-     our channels.
-:two:  Go say hi in the <#401856511233753109>.
-:three:  Link with Hyperion (that's me) to gain access to the games' channels that you signed up \
-     for. That last one is easy, just type \"link meetup\" below and I'll help you out.
-    
-If you have any questions, please ask around on our server. We're happy to help. Enjoy.";
+    "Hi there. I'm **Hyperion**, the **SwissRPG bot**. Welcome to our community.
+
+If you have signed up for one of our games, or plan to play a game soon, you'll need to link your Meetup and Discord accounts with me. This will allow me to add you to your game's private channels where you can talk with your Game Master and other players.
+
+Let's get you started. Just type **link meetup** below and we'll take it from there.";
 
 // ** End of one-shot **
 
