@@ -1,44 +1,34 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use redis::AsyncCommands;
-use serenity::model::{channel::PermissionOverwriteType, id::RoleId, permissions::Permissions};
 use serenity::prelude::*;
 use std::sync::Arc;
 
-type SpamList = Arc<RwLock<(Vec<String>, AhoCorasick)>>;
+type SpamList = Arc<(Vec<String>, AhoCorasick)>;
+struct GameChannelsList {
+    channel_ids: Vec<u64>,
+    last_updated: std::time::Instant,
+}
 
-pub(crate) struct SpamListKey;
+struct SpamListKey;
 impl TypeMapKey for SpamListKey {
     type Value = SpamList;
+}
+
+struct GameChannelsListKey;
+impl TypeMapKey for GameChannelsListKey {
+    type Value = Arc<GameChannelsList>;
 }
 
 pub async fn message_hook(
     cmdctx: &mut super::commands::CommandContext,
 ) -> Result<(), lib::meetup::Error> {
-    // Check whether this channel is public (otherwise return)
-    let is_private_channel = cmdctx
-        .msg
-        .channel(&cmdctx.ctx)
-        .await
-        .map(|channel| channel.guild())
-        .flatten()
-        .map(|channel| {
-            let permissions = &channel.permission_overwrites;
-            permissions
-                .iter()
-                .find(|perm| {
-                    perm.kind
-                        == PermissionOverwriteType::Role(RoleId(
-                            lib::discord::sync::ids::GUILD_ID.0,
-                        ))
-                })
-                .map_or(false, |perm| perm.deny.contains(Permissions::READ_MESSAGES))
-        })
-        .unwrap_or(true);
-    if is_private_channel {
+    // Ignore messages from game channels
+    let game_channels = get_game_channels_list(cmdctx).await?;
+    if game_channels.channel_ids.contains(&cmdctx.msg.channel_id.0) {
         return Ok(());
     }
     let spam_list = get_spam_list(cmdctx).await?;
-    let (word_list, spam_matcher) = &*spam_list.read().await;
+    let (word_list, spam_matcher) = &*spam_list;
     if let Some(mat) = spam_matcher.find(&cmdctx.msg.content) {
         let word = &word_list[mat.pattern()];
         let msg = format!(
@@ -83,7 +73,32 @@ async fn get_spam_list(
         .ascii_case_insensitive(true)
         .dfa(true)
         .build(&word_list);
-    let spam_list = Arc::new(RwLock::new((word_list, word_matcher)));
+    let spam_list = Arc::new((word_list, word_matcher));
     data_lock.insert::<SpamListKey>(spam_list.clone());
     Ok(spam_list)
+}
+
+async fn get_game_channels_list(
+    cmdctx: &mut super::commands::CommandContext,
+) -> Result<Arc<GameChannelsList>, lib::meetup::Error> {
+    // Check if the channels list is already in the data map and up-to-date
+    if let Some(games_list) = cmdctx.ctx.data.read().await.get::<GameChannelsListKey>() {
+        if (std::time::Instant::now() - games_list.last_updated)
+            < std::time::Duration::from_secs(5 * 60)
+        {
+            return Ok(games_list.clone());
+        }
+    }
+    // There is no games list in the data map yet or it is outdated -> get a write lock on the data map
+    let data_map = cmdctx.ctx.data.clone();
+    let mut data_lock = data_map.write().await;
+    // Query the channel list form Redis
+    let redis_connection = cmdctx.async_redis_connection().await?;
+    let channel_ids: Vec<u64> = redis_connection.smembers("discord_channels").await?;
+    let channels_list = Arc::new(GameChannelsList {
+        channel_ids,
+        last_updated: std::time::Instant::now(),
+    });
+    data_lock.insert::<GameChannelsListKey>(channels_list.clone());
+    Ok(channels_list)
 }
