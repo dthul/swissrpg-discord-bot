@@ -31,11 +31,13 @@ enum Location {
     Bern,
     Aarau,
     Chur,
+    StGallen,
 }
 
 // The ordering here is used for the ordering of posted messages
 static ALL_LOCATIONS: &[Location] = &[
     Location::Zurich,
+    Location::StGallen,
     Location::Basel,
     Location::Luzern,
     Location::Lugano,
@@ -58,6 +60,7 @@ static PHYSICAL_LOCATIONS: &[Location] = &[
     Location::Bern,
     Location::Aarau,
     Location::Chur,
+    Location::StGallen,
 ];
 
 impl Location {
@@ -73,6 +76,7 @@ impl Location {
             Location::Bern => Some(Point::new(7.4433158, 46.9489217)),
             Location::Aarau => Some(Point::new(8.0606556, 47.3934732)),
             Location::Chur => Some(Point::new(9.5275838, 46.8533507)),
+            Location::StGallen => Some(Point::new(9.3741491, 47.4256037)),
         }
     }
 
@@ -106,6 +110,7 @@ impl Location {
             Location::Bern => "Bern",
             Location::Aarau => "Aarau",
             Location::Chur => "Chur",
+            Location::StGallen => "St. Gallen",
         }
     }
 
@@ -121,6 +126,7 @@ impl Location {
             Location::Bern => "Bern",
             Location::Aarau => "Aargau",
             Location::Chur => "Graubunden",
+            Location::StGallen => "St_Gallen",
         }
     }
 
@@ -139,12 +145,15 @@ impl Location {
             Location::Bern => (255, 215, 48),
             Location::Aarau => (38, 139, 204),
             Location::Chur => (254, 254, 254),
+            Location::StGallen => (22, 167, 78),
         }
     }
 
     pub fn meetup_group_link(&self) -> &'static str {
         match self {
-            Location::Online | Location::Zurich => "https://www.meetup.com/SwissRPG-Zurich/",
+            Location::Online | Location::Zurich | Location::StGallen => {
+                "https://www.meetup.com/SwissRPG-Zurich/"
+            }
             Location::Basel
             | Location::Luzern
             | Location::Lugano
