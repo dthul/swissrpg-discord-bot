@@ -29,7 +29,9 @@ pub async fn create_discord_client(
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let client = Client::new(&discord_token).event_handler(Handler).await?;
+    let client = Client::builder(&discord_token)
+        .event_handler(Handler)
+        .await?;
 
     // We will fetch the bot's id.
     let (bot_id, bot_name) = client
