@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use command_macro::command;
 use futures::FutureExt;
 use redis::AsyncCommands;
@@ -19,15 +21,18 @@ fn manage_channel<'a>(
 ) -> super::CommandResult<'a> {
     let channel_id = context.msg.channel_id;
     // Step 1: Try to mark this channel as managed
-    let mut is_game_channel = false;
+    let is_game_channel = Arc::new(std::sync::atomic::AtomicBool::new(false));
     lib::redis::async_redis_transaction(
         context.async_redis_connection().await?,
         &["discord_channels"],
         |con, mut pipe| {
+            let is_game_channel = Arc::clone(&is_game_channel);
             async move {
                 // Make sure that this is not a game channel
-                is_game_channel = con.sismember("discord_channels", channel_id.0).await?;
-                if is_game_channel {
+                let is_game_channel_: bool =
+                    con.sismember("discord_channels", channel_id.0).await?;
+                is_game_channel.store(is_game_channel_, std::sync::atomic::Ordering::Release);
+                if is_game_channel_ {
                     // Do nothing
                     pipe.query_async(con).await
                 } else {
@@ -41,7 +46,7 @@ fn manage_channel<'a>(
         },
     )
     .await?;
-    if is_game_channel {
+    if is_game_channel.load(std::sync::atomic::Ordering::Acquire) {
         context
             .msg
             .channel_id

@@ -2,7 +2,7 @@ use command_macro::command;
 use futures_util::FutureExt;
 use redis::AsyncCommands;
 use serenity::model::id::UserId;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 #[command]
 #[regex(r"link[ -]?meetup")]
@@ -236,7 +236,7 @@ fn link_meetup_bot_admin<'a>(
             return Ok(());
         }
         Some(meetup_user) => {
-            let mut successful = false;
+            let successful = Arc::new(std::sync::atomic::AtomicBool::new(false));
             // Try to atomically set the meetup id
             let redis_connection = context.async_redis_connection().await?;
             lib::redis::async_redis_transaction(
@@ -245,12 +245,13 @@ fn link_meetup_bot_admin<'a>(
                 |con, mut pipe| {
                     let redis_key_d2m = redis_key_d2m.clone();
                     let redis_key_m2d = redis_key_m2d.clone();
+                    let successful = Arc::clone(&successful);
                     async move {
                         let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m).await?;
                         let linked_discord_id: Option<u64> = con.get(&redis_key_m2d).await?;
                         if linked_meetup_id.is_some() || linked_discord_id.is_some() {
                             // The meetup id was linked in the meantime, abort
-                            successful = false;
+                            successful.store(false, std::sync::atomic::Ordering::Release);
                             // Execute empty transaction just to get out of the closure
                             pipe.query_async(con).await
                         } else {
@@ -258,7 +259,7 @@ fn link_meetup_bot_admin<'a>(
                                 .sadd("discord_users", discord_id)
                                 .set(&redis_key_d2m, meetup_id)
                                 .set(&redis_key_m2d, discord_id);
-                            successful = true;
+                            successful.store(true, std::sync::atomic::Ordering::Release);
                             pipe.query_async(con).await
                         }
                     }
@@ -266,7 +267,7 @@ fn link_meetup_bot_admin<'a>(
                 },
             )
             .await?;
-            if successful {
+            if successful.load(std::sync::atomic::Ordering::Acquire) {
                 let photo_url = meetup_user.photo.as_ref().map(|p| p.thumb_link.as_str());
                 let _ = context
                     .msg
