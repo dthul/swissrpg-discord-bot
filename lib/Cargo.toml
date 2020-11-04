@@ -12,7 +12,7 @@ default = []
 bottest = []
 
 [dependencies]
-askama = "0.9"
+askama = "0.10"
 backtrace = "0.3"
 base64 = "0.12"
 chrono = "0.4"
@@ -23,14 +23,14 @@ geo = "0.14.0"
 hyper = "0.13"
 itertools = "0.9"
 lazy_static = "1.4"
-oauth2 = "4.0.0-alpha.1"
+oauth2 = "4.0.0-alpha.2"
 rand = "0.7"
-redis = { version = "0.16", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.17", default-features = false, features = ["tokio-comp"] }
 regex = "1"
 reqwest = { version = "0.10", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = "1.0"
 serde_json = "1.0"
-serenity = { version = "0.9.0-rc.1", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend"] }
+serenity = { version = "0.9", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend"] }
 simple-error = "0.2"
 stripe-rust = { git = "https://github.com/wyyerd/stripe-rs", rev = "1a1798860da5d246f556097d2d37eef44907fb6d", default-features = false, features = ["billing", "webhook-events", "rustls-tls"] }
 tokio = { version = "0.2", default-features = false, features = ["blocking", "rt-threaded", "time"] }
