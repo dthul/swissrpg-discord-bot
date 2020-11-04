@@ -23,7 +23,7 @@ geo = "0.14.0"
 hyper = "0.13"
 itertools = "0.9"
 lazy_static = "1.4"
-oauth2 = { git = "https://github.com/ramosbugs/oauth2-rs", rev = "d6db0865a4e94a760336cdd9bc51f81b0b981cb8", default-features = false, features = ["futures-03", "reqwest-010"] }
+oauth2 = "4.0.0-alpha.2"
 rand = "0.7"
 redis = { version = "0.17", default-features = false, features = ["tokio-comp"] }
 regex = "1"
