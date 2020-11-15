@@ -1,6 +1,6 @@
 use command_macro::command;
 use redis::AsyncCommands;
-use serenity::model::id::UserId;
+use serenity::model::id::{RoleId, UserId};
 use std::collections::HashMap;
 
 #[command]
@@ -99,39 +99,21 @@ fn list_players<'a>(
 
     // Look up all Discord users that have the player role
     // TODO: check whether this returns offline members
-    let discord_player_ids: Vec<_> =
-        if let Some(serenity::model::channel::Channel::Guild(channel)) =
-            context.msg.channel(&context.ctx).await
-        {
-            let mut discord_player_ids = vec![];
-            let members = channel.members(&context.ctx).await?;
-            for member in &members {
-                match member
-                    .user
-                    .has_role(
-                        &context.ctx,
-                        lib::discord::sync::ids::GUILD_ID,
-                        channel_roles.user,
-                    )
-                    .await
-                {
-                    Ok(has_role) => {
-                        if has_role {
-                            discord_player_ids.push(member.user.id);
-                        }
-                    }
-                    Err(err) => {
-                        eprintln!(
-                            "Error when trying to check whether user has role:\n{:#?}",
-                            err
-                        );
-                    }
+    let discord_player_ids: Vec<_> = if let Some(guild) = context.msg.guild(&context.ctx).await {
+        guild
+            .members
+            .iter()
+            .filter_map(|(&user_id, member)| {
+                if member.roles.contains(&RoleId(channel_roles.user)) {
+                    Some(user_id)
+                } else {
+                    None
                 }
-            }
-            discord_player_ids
-        } else {
-            return Ok(());
-        };
+            })
+            .collect()
+    } else {
+        return Ok(());
+    };
 
     // Four categories of users:
     // - Meetup ID (with Discord ID) [The following Discord users signed up for this event on Meetup (in channel? yes / no)]
