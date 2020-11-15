@@ -38,8 +38,7 @@ pub async fn is_host(
     user_id: UserId,
     redis_connection: &mut redis::aio::Connection,
 ) -> Result<bool, crate::meetup::Error> {
-    let channel = if let Some(Channel::Guild(channel)) = discord_api.cache.channel(channel_id).await
-    {
+    let channel = if let Some(channel) = discord_api.cache.guild_channel(channel_id).await {
         channel
     } else {
         return Err(simple_error::SimpleError::new("Could not find this channel").into());
@@ -89,8 +88,7 @@ pub async fn add_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Some(Channel::Guild(channel)) = discord_api.cache.channel(channel_id).await
-    {
+    let channel = if let Some(channel) = discord_api.cache.guild_channel(channel_id).await {
         channel
     } else {
         return Err(simple_error::SimpleError::new("Could not find this channel").into());
@@ -127,8 +125,7 @@ pub async fn remove_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Some(Channel::Guild(channel)) = discord_api.cache.channel(channel_id).await
-    {
+    let channel = if let Some(channel) = discord_api.cache.guild_channel(channel_id).await {
         channel
     } else {
         return Err(simple_error::SimpleError::new("Could not find this channel").into());

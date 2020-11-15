@@ -46,16 +46,11 @@ pub async fn create_discord_client(
     // Prepare the commands
     let prepared_commands = Arc::new(super::commands::prepare_commands(bot_id, &bot_name)?);
 
-    // pre-compile the regexes
-    // let regexes = super::bot_commands::compile_regexes(bot_id.0, &bot_name);
-
-    // Store the bot's id in the client for easy access
+    // Store the data to be shared by command invocations
     {
         let mut data = client.data.write().await;
         data.insert::<BotIdKey>(bot_id);
         data.insert::<BotNameKey>(bot_name);
-        // data.insert::<RedisConnectionKey>(Arc::new(Mutex::new(redis_connection)));
-        // data.insert::<RegexesKey>(Arc::new(regexes));
         data.insert::<AsyncMeetupClientKey>(async_meetup_client);
         data.insert::<RedisClientKey>(redis_client);
         data.insert::<OAuth2ConsumerKey>(oauth2_consumer);

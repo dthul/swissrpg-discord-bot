@@ -17,7 +17,7 @@ aho-corasick = "0.7"
 command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
 askama = "0.10"
 assert-impl = "0.1"
-bytes = "0.5"
+bytes = "0.5" # For use with warp::body::bytes
 chrono = "0.4"
 chrono-tz = "0.5"
 cookie = "0.14"
