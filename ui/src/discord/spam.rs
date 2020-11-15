@@ -57,15 +57,8 @@ async fn get_spam_list(
     if let Some(spam_list) = cmdctx.ctx.data.read().await.get::<SpamListKey>() {
         return Ok(spam_list.clone());
     }
-    // There is no spam list in the data map yet -> get a write lock on the data map
-    let data_map = cmdctx.ctx.data.clone();
-    let mut data_lock = data_map.write().await;
-    // Check one more time if the spam list has maybe been loaded in the mean time
-    if let Some(spam_list) = data_lock.get::<SpamListKey>() {
-        return Ok(spam_list.clone());
-    }
-    // Still no spam list in the data map -> let's add it!
-    // Query the spam list form Redis
+    // There is no spam list in the data map yet -> query it and store it in the data map
+    // Query the spam list from Redis
     let redis_connection = cmdctx.async_redis_connection().await?;
     let word_list: Vec<String> = redis_connection.lrange("spam_word_list", 0, -1).await?;
     let word_matcher = AhoCorasickBuilder::new()
@@ -74,7 +67,12 @@ async fn get_spam_list(
         .dfa(true)
         .build(&word_list);
     let spam_list = Arc::new((word_list, word_matcher));
-    data_lock.insert::<SpamListKey>(spam_list.clone());
+    cmdctx
+        .ctx
+        .data
+        .write()
+        .await
+        .insert::<SpamListKey>(spam_list.clone());
     Ok(spam_list)
 }
 
@@ -89,16 +87,19 @@ async fn get_game_channels_list(
             return Ok(games_list.clone());
         }
     }
-    // There is no games list in the data map yet or it is outdated -> get a write lock on the data map
-    let data_map = cmdctx.ctx.data.clone();
-    let mut data_lock = data_map.write().await;
-    // Query the channel list form Redis
+    // There is no games list in the data map yet or it is outdated -> query it and store it in the data map
+    // Query the channel list from Redis
     let redis_connection = cmdctx.async_redis_connection().await?;
     let channel_ids: Vec<u64> = redis_connection.smembers("discord_channels").await?;
     let channels_list = Arc::new(GameChannelsList {
         channel_ids,
         last_updated: std::time::Instant::now(),
     });
-    data_lock.insert::<GameChannelsListKey>(channels_list.clone());
+    cmdctx
+        .ctx
+        .data
+        .write()
+        .await
+        .insert::<GameChannelsListKey>(channels_list.clone());
     Ok(channels_list)
 }
