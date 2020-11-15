@@ -2,7 +2,7 @@ pub mod sync;
 pub mod util;
 
 use serenity::model::{
-    channel::{Channel, PermissionOverwrite, PermissionOverwriteType},
+    channel::{PermissionOverwrite, PermissionOverwriteType},
     id::{ChannelId, UserId},
     permissions::Permissions,
 };
