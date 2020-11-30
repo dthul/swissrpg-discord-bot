@@ -4,6 +4,7 @@ use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use serenity::{
     async_trait,
+    client::bridge::gateway::GatewayIntents,
     model::{
         channel::Message,
         gateway::Ready,
@@ -30,6 +31,13 @@ pub async fn create_discord_client(
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
     let client = Client::builder(&discord_token)
+        .add_intent(GatewayIntents::GUILDS)
+        .add_intent(GatewayIntents::GUILD_MEMBERS)
+        .add_intent(GatewayIntents::GUILD_MESSAGES)
+        .add_intent(GatewayIntents::GUILD_MESSAGE_REACTIONS)
+        .add_intent(GatewayIntents::DIRECT_MESSAGES)
+        .add_intent(GatewayIntents::DIRECT_MESSAGE_REACTIONS)
+        .add_intent(GatewayIntents::GUILD_PRESENCES)
         .event_handler(Handler)
         .await?;
 
