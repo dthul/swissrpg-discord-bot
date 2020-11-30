@@ -86,7 +86,7 @@ pub fn END_OF_CAMPAIGN_MESSAGE(bot_id: u64, channel_role_id: Option<u64>) -> Str
     if let Some(channel_role_id) = channel_role_id {
         format!(
             "I hope everyone had fun at the last session of <@&{channel_role_id}>!
-It's time to schedule your next session. Type here:
+Whenever you are ready, schedule your next session by typing:
 ***<@{bot_id}> schedule session***
 
 If your adventure is over, the Game Master can inform me of this by typing here:
@@ -98,7 +98,7 @@ This will set the channel for closure in the next 24 hours, just enough to say t
     } else {
         format!(
             "I hope everyone @here had fun at the last session!
-It's time to schedule your next session. Type here:
+Whenever you are ready, schedule your next session by typing:
 ***<@{bot_id}> schedule session***
 
 If your adventure is over, the Game Master can inform me of this by typing here:
