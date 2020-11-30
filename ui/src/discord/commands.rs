@@ -23,7 +23,7 @@ mod list_players;
 mod list_subscriptions;
 mod manage_channel;
 // mod mention_channel;
-// mod numcached;
+mod numcached;
 // mod refresh_meetup_token;
 // mod remind_expiration;
 // mod rsvp_user;
@@ -57,7 +57,7 @@ static ALL_COMMANDS: &[&Command] = &[
     &list_players::LIST_PLAYERS_COMMAND,
     &list_subscriptions::LIST_SUBSCRIPTIONS_COMMAND,
     // &sync_subscriptions::SYNC_SUBSCRIPTIONS_COMMAND,
-    // &numcached::NUMCACHED_COMMAND,
+    &numcached::NUMCACHED_COMMAND,
     &manage_channel::MANAGE_CHANNEL_COMMAND,
     // &mention_channel::MENTION_CHANNEL_COMMAND,
     &snooze::SNOOZE_COMMAND,

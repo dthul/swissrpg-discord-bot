@@ -3,12 +3,13 @@ use command_macro::command;
 #[command]
 #[regex(r"numcached")]
 #[level(admin)]
-fn numcached<'a>(
-    context: super::CommandContext,
+#[help("numcached", "Shows the number of known server members")]
+pub fn numcached<'a>(
+    context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     if let Some(guild) = lib::discord::sync::ids::GUILD_ID
-        .to_guild_cached(context.ctx)
+        .to_guild_cached(&context.ctx)
         .await
     {
         let num_cached_members = guild.members.len();
@@ -16,7 +17,7 @@ fn numcached<'a>(
             .msg
             .channel_id
             .say(
-                context.ctx,
+                &context.ctx,
                 format!(
                     "I have {} members cached for this guild",
                     num_cached_members
@@ -26,7 +27,7 @@ fn numcached<'a>(
             .ok();
     } else {
         context.msg.channel_id.say(
-            context.ctx,
+            &context.ctx,
             "No guild associated with this message (use the command from a guild channel instead \
              of a direct message).",
         ).await.ok();
