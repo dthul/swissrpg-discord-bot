@@ -323,7 +323,7 @@ pub async fn discord_username_to_id(
     let discord_id = match guild.member_named(username.trim()).and_then(|member| {
         // Serenity does fuzzy matching.
         // We want to filter any results which don't match exactly.
-        if &format!("{}#{}", member.user.name, member.user.discriminator) != username {
+        if &format!("{}#{:04}", member.user.name, member.user.discriminator) != username {
             None
         } else {
             Some(member)
