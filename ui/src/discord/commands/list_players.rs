@@ -1,5 +1,6 @@
 use command_macro::command;
 use redis::AsyncCommands;
+use serenity::futures::StreamExt;
 use serenity::model::id::{RoleId, UserId};
 use std::collections::HashMap;
 
@@ -99,18 +100,17 @@ fn list_players<'a>(
 
     // Look up all Discord users that have the player role
     // TODO: check whether this returns offline members
-    let discord_player_ids: Vec<_> = if let Some(guild) = context.msg.guild(&context.ctx).await {
-        guild
-            .members
-            .iter()
-            .filter_map(|(&user_id, member)| {
+    let discord_player_ids = if let Some(guild_id) = context.msg.guild_id {
+        let mut discord_player_ids = vec![];
+        let mut members = guild_id.members_iter(&context.ctx).boxed();
+        while let Some(member_result) = members.next().await {
+            if let Ok(member) = member_result {
                 if member.roles.contains(&RoleId(channel_roles.user)) {
-                    Some(user_id)
-                } else {
-                    None
+                    discord_player_ids.push(member.user.id);
                 }
-            })
-            .collect()
+            }
+        }
+        discord_player_ids
     } else {
         return Ok(());
     };
