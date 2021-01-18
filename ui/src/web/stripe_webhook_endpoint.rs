@@ -78,7 +78,7 @@ async fn handle_new_subscription(
     );
     // Wait for a few seconds and re-query the customer object from Stripe,
     // since the webhook is sometimes faster than the customer metadata is updated
-    tokio::time::delay_for(tokio::time::Duration::from_secs(20)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
     let customer = stripe::Customer::retrieve(stripe_client, &customer.id, &[]).await?;
     if let Some(username) = customer.metadata.get("Discord") {
         // Try to find the Discord user associated with this subscription

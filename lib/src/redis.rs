@@ -233,7 +233,7 @@ impl<'a> AsyncLock<'a> {
                 }
             }
             // Sleep for a moment and re-try
-            tokio::time::delay_for(tokio::time::Duration::from_millis(1)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
         }
         Ok(None)
     }

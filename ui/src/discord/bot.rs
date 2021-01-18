@@ -31,13 +31,15 @@ pub async fn create_discord_client(
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
     let client = Client::builder(&discord_token)
-        .add_intent(GatewayIntents::GUILDS)
-        .add_intent(GatewayIntents::GUILD_MEMBERS)
-        .add_intent(GatewayIntents::GUILD_MESSAGES)
-        .add_intent(GatewayIntents::GUILD_MESSAGE_REACTIONS)
-        .add_intent(GatewayIntents::DIRECT_MESSAGES)
-        .add_intent(GatewayIntents::DIRECT_MESSAGE_REACTIONS)
-        .add_intent(GatewayIntents::GUILD_PRESENCES)
+        .intents(
+            GatewayIntents::GUILDS
+                | GatewayIntents::GUILD_MEMBERS
+                | GatewayIntents::GUILD_MESSAGES
+                | GatewayIntents::GUILD_MESSAGE_REACTIONS
+                | GatewayIntents::DIRECT_MESSAGES
+                | GatewayIntents::DIRECT_MESSAGE_REACTIONS
+                | GatewayIntents::GUILD_PRESENCES,
+        )
         .event_handler(Handler)
         .await?;
 

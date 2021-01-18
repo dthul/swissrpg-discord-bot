@@ -78,10 +78,9 @@ fn main() {
     ));
 
     // Create a tokio runtime
-    let mut async_runtime = tokio::runtime::Builder::new()
+    let async_runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
-        .threaded_scheduler()
         .build()
         .expect("Could not create tokio runtime");
 
@@ -211,7 +210,8 @@ fn main() {
     }
 
     // Spawn all tasks onto the async runtime
-    async_runtime.enter(move || {
+    {
+        let _runtime_guard = async_runtime.enter();
         tokio::spawn(async {
             let _ = organizer_token_refresh_task.await;
             println!("Organizer token refresh task shut down.");
@@ -242,7 +242,7 @@ fn main() {
             }
             println!("Discord client shut down.");
         });
-    });
+    }
 
     // Wait for a signal to exit the main thread
     barrier.wait();

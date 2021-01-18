@@ -40,7 +40,7 @@ pub async fn message_hook(
             channel_id=cmdctx.msg.channel_id,
             message_id=cmdctx.msg.id.0);
         for user_id in lib::discord::sync::ids::SPAM_ALERT_USER_IDS {
-            if let Some(user) = user_id.to_user_cached(&cmdctx.ctx).await {
+            if let Ok(user) = user_id.to_user(&cmdctx.ctx).await {
                 user.direct_message(&cmdctx.ctx, |builder| builder.content(&msg))
                     .await
                     .ok();

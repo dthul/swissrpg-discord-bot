@@ -41,11 +41,11 @@ impl ScheduleSessionFlow {
         Ok(flow)
     }
 
-    pub async fn schedule(
+    pub async fn schedule<'a>(
         self,
         mut redis_connection: redis::aio::Connection,
-        meetup_client: &crate::meetup::api::AsyncClient,
-        oauth2_consumer: &crate::meetup::oauth2::OAuth2Consumer,
+        meetup_client: &'a crate::meetup::api::AsyncClient,
+        oauth2_consumer: &'a crate::meetup::oauth2::OAuth2Consumer,
         date_time: chrono::DateTime<chrono::Utc>,
         is_open_event: bool,
     ) -> Result<

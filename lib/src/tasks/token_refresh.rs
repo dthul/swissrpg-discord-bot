@@ -32,7 +32,7 @@ pub async fn organizer_token_refresh_task(
         );
         let wait_duration_in_secs = (next_refresh_time - chrono::Utc::now()).num_seconds();
         if wait_duration_in_secs > 0 {
-            tokio::time::delay_for(tokio::time::Duration::from_secs(
+            tokio::time::sleep(tokio::time::Duration::from_secs(
                 wait_duration_in_secs as u64,
             ))
             .await;
@@ -153,7 +153,7 @@ pub async fn users_token_refresh_task(
                     }
                 }
                 // Just to make sure that we are really interruptible
-                tokio::time::delay_for(tokio::time::Duration::from_millis(1)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
             }
             Ok(())
         })()

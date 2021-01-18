@@ -132,9 +132,3 @@ impl From<JoinError> for Error {
 // TODO: define a custom Error type for the ui module
 // so that we don't need these implementations here
 impl warp::reject::Reject for Error {}
-
-impl From<Error> for warp::Rejection {
-    fn from(err: Error) -> Self {
-        warp::reject::custom(err)
-    }
-}

@@ -67,7 +67,7 @@ pub async fn sync_task(
             _ => (),
         };
         // Add a 250ms delay between each item as a naive rate limit for the Meetup API
-        tokio::time::delay_for(std::time::Duration::from_millis(250)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
     Ok(event_collector)
 }
