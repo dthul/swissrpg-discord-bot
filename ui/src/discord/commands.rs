@@ -32,7 +32,7 @@ mod snooze;
 mod stop;
 // mod sync_discord;
 // mod sync_meetup;
-// mod sync_subscriptions;
+mod sync_subscriptions;
 // mod test;
 mod whois;
 
@@ -56,7 +56,7 @@ static ALL_COMMANDS: &[&Command] = &[
     &whois::WHOIS_COMMAND,
     &list_players::LIST_PLAYERS_COMMAND,
     &list_subscriptions::LIST_SUBSCRIPTIONS_COMMAND,
-    // &sync_subscriptions::SYNC_SUBSCRIPTIONS_COMMAND,
+    &sync_subscriptions::SYNC_SUBSCRIPTIONS_COMMAND,
     &numcached::NUMCACHED_COMMAND,
     &manage_channel::MANAGE_CHANNEL_COMMAND,
     // &mention_channel::MENTION_CHANNEL_COMMAND,
