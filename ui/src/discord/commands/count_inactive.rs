@@ -36,3 +36,33 @@ fn count_inactive<'a>(
     }
     Ok(())
 }
+
+#[command]
+#[regex(r"count\s*members")]
+#[level(admin)]
+#[help("count members", "returns the number of members")]
+fn count_members<'a>(
+    context: &'a mut super::CommandContext,
+    _: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
+    if let Some(guild) = lib::discord::sync::ids::GUILD_ID
+        .to_guild_cached(&context.ctx)
+        .await
+    {
+        let num_members = &guild.members.len();
+        context
+            .msg
+            .channel_id
+            .say(&context.ctx, format!("There are {} members", num_members))
+            .await
+            .ok();
+    } else {
+        context
+            .msg
+            .channel_id
+            .say(&context.ctx, "Could not find the guild")
+            .await
+            .ok();
+    }
+    Ok(())
+}

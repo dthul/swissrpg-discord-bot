@@ -62,6 +62,7 @@ static ALL_COMMANDS: &[&Command] = &[
     // &mention_channel::MENTION_CHANNEL_COMMAND,
     &snooze::SNOOZE_COMMAND,
     &count_inactive::COUNT_INACTIVE_COMMAND,
+    &count_inactive::COUNT_MEMBERS_COMMAND,
     // &clone_event::CLONE_EVENT_COMMAND,
     // &rsvp_user::RSVP_USER_COMMAND,
     // &test::TEST_COMMAND,
