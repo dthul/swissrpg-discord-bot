@@ -33,6 +33,7 @@ mod stop;
 mod sync_discord;
 mod sync_meetup;
 mod sync_subscriptions;
+mod topic;
 // mod test;
 mod whois;
 

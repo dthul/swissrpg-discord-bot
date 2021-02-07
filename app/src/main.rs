@@ -159,6 +159,13 @@ fn main() {
         bot_id,
     );
 
+    // User topic voice channel reset task
+    let user_topic_voice_channel_reset_task =
+        lib::tasks::user_topic_voice_channel::reset_user_topic_voice_channel_task(
+            redis_client.clone(),
+            discord_api.clone(),
+        );
+
     let static_file_prefix = Box::leak(format!("{}/static/", lib::urls::BASE_URL).into_boxed_str());
     let syncing_task = lib::tasks::sync::create_recurring_syncing_task(
         redis_client.clone(),
@@ -180,6 +187,8 @@ fn main() {
     let (users_token_refresh_task, abort_handle_users_token_refresh_task) =
         future::abortable(users_token_refresh_task);
     let (end_of_game_task, abort_handle_end_of_game_task) = future::abortable(end_of_game_task);
+    let (user_topic_voice_channel_reset_task, abort_handle_user_topic_voice_channel_reset_task) =
+        future::abortable(user_topic_voice_channel_reset_task);
     let (syncing_task, abort_handle_syncing_task) = future::abortable(syncing_task);
     let (stripe_subscription_refresh_task, abort_handle_stripe_subscription_refresh_task) =
         future::abortable(stripe_subscription_refresh_task);
@@ -225,6 +234,10 @@ fn main() {
             println!("End of game task shut down.");
         });
         tokio::spawn(async {
+            let _ = user_topic_voice_channel_reset_task.await;
+            println!("User topic voice channel reset task shut down.");
+        });
+        tokio::spawn(async {
             let _ = syncing_task.await;
             println!("Syncing task shut down.");
         });
@@ -253,6 +266,7 @@ fn main() {
     abort_handle_organizer_token_refresh_task.abort();
     abort_handle_users_token_refresh_task.abort();
     abort_handle_end_of_game_task.abort();
+    abort_handle_user_topic_voice_channel_reset_task.abort();
     abort_handle_syncing_task.abort();
     abort_handle_stripe_subscription_refresh_task.abort();
     abort_web_server_tx.send(()).ok();

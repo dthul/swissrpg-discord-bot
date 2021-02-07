@@ -124,6 +124,9 @@ Time after which this channel will be deleted
 `orphaned_discord_voice_channels`: set of u64\
 Set of Discord voice channels that were created by the bot but could not be successfully deleted in the past
 
+`user_topic_voice_channel_topic_time`: string\
+Time the topic of the user topic voice channel has been set
+
 ## Managed Discord Channels
 
 These are channels managed by Hyperion but independent of Meetup events.

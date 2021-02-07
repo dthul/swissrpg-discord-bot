@@ -1,0 +1,112 @@
+use command_macro::command;
+use redis::{AsyncCommands, RedisResult};
+use serenity::model::channel::Channel;
+
+#[command]
+#[regex(r"topic\s+(?P<topic>[^\s].*)")]
+#[help(
+    "topic _string_",
+    "renames the user topic voice channel to the specified topic"
+)]
+fn set_voice_topic<'a>(
+    context: &'a mut super::CommandContext,
+    captures: regex::Captures<'a>,
+) -> super::CommandResult<'a> {
+    // Check if there is a user topic voice channel
+    let voice_channel_id = if let Some(id) = lib::discord::sync::ids::USER_TOPIC_VOICE_CHANNEL_ID {
+        id
+    } else {
+        context
+            .msg
+            .channel_id
+            .say(&context.ctx, "No voice channel has been configured")
+            .await?;
+        return Ok(());
+    };
+    // Check whether the specified topic is ok
+    let topic = if let Some(topic) = captures.name("topic") {
+        topic.as_str()
+    } else {
+        context
+            .msg
+            .channel_id
+            .say(&context.ctx, "I had trouble parsing the new topic")
+            .await?;
+        return Ok(());
+    };
+    let topic = topic.trim();
+    let topic_len = topic.chars().count();
+    if topic_len < 2 {
+        context
+            .msg
+            .channel_id
+            .say(
+                &context.ctx,
+                "That topic is too short, it needs to have at least 2 characters.",
+            )
+            .await?;
+        return Ok(());
+    }
+    if topic_len > 100 {
+        context
+            .msg
+            .channel_id
+            .say(
+                &context.ctx,
+                "That topic is over 100 characters. Have you considered the benefits of conciseness?",
+            )
+            .await?;
+        return Ok(());
+    }
+    // Check the channel's current title
+    let mut voice_channel =
+        if let Ok(Channel::Guild(channel)) = voice_channel_id.to_channel(&context.ctx).await {
+            channel
+        } else {
+            context
+                .msg
+                .channel_id
+                .say(
+                    &context.ctx,
+                    "I could not find the user topic voice channel :(",
+                )
+                .await?;
+            return Ok(());
+        };
+    let has_default_name = voice_channel.name()
+        == lib::tasks::user_topic_voice_channel::DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME;
+    let is_empty = voice_channel.members(&context.ctx).await?.is_empty();
+    if has_default_name || is_empty {
+        // We are good to go!
+        // Rename the channel
+        if let Err(err) = voice_channel.edit(&context.ctx, |c| c.name(topic)).await {
+            context
+                .msg
+                .channel_id
+                .say(
+                    &context.ctx,
+                    "There was an error renaming the voice channel :(",
+                )
+                .await?;
+            return Err(err.into());
+        }
+        // Try to store the renaming time in Redis
+        if let Ok(con) = context.async_redis_connection().await {
+            let _: RedisResult<()> = con
+                .set(
+                    "user_topic_voice_channel_topic_time",
+                    chrono::Utc::now().to_rfc3339(),
+                )
+                .await;
+        }
+        context
+            .msg
+            .channel_id
+            .say(
+                &context.ctx,
+                format!("The voice channel is now yours! New topic: _{}_", topic),
+            )
+            .await?;
+    }
+    Ok(())
+}

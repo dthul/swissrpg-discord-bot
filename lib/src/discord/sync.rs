@@ -30,6 +30,7 @@ pub mod ids {
     pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(704988201038643270));
     pub const SPAM_ALERT_USER_IDS: &'static [UserId] =
         &[UserId(401292991307841536), UserId(456545153923022849)];
+    pub const USER_TOPIC_VOICE_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(807270405672140831));
 }
 
 #[cfg(not(feature = "bottest"))]
@@ -50,6 +51,7 @@ pub mod ids {
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
     pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(706131908102324345));
     pub const SPAM_ALERT_USER_IDS: &'static [UserId] = &[UserId(401292991307841536)];
+    pub const USER_TOPIC_VOICE_CHANNEL_ID: Option<ChannelId> = None;
 }
 
 use ids::*;
