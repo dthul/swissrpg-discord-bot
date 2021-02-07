@@ -30,8 +30,8 @@ mod numcached;
 mod schedule_session;
 mod snooze;
 mod stop;
-// mod sync_discord;
-// mod sync_meetup;
+mod sync_discord;
+mod sync_meetup;
 mod sync_subscriptions;
 // mod test;
 mod whois;
@@ -42,8 +42,8 @@ static ALL_COMMANDS: &[&Command] = &[
     &link_meetup::UNLINK_MEETUP_COMMAND,
     &link_meetup::LINK_MEETUP_BOT_ADMIN_COMMAND,
     &link_meetup::UNLINK_MEETUP_BOT_ADMIN_COMMAND,
-    // &sync_meetup::SYNC_MEETUP_COMMAND,
-    // &sync_discord::SYNC_DISCORD_COMMAND,
+    &sync_meetup::SYNC_MEETUP_COMMAND,
+    &sync_discord::SYNC_DISCORD_COMMAND,
     // &remind_expiration::REMIND_EXPIRATION_COMMAND,
     &add_user::ADD_USER_COMMAND,
     &add_user::ADD_HOST_COMMAND,
