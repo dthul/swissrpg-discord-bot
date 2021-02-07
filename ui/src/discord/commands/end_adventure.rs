@@ -111,5 +111,14 @@ fn end_adventure<'a>(
         .say(&context.ctx, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
         .await
         .ok();
+    if let Some(bot_alerts_channel_id) = lib::discord::sync::ids::BOT_ALERTS_CHANNEL_ID {
+        bot_alerts_channel_id
+            .say(
+                &context.ctx,
+                lib::strings::CHANNEL_MARKED_FOR_CLOSING_ALERT(context.msg.channel_id),
+            )
+            .await
+            .ok();
+    }
     Ok(())
 }
