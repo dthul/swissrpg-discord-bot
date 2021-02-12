@@ -1,4 +1,4 @@
-use serenity::model::id::ChannelId;
+use serenity::model::id::{ChannelId, RoleId, UserId};
 
 // ***********************
 // *** Discord replies ***
@@ -187,8 +187,16 @@ pub const CHANNEL_ALREADY_MARKED_FOR_CLOSING: &'static str =
     "Deja vu! This channel is already marked for closing. The black hole is on its way. Patience.";
 
 #[allow(non_snake_case)]
-pub fn CHANNEL_MARKED_FOR_CLOSING_ALERT(channel_id: ChannelId) -> String {
-    format!("<#{}> just ended their adventure!", channel_id.0)
+pub fn CHANNEL_MARKED_FOR_CLOSING_ALERT(
+    channel_id: ChannelId,
+    channel_name: &str,
+    gm_id: UserId,
+    organiser_id: RoleId,
+) -> String {
+    format!(
+        "<@{}> just ended the adventure {} (<#{}>)! <@&{}>",
+        gm_id.0, channel_name, channel_id.0, organiser_id.0
+    )
 }
 
 pub const CHANNEL_ROLE_ADD_ERROR: &'static str = "Something went wrong assigning the channel role";

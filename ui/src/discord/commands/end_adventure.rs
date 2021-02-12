@@ -1,5 +1,6 @@
 use command_macro::command;
 use redis::AsyncCommands;
+use serenity::model::channel::Channel;
 
 #[command]
 #[regex(r"end\s*adventure")]
@@ -111,11 +112,21 @@ fn end_adventure<'a>(
         .say(&context.ctx, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
         .await
         .ok();
+    let channel = context.channel().await;
+    let channel_name = match &channel {
+        Ok(Channel::Guild(channel)) => &channel.name,
+        _ => "'unknown'",
+    };
     if let Some(bot_alerts_channel_id) = lib::discord::sync::ids::BOT_ALERTS_CHANNEL_ID {
         bot_alerts_channel_id
             .say(
                 &context.ctx,
-                lib::strings::CHANNEL_MARKED_FOR_CLOSING_ALERT(context.msg.channel_id),
+                lib::strings::CHANNEL_MARKED_FOR_CLOSING_ALERT(
+                    context.msg.channel_id,
+                    channel_name,
+                    context.msg.author.id,
+                    lib::discord::sync::ids::ORGANISER_ID,
+                ),
             )
             .await
             .ok();
