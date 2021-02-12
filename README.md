@@ -79,6 +79,31 @@ appendfsync everysec
 aof-use-rdb-preamble yes
 ```
 
+# Postgres
+
+Install according to the instructions on the website. Under Ubuntu, a new `postgres` user will be created and the database cluster will be initialized in `/var/lib/postgresql/13/main` (or appropriate other major version number).
+
+Create Postgres database users ("roles" in Postgres speak) for the Unix users which need a database (`bot` and `bottest` probably):
+
+`$ sudo -u postgres createuser --interactive` (x2)
+```
+Enter name of role to add: bot
+Shall the new role be a superuser? (y/n) n
+Shall the new role be allowed to create databases? (y/n) n
+Shall the new role be allowed to create more new roles? (y/n) n
+```
+
+Create databases for the `bot` and `bottest` users:
+
+`$ sudo -u postgres createdb bot --owner bot`
+`$ sudo -u postgres createdb bottest --owner bottest`
+
+Revoke public connection rights to the newly created databases:
+
+`$ sudo -u postgres psql`
+`# REVOKE connect ON DATABASE bot FROM PUBLIC;`
+`# REVOKE connect ON DATABASE bottest FROM PUBLIC;`
+
 # Sudo
 
 The bot's `stop` command needs access to `systemctl`. In order to grant this access,
