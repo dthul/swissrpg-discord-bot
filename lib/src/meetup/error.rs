@@ -9,6 +9,7 @@ use simple_error::SimpleError;
 use std::num::ParseIntError;
 use stripe::Error as StripeError;
 use tokio::task::JoinError;
+use tokio::time::error::Elapsed;
 use url::ParseError as UrlParseError;
 
 type RequestTokenError = oauth2::RequestTokenError<
@@ -125,6 +126,12 @@ impl From<StripeError> for Error {
 
 impl From<JoinError> for Error {
     fn from(err: JoinError) -> Self {
+        Error::CommonError(err.into())
+    }
+}
+
+impl From<Elapsed> for Error {
+    fn from(err: Elapsed) -> Self {
         Error::CommonError(err.into())
     }
 }

@@ -38,7 +38,8 @@ pub async fn create_discord_client(
                 | GatewayIntents::GUILD_MESSAGE_REACTIONS
                 | GatewayIntents::DIRECT_MESSAGES
                 | GatewayIntents::DIRECT_MESSAGE_REACTIONS
-                | GatewayIntents::GUILD_PRESENCES,
+                | GatewayIntents::GUILD_PRESENCES
+                | GatewayIntents::GUILD_VOICE_STATES,
         )
         .event_handler(Handler)
         .await?;

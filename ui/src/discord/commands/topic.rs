@@ -1,6 +1,7 @@
 use command_macro::command;
 use redis::{AsyncCommands, RedisResult};
 use serenity::model::channel::Channel;
+use std::time::Duration;
 
 #[command]
 #[regex(r"topic\s+(?P<topic>[^\s].*)")]
@@ -12,6 +13,8 @@ fn set_voice_topic<'a>(
     context: &'a mut super::CommandContext,
     captures: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
+    // Indicate that something is happening
+    let _typing_indicator = context.msg.channel_id.start_typing(&context.ctx.http).ok();
     // Check if there is a user topic voice channel
     let voice_channel_id = if let Some(id) = lib::discord::sync::ids::USER_TOPIC_VOICE_CHANNEL_ID {
         id
@@ -76,10 +79,40 @@ fn set_voice_topic<'a>(
     let has_default_name = voice_channel.name()
         == lib::tasks::user_topic_voice_channel::DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME;
     let is_empty = voice_channel.members(&context.ctx).await?.is_empty();
-    if has_default_name || is_empty {
-        // We are good to go!
-        // Rename the channel
-        if let Err(err) = voice_channel.edit(&context.ctx, |c| c.name(topic)).await {
+    if !has_default_name && !is_empty {
+        // Someone is already using the voice channel
+        context
+            .msg
+            .channel_id
+            .say(
+                &context.ctx,
+                "Sorry but it seems there is already a topic going on. Try again when the voice channel is empty.",
+            )
+            .await?;
+        return Ok(());
+    }
+    // We are good to go!
+    // Rename the channel.
+    // We wrap this request in a timeout to not block on the rate limit.
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        voice_channel.edit(&context.ctx, |c| c.name(topic)),
+    )
+    .await
+    {
+        Err(_) => {
+            // The timeout elapsed
+            context
+                .msg
+                .channel_id
+                .say(
+                    &context.ctx,
+                    "Hold your horses. A topic was introduced recently. Please wait 10 minutes before changing it again.",
+                )
+                .await?;
+            return Ok(());
+        }
+        Ok(Err(err)) => {
             context
                 .msg
                 .channel_id
@@ -90,23 +123,24 @@ fn set_voice_topic<'a>(
                 .await?;
             return Err(err.into());
         }
-        // Try to store the renaming time in Redis
-        if let Ok(con) = context.async_redis_connection().await {
-            let _: RedisResult<()> = con
-                .set(
-                    "user_topic_voice_channel_topic_time",
-                    chrono::Utc::now().to_rfc3339(),
-                )
-                .await;
-        }
-        context
-            .msg
-            .channel_id
-            .say(
-                &context.ctx,
-                format!("The voice channel is now yours! New topic: _{}_", topic),
-            )
-            .await?;
+        Ok(Ok(_)) => (),
     }
+    // Try to store the renaming time in Redis
+    if let Ok(con) = context.async_redis_connection().await {
+        let _: RedisResult<()> = con
+            .set(
+                "user_topic_voice_channel_topic_time",
+                chrono::Utc::now().to_rfc3339(),
+            )
+            .await;
+    }
+    context
+        .msg
+        .channel_id
+        .say(
+            &context.ctx,
+            format!("The voice channel is now yours! New topic: _{}_", topic),
+        )
+        .await?;
     Ok(())
 }
