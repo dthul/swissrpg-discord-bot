@@ -1,7 +1,11 @@
 use crate::{discord::sync::ChannelType, strings};
 use redis::AsyncCommands;
-use serenity::model::id::{ChannelId, RoleId, UserId};
+use serenity::model::{
+    channel::GuildChannel,
+    id::{ChannelId, RoleId, UserId},
+};
 use simple_error::SimpleError;
+use std::collections::HashMap;
 
 // Sends channel deletion reminders to expired Discord channels
 pub async fn create_recurring_end_of_game_task(
@@ -62,9 +66,19 @@ pub async fn end_of_game_task(
     }
     let redis_channels_key = "discord_channels";
     let discord_channels: Vec<u64> = redis_connection.smembers(redis_channels_key).await?;
+    let existing_channels = crate::discord::sync::ids::GUILD_ID
+        .channels(&discord_api.http)
+        .await?;
     for channel in discord_channels {
         // Then, check if the channel is due for deletion
-        match delete_marked_channel(ChannelType::Text, channel, redis_connection, discord_api).await
+        match delete_marked_channel(
+            ChannelType::Text,
+            channel,
+            &existing_channels,
+            redis_connection,
+            discord_api,
+        )
+        .await
         {
             Ok(deletion_status) => {
                 if deletion_status == DeletionStatus::NotDeleted {
@@ -93,8 +107,14 @@ pub async fn end_of_game_task(
         redis_connection.smembers(redis_voice_channels_key).await?;
     for channel in discord_voice_channels {
         // Then, check if the channel is due for deletion
-        if let Err(err) =
-            delete_marked_channel(ChannelType::Voice, channel, redis_connection, discord_api).await
+        if let Err(err) = delete_marked_channel(
+            ChannelType::Voice,
+            channel,
+            &existing_channels,
+            redis_connection,
+            discord_api,
+        )
+        .await
         {
             some_failed = true;
             eprintln!("Error during voice channel deletion: {}", err);
@@ -215,7 +235,9 @@ async fn send_channel_expiration_reminder(
         channel_id
     );
     let redis_channel_snooze_key = format!("discord_channel:{}:snooze_until", channel_id);
-    let (expiration_time, snooze_until, last_reminder_time): (
+    let redis_channel_deletion_key = format!("discord_channel:{}:deletion_time", channel_id);
+    let (expiration_time, snooze_until, last_reminder_time, deletion_time): (
+        Option<String>,
         Option<String>,
         Option<String>,
         Option<String>,
@@ -224,6 +246,7 @@ async fn send_channel_expiration_reminder(
             &redis_channel_expiration_key,
             &redis_channel_snooze_key,
             &redis_channel_reminder_time,
+            &redis_channel_deletion_key,
         ])
         .await?;
     let expiration_time = expiration_time
@@ -238,6 +261,14 @@ async fn send_channel_expiration_reminder(
         .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
         .transpose()?
         .map(|t| t.with_timezone(&chrono::Utc));
+    let deletion_time = deletion_time
+        .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
+        .transpose()?
+        .map(|t| t.with_timezone(&chrono::Utc));
+    if deletion_time.is_some() {
+        // This channel is already marked for deletion, don't send another reminder
+        return Ok(());
+    }
     if let Some(expiration_time) = expiration_time {
         // Check if this is a one-shot or a campaign series
         let is_campaign = {
@@ -315,9 +346,16 @@ enum DeletionStatus {
 async fn delete_marked_channel(
     channel_type: ChannelType,
     channel_id: u64,
+    existing_channels: &HashMap<ChannelId, GuildChannel>,
     con: &mut redis::aio::Connection,
     discord_api: &crate::discord::CacheAndHttp,
 ) -> Result<DeletionStatus, crate::meetup::Error> {
+    // Check whether the channel still exists on Discord
+    let channel = if let Some(channel) = existing_channels.get(&ChannelId(channel_id)) {
+        channel
+    } else {
+        return Ok(DeletionStatus::AlreadyDeleted);
+    };
     // Check if there is an expiration time in the future
     // -> don't delete channel and remove deletion marker
     let redis_channel_deletion_key = match channel_type {
@@ -337,51 +375,27 @@ async fn delete_marked_channel(
     if deletion_time > chrono::Utc::now() {
         return Ok(DeletionStatus::NotDeleted);
     }
-    // Check whether the Channel still exists on Discord
-    let channel_exists = match ChannelId(channel_id).to_channel(discord_api).await {
-        Ok(_) => true,
-        Err(err) => {
-            if let serenity::Error::Http(http_err) = &err {
-                if let serenity::http::HttpError::UnsuccessfulRequest(response) = http_err.as_ref()
-                {
-                    if response.status_code == serenity::http::StatusCode::NOT_FOUND {
-                        false
-                    } else {
-                        return Err(err.into());
-                    }
-                } else {
-                    return Err(err.into());
-                }
-            } else {
-                return Err(err.into());
-            }
+    // Delete the channel from Discord
+    channel.delete(discord_api).await?;
+    // Delete the channel deletion request from Redis
+    let _: () = con.del(&redis_channel_deletion_key).await?;
+    // Delete the associated roles
+    if channel_type == ChannelType::Text {
+        let host_role: Option<u64> = con
+            .get(format!("discord_channel:{}:discord_host_role", channel_id))
+            .await?;
+        if let Some(host_role) = host_role {
+            delete_role(RoleId(host_role), con, discord_api).await?;
         }
-    };
-    if channel_exists {
-        // Delete the channel from Discord
-        ChannelId(channel_id).delete(&discord_api.http).await?;
-        // Delete the channel deletion request from Redis
-        let _: () = con.del(&redis_channel_deletion_key).await?;
-        // Delete the associated roles
-        if channel_type == ChannelType::Text {
-            let host_role: Option<u64> = con
-                .get(format!("discord_channel:{}:discord_host_role", channel_id))
-                .await?;
-            if let Some(host_role) = host_role {
-                delete_role(RoleId(host_role), con, discord_api).await?;
-            }
-            let player_role: Option<u64> = con
-                .get(format!("discord_channel:{}:discord_role", channel_id))
-                .await?;
-            if let Some(player_role) = player_role {
-                delete_role(RoleId(player_role), con, discord_api).await?;
-            }
+        let player_role: Option<u64> = con
+            .get(format!("discord_channel:{}:discord_role", channel_id))
+            .await?;
+        if let Some(player_role) = player_role {
+            delete_role(RoleId(player_role), con, discord_api).await?;
         }
-        // Let the vacuum task handle all other stale Redis keys
-        Ok(DeletionStatus::Deleted)
-    } else {
-        Ok(DeletionStatus::AlreadyDeleted)
     }
+    // Let the vacuum task handle all other stale Redis keys
+    Ok(DeletionStatus::Deleted)
 }
 
 async fn delete_role(
