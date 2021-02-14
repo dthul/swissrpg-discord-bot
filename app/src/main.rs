@@ -3,6 +3,7 @@
 
 use futures::future;
 use redis::Commands;
+use sqlx::postgres::PgPoolOptions;
 use std::{
     env,
     sync::{
@@ -25,6 +26,7 @@ fn main() {
             environment
         );
     }
+    let database_url = env::var("DATABASE_URL").expect("Found no DATABASE_URL in environment");
     let meetup_client_id =
         env::var("MEETUP_CLIENT_ID").expect("Found no MEETUP_CLIENT_ID in environment");
     let meetup_client_secret =
@@ -84,11 +86,21 @@ fn main() {
         .build()
         .expect("Could not create tokio runtime");
 
+    // Connect to the local Postgres server
+    let pool = async_runtime
+        .block_on(
+            PgPoolOptions::new()
+                .max_connections(5)
+                .connect(&database_url),
+        )
+        .expect("Could not connect to the Postgres database");
+
     let bot_shutdown_signal = Arc::new(AtomicBool::new(false));
     let mut bot = async_runtime
         .block_on(ui::discord::bot::create_discord_client(
             &discord_token,
             redis_client.clone(),
+            pool.clone(),
             async_meetup_client.clone(),
             meetup_oauth2_consumer.clone(),
             stripe_client.clone(),

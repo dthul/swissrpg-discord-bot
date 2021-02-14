@@ -22,6 +22,7 @@ use std::sync::{
 pub async fn create_discord_client(
     discord_token: &str,
     redis_client: redis::Client,
+    pool: sqlx::PgPool,
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     stripe_client: Arc<stripe::Client>,
@@ -64,6 +65,7 @@ pub async fn create_discord_client(
         data.insert::<BotNameKey>(bot_name);
         data.insert::<AsyncMeetupClientKey>(async_meetup_client);
         data.insert::<RedisClientKey>(redis_client);
+        data.insert::<PoolKey>(pool);
         data.insert::<OAuth2ConsumerKey>(oauth2_consumer);
         data.insert::<StripeClientKey>(stripe_client);
         data.insert::<ShutdownSignalKey>(shutdown_signal);
@@ -111,6 +113,11 @@ impl TypeMapKey for ShutdownSignalKey {
 pub(crate) struct PreparedCommandsKey;
 impl TypeMapKey for PreparedCommandsKey {
     type Value = Arc<PreparedCommands>;
+}
+
+pub(crate) struct PoolKey;
+impl TypeMapKey for PoolKey {
+    type Value = sqlx::PgPool;
 }
 
 pub struct Handler;

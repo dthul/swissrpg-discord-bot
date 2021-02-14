@@ -14,6 +14,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 mod add_user;
+mod archive;
 // mod clone_event;
 mod count_inactive;
 mod end_adventure;
@@ -68,6 +69,7 @@ static ALL_COMMANDS: &[&Command] = &[
     // &clone_event::CLONE_EVENT_COMMAND,
     // &rsvp_user::RSVP_USER_COMMAND,
     // &test::TEST_COMMAND,
+    &archive::ARCHIVE_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
@@ -113,6 +115,7 @@ pub struct CommandContext {
     stripe_client: OnceCell<Arc<stripe::Client>>,
     bot_id: OnceCell<UserId>,
     channel: OnceCell<Channel>,
+    pool: OnceCell<sqlx::PgPool>,
 }
 
 // Send + Sync: redis::Client
@@ -136,10 +139,11 @@ impl CommandContext {
             stripe_client: OnceCell::new(),
             bot_id: OnceCell::new(),
             channel: OnceCell::new(),
+            pool: OnceCell::new(),
         }
     }
 
-    pub async fn redis_client(&mut self) -> Result<redis::Client, lib::meetup::Error> {
+    pub async fn redis_client(&self) -> Result<redis::Client, lib::meetup::Error> {
         if let Some(client) = self.redis_client.get() {
             Ok(client.clone())
         } else {
@@ -171,8 +175,21 @@ impl CommandContext {
         }
     }
 
+    pub async fn pool(&self) -> Result<sqlx::PgPool, lib::meetup::Error> {
+        if let Some(pool) = self.pool.get() {
+            Ok(pool.clone())
+        } else {
+            let data = self.ctx.data.read().await;
+            let pool = data
+                .get::<super::bot::PoolKey>()
+                .cloned()
+                .ok_or_else(|| simple_error::SimpleError::new("Postgres pool was not set"))?;
+            Ok(self.pool.get_or_init(move || pool).clone())
+        }
+    }
+
     pub async fn meetup_client(
-        &mut self,
+        &self,
     ) -> Result<Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>, lib::meetup::Error>
     {
         if let Some(client) = self.meetup_client.get() {
@@ -196,7 +213,7 @@ impl CommandContext {
     }
 
     pub async fn oauth2_consumer(
-        &mut self,
+        &self,
     ) -> Result<Arc<lib::meetup::oauth2::OAuth2Consumer>, lib::meetup::Error> {
         if let Some(consumer) = self.oauth2_consumer.get() {
             Ok(Arc::clone(consumer))
@@ -218,7 +235,7 @@ impl CommandContext {
         }
     }
 
-    pub async fn stripe_client(&mut self) -> Result<Arc<stripe::Client>, lib::meetup::Error> {
+    pub async fn stripe_client(&self) -> Result<Arc<stripe::Client>, lib::meetup::Error> {
         if let Some(client) = self.stripe_client.get() {
             Ok(Arc::clone(client))
         } else {
@@ -239,7 +256,7 @@ impl CommandContext {
         }
     }
 
-    pub async fn bot_id(&mut self) -> Result<UserId, lib::meetup::Error> {
+    pub async fn bot_id(&self) -> Result<UserId, lib::meetup::Error> {
         if let Some(&bot_id) = self.bot_id.get() {
             Ok(bot_id)
         } else {
@@ -256,7 +273,7 @@ impl CommandContext {
         }
     }
 
-    pub async fn channel(&mut self) -> Result<Channel, lib::meetup::Error> {
+    pub async fn channel(&self) -> Result<Channel, lib::meetup::Error> {
         if let Some(channel) = self.channel.get() {
             Ok(channel.clone())
         } else {
@@ -266,14 +283,14 @@ impl CommandContext {
         }
     }
 
-    pub async fn is_dm(&mut self) -> Result<bool, lib::meetup::Error> {
+    pub async fn is_dm(&self) -> Result<bool, lib::meetup::Error> {
         Ok(match self.channel().await? {
             Channel::Private(_) => true,
             _ => false,
         })
     }
 
-    pub async fn is_admin(&mut self) -> Result<bool, lib::meetup::Error> {
+    pub async fn is_admin(&self) -> Result<bool, lib::meetup::Error> {
         Ok(self
             .msg
             .author

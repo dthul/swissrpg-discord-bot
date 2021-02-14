@@ -136,6 +136,12 @@ impl From<Elapsed> for Error {
     }
 }
 
+impl From<sqlx::Error> for Error {
+    fn from(err: sqlx::Error) -> Self {
+        Error::CommonError(err.into())
+    }
+}
+
 // TODO: define a custom Error type for the ui module
 // so that we don't need these implementations here
 impl warp::reject::Reject for Error {}

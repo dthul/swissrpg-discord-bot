@@ -163,6 +163,15 @@ impl From<Elapsed> for BoxedError {
     }
 }
 
+impl From<sqlx::Error> for BoxedError {
+    fn from(err: sqlx::Error) -> Self {
+        BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        }
+    }
+}
+
 impl From<crate::meetup::Error> for BoxedError {
     fn from(err: crate::meetup::Error) -> Self {
         BoxedError {
