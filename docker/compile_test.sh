@@ -4,7 +4,7 @@ num_containers=$(docker container ls --all --quiet --filter name=swissrpg-compil
 if [ $num_containers -lt 1 ]
 then
     # Create the container if it doesn't exist yet
-    docker create -it --volume "${SCRIPT_DIR}/..":/opt --name=swissrpg-compile-container swissrpg-bot
+    docker create -it --volume "${SCRIPT_DIR}/..":/opt --network=host --name=swissrpg-compile-container swissrpg-bot
 fi
 # Start the container
 docker start swissrpg-compile-container
