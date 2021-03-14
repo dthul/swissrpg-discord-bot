@@ -58,7 +58,6 @@ fn list_subscriptions<'a>(
         .direct_message(&context.ctx, |message_builder| {
             message_builder.content(format!("Active subscriptions:\n{}", message))
         })
-        .await
-        .ok();
+        .await?;
     Ok(())
 }
