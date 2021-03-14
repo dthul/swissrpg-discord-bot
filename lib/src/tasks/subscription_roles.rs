@@ -81,33 +81,49 @@ pub async fn update_roles(
     let mut new_champions = vec![];
     let mut new_insiders = vec![];
     for subscription in &subscriptions {
-        match get_customer_and_product(stripe_client, subscription).await {
-            Err(err) => eprintln!("Error in update_roles:\n{:#?}", err),
-            Ok((customer, product)) => {
-                let discord_id =
-                    ensure_customer_has_discord_id(&customer, stripe_client, discord_api).await?;
-                if let Some(discord_id) = discord_id {
-                    let is_champion_product = product
-                        .name
-                        .as_ref()
-                        .map_or(false, |name| CHAMPION_PRODUCT_REGEX.is_match(name));
-                    let is_insider_product = product
-                        .name
-                        .as_ref()
-                        .map_or(false, |name| INSIDER_PRODUCT_REGEX.is_match(name));
-                    if is_champion_product {
-                        new_champions.push(discord_id);
-                    }
-                    if is_insider_product {
-                        new_insiders.push(discord_id);
-                    }
-                } else {
-                    eprintln!(
-                        "Could not find Discord ID for Stripe customer {} ({:?})",
-                        customer.id, customer.email
-                    );
-                }
+        // Since we don't have try blocks yet we need to match on every single error...
+        let (customer, product) = match get_customer_and_product(stripe_client, subscription).await
+        {
+            Ok(customer_product) => customer_product,
+            Err(err) => {
+                eprintln!(
+                    "Error in update_roles get_customer_and_product:\n{:#?}",
+                    err
+                );
+                continue;
             }
+        };
+        let discord_id =
+            match ensure_customer_has_discord_id(&customer, stripe_client, discord_api).await {
+                Ok(discord_id) => discord_id,
+                Err(err) => {
+                    eprintln!(
+                        "Error in update_roles ensure_customer_has_discord_id:\n{:#?}",
+                        err
+                    );
+                    continue;
+                }
+            };
+        if let Some(discord_id) = discord_id {
+            let is_champion_product = product
+                .name
+                .as_ref()
+                .map_or(false, |name| CHAMPION_PRODUCT_REGEX.is_match(name));
+            let is_insider_product = product
+                .name
+                .as_ref()
+                .map_or(false, |name| INSIDER_PRODUCT_REGEX.is_match(name));
+            if is_champion_product {
+                new_champions.push(discord_id);
+            }
+            if is_insider_product {
+                new_insiders.push(discord_id);
+            }
+        } else {
+            eprintln!(
+                "Could not find Discord ID for Stripe customer {} ({:?})",
+                customer.id, customer.email
+            );
         }
     }
     // Now, check which Discord users already have the Champion and Insider roles
@@ -115,14 +131,14 @@ pub async fn update_roles(
     let mut current_gm_champions = vec![];
     let mut current_insiders = vec![];
     let mut current_gms = vec![];
-    // TODO: blocking
-    let guild = discord_api
+    let members = discord_api
         .cache
-        .guild(crate::discord::sync::ids::GUILD_ID)
+        .guild_field(crate::discord::sync::ids::GUILD_ID, |guild| {
+            guild.members.clone()
+        })
         .await
         .ok_or_else(|| simple_error::SimpleError::new("Did not find guild in cache"))?;
-    // TODO: blocking
-    for (&user_id, member) in &guild.members {
+    for (&user_id, member) in &members {
         let is_champion = member.roles.contains(&ids::CHAMPION_ID);
         let is_gm_champion = member.roles.contains(&ids::GM_CHAMPION_ID);
         let is_insider = member.roles.contains(&ids::INSIDER_ID);
@@ -154,34 +170,59 @@ pub async fn update_roles(
             // Is also a GM
             if !current_gm_champions.contains(new_champion) {
                 // Assign GM champion role
-                add_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID).await?;
+                if let Err(err) =
+                    add_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID).await
+                {
+                    eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
+                }
             }
             if current_champions.contains(new_champion) {
                 // Remove (non-GM) champion role
-                remove_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await?;
+                if let Err(err) =
+                    remove_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await
+                {
+                    eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+                }
             }
         } else {
             // Is not also a GM
             if !current_champions.contains(new_champion) {
                 // Assign champion role
-                add_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await?;
+                if let Err(err) =
+                    add_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await
+                {
+                    eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
+                }
             }
             if current_gm_champions.contains(new_champion) {
                 // Remove GM champion role
-                remove_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID).await?;
+                if let Err(err) =
+                    remove_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID)
+                        .await
+                {
+                    eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+                }
             }
         }
     }
     for new_insider in &new_insiders {
         if !current_insiders.contains(new_insider) {
             // Assign insider role
-            add_member_role(discord_api.clone(), *new_insider, ids::INSIDER_ID).await?;
+            if let Err(err) =
+                add_member_role(discord_api.clone(), *new_insider, ids::INSIDER_ID).await
+            {
+                eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
+            }
         }
     }
     for current_champion in &current_champions {
         if !new_champions.contains(current_champion) {
             // Remove champion role
-            remove_member_role(discord_api.clone(), *current_champion, ids::CHAMPION_ID).await?;
+            if let Err(err) =
+                remove_member_role(discord_api.clone(), *current_champion, ids::CHAMPION_ID).await
+            {
+                eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+            }
         }
     }
     for current_gm_champion in &current_gm_champions {
@@ -189,18 +230,25 @@ pub async fn update_roles(
             || !current_gms.contains(current_gm_champion)
         {
             // Remove GM champion role
-            remove_member_role(
+            if let Err(err) = remove_member_role(
                 discord_api.clone(),
                 *current_gm_champion,
                 ids::GM_CHAMPION_ID,
             )
-            .await?;
+            .await
+            {
+                eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+            }
         }
     }
     for current_insider in &current_insiders {
         if !new_insiders.contains(current_insider) {
             // Remove insider role
-            remove_member_role(discord_api.clone(), *current_insider, ids::INSIDER_ID).await?;
+            if let Err(err) =
+                remove_member_role(discord_api.clone(), *current_insider, ids::INSIDER_ID).await
+            {
+                eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+            }
         }
     }
     Ok(())
