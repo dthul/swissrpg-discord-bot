@@ -6,7 +6,7 @@ use std::time::Duration;
 #[command]
 #[regex(r"topic\s+(?P<topic>[^\s].*)")]
 #[help(
-    "topic _string_",
+    "topic `some topic`",
     "renames the user topic voice channel to the specified topic"
 )]
 fn set_voice_topic<'a>(
