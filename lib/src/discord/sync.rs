@@ -51,7 +51,7 @@ pub mod ids {
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
     pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(706131908102324345));
     pub const SPAM_ALERT_USER_IDS: &'static [UserId] = &[UserId(401292991307841536)];
-    pub const USER_TOPIC_VOICE_CHANNEL_ID: Option<ChannelId> = None;
+    pub const USER_TOPIC_VOICE_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(811601700736729129));
 }
 
 use ids::*;
