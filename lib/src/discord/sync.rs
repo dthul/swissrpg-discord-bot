@@ -159,6 +159,12 @@ async fn sync_event_series(
         .into_iter()
         .filter(|event| event.time > now)
         .collect();
+    // Sync additional roles for upcoming events
+    for event in &upcoming {
+        if let Err(err) = sync_additional_event_roles(event, redis_connection, discord_api).await {
+            eprintln!("Error in sync_additional_event_roles:{:#?}", err);
+        }
+    }
     // Sort by date
     upcoming.sort_unstable_by_key(|event| event.time);
     let next_event = match upcoming.first() {
@@ -287,7 +293,7 @@ async fn sync_event_series(
         discord_api,
     )
     .await?;
-    // Step 7: If this is an online campaign, also create a voice channel
+    // Step 5: If this is an online campaign, also create a voice channel
     let voice_channel_id = if is_online {
         let voice_channel_id = sync_channel(
             ChannelType::Voice,
@@ -1174,6 +1180,64 @@ async fn sync_channel_topic_and_category(
                 {
                     break;
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn sync_additional_event_roles(
+    event: &Event,
+    redis_connection: &mut redis::aio::Connection,
+    discord_api: &super::CacheAndHttp,
+) -> Result<(), crate::meetup::Error> {
+    let redis_event_roles_key = format!("meetup_event:{}:roles", event.id);
+    let role_ids: Vec<u64> = redis_connection.smembers(&redis_event_roles_key).await?;
+    // Query the RSVPd guests and hosts
+    let meetup_guest_ids =
+        crate::redis::get_events_participants(&[&event.id], /*hosts*/ false, redis_connection)
+            .await?;
+    let meetup_host_ids =
+        crate::redis::get_events_participants(&[&event.id], /*hosts*/ true, redis_connection)
+            .await?;
+    let discord_guest_ids =
+        crate::redis::meetup_to_discord_ids(&meetup_guest_ids, redis_connection).await?;
+    let discord_host_ids =
+        crate::redis::meetup_to_discord_ids(&meetup_host_ids, redis_connection).await?;
+    // Filter the None values
+    let discord_guest_ids: Vec<_> = discord_guest_ids
+        .into_iter()
+        .filter_map(|id_mapping| id_mapping.1)
+        .collect();
+    let discord_host_ids: Vec<_> = discord_host_ids
+        .into_iter()
+        .filter_map(|id_mapping| id_mapping.1)
+        .collect();
+    for &user_id in discord_guest_ids.iter().chain(discord_host_ids.iter()) {
+        for &role_id in &role_ids {
+            match UserId(user_id).to_user(discord_api).await {
+                Ok(user) => match user.has_role(discord_api, GUILD_ID, role_id).await {
+                    Ok(has_role) => {
+                        if !has_role {
+                            match discord_api
+                                .http()
+                                .add_member_role(GUILD_ID.0, user_id, role_id)
+                                .await
+                            {
+                                Ok(_) => println!("Assigned user {} to role {}", user_id, role_id),
+                                Err(err) => eprintln!(
+                                    "Could not assign user {} to role {}: {}",
+                                    user_id, role_id, err
+                                ),
+                            }
+                        }
+                    }
+                    Err(err) => eprintln!(
+                        "Could not figure out whether the user {} already has role {}: {}",
+                        user.id, role_id, err
+                    ),
+                },
+                Err(err) => eprintln!("Could not find the user {}: {}", user_id, err),
             }
         }
     }

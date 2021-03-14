@@ -11,6 +11,7 @@ pub const EVENT_SERIES_PATTERN: &'static str =
 pub const CHANNEL_PATTERN: &'static str = r"(?i)\[\s*channel\s*(?P<channel_id>[0-9]+)\s*\]";
 pub const SESSION_PATTERN: &'static str = r"(?i)\s*session\s*(?P<number>[0-9]+)";
 pub const ONLINE_PATTERN: &'static str = r"(?i)\[\s*online\s*\]";
+pub const ROLE_PATTERN: &'static str = r"(?i)\[\s*role\s*(?P<role_id>[0-9]+)\s*\]";
 
 lazy_static! {
     pub static ref NEW_ADVENTURE_REGEX: regex::Regex =
@@ -22,6 +23,7 @@ lazy_static! {
     pub static ref CHANNEL_REGEX: regex::Regex = regex::Regex::new(CHANNEL_PATTERN).unwrap();
     pub static ref SESSION_REGEX: regex::Regex = regex::Regex::new(SESSION_PATTERN).unwrap();
     pub static ref ONLINE_REGEX: regex::Regex = regex::Regex::new(ONLINE_PATTERN).unwrap();
+    pub static ref ROLE_REGEX: regex::Regex = regex::Regex::new(ROLE_PATTERN).unwrap();
 }
 
 // TODO: Introduce a type like "Meetup connection" that contains
@@ -83,6 +85,7 @@ pub async fn sync_event(
     let is_online = ONLINE_REGEX.is_match(&event.description);
     let event_series_captures = EVENT_SERIES_REGEX.captures(&event.description);
     let channel_captures = CHANNEL_REGEX.captures(&event.description);
+    let role_captures = ROLE_REGEX.captures_iter(&event.description);
     let indicated_channel_id = match channel_captures {
         Some(captures) => match captures.name("channel_id") {
             Some(id) => match id.as_str().parse::<u64>() {
@@ -157,9 +160,22 @@ pub async fn sync_event(
     } else {
         None
     };
-    // TODO: figure out whether this event belongs to a series
-    // For now, we assume that an event that reaches this method does not yet
-    // belong to a series and create a new one
+    let additional_roles = {
+        let mut roles = vec![];
+        for captures in role_captures {
+            if let Some(role_id) = captures.name("role_id") {
+                match role_id.as_str().parse::<u64>() {
+                    Ok(id) => roles.push(id),
+                    _ => eprintln!(
+                        "Meetup event {} specifies invalid role id {}",
+                        event.id,
+                        role_id.as_str()
+                    ),
+                }
+            }
+        }
+        roles
+    };
     let redis_events_key = "meetup_events";
     let redis_series_key = "event_series";
     let redis_event_hosts_key = format!("meetup_event:{}:meetup_hosts", event.id);
@@ -169,6 +185,7 @@ pub async fn sync_event(
         "discord_channel:{}:event_series",
         indicated_channel_id.unwrap_or(0)
     );
+    let redis_event_roles_key = format!("meetup_event:{}:roles", event.id);
     let event_name = event.name.clone();
     // technically: check that series id doesn't exist yet and generate a new one until it does not
     // practically: we will never generate a colliding id
@@ -177,17 +194,21 @@ pub async fn sync_event(
         // by reference, we have to do it manually
         let event = &event;
         let indicated_event_series_id = &indicated_event_series_id;
+        let additional_roles = &additional_roles;
         let redis_event_hosts_key = &redis_event_hosts_key;
         let redis_event_series_key = &redis_event_series_key;
         let redis_event_key = &redis_event_key;
         let redis_channel_series_key = &redis_channel_series_key;
+        let redis_event_roles_key = &redis_event_roles_key;
         crate::redis::closure_type_helper(move |con, mut pipe: redis::Pipeline| {
             let event = event.clone();
             let indicated_event_series_id = indicated_event_series_id.clone();
+            let additional_roles = additional_roles.clone();
             let redis_event_hosts_key = redis_event_hosts_key.clone();
             let redis_event_series_key = redis_event_series_key.clone();
             let redis_event_key = redis_event_key.clone();
             let redis_channel_series_key = redis_channel_series_key.clone();
+            let redis_event_roles_key = redis_event_roles_key.clone();
             let fut = async move {
                 let mut query = redis::pipe();
                 query
@@ -292,7 +313,7 @@ pub async fn sync_event(
                     }
                 };
                 // If the [online] shortcode has been set (even if this is not
-                // the first event in the series), mark the series as online
+                // the first event in the series), mark the series as online.
                 if is_online {
                     let redis_series_online_key = format!("event_series:{}:is_online", &series_id);
                     pipe.set(&redis_series_online_key, "true");
@@ -300,11 +321,12 @@ pub async fn sync_event(
                 let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
                 let host_user_ids: Vec<_> = event.event_hosts.iter().map(|user| user.id).collect();
                 let event_time = event.time.to_rfc3339();
-                let event_hash = &[
+                let event_hash: &[(_, &str)] = &[
                     ("name", &event.name),
                     ("time", &event_time),
                     ("link", &event.link),
                     ("urlname", &event.group.urlname),
+                    ("is_online", if is_online { "true" } else { "false" }),
                 ];
                 if is_new_adventure || is_new_campaign {
                     let redis_series_type_key = format!("event_series:{}:type", &series_id);
@@ -324,6 +346,8 @@ pub async fn sync_event(
                     // Do not use hset_multiple, it deletes existing fields!
                     pipe.hset(&redis_event_key, field, value);
                 }
+                pipe.del(&redis_event_roles_key)
+                    .sadd(&redis_event_roles_key, additional_roles.as_slice());
                 pipe.query_async(con).await
             };
             fut.boxed()
