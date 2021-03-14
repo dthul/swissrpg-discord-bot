@@ -10,6 +10,7 @@ use serenity::{
         gateway::Ready,
         guild::Member,
         id::{GuildId, UserId},
+        interactions::Interaction,
         user::User,
     },
     prelude::*,
@@ -312,6 +313,51 @@ impl EventHandler for Handler {
             return;
         }
         Self::send_welcome_message(&ctx, &new_member.user);
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        // let (bot_id, shutdown_signal) = {
+        //     let data = ctx.data.read().await;
+        //     let bot_id = data.get::<BotIdKey>().expect("Bot ID was not set").clone();
+        //     let shutdown_signal = data
+        //         .get::<ShutdownSignalKey>()
+        //         .expect("Shutdown signal was not set")
+        //         .load(Ordering::Acquire);
+        //     (bot_id, shutdown_signal)
+        // };
+        // In contrast to the message handler we don't need to check that this
+        // is indeed a command.
+
+        // Ignore all messages that might have come from another guild
+        // (shouldn't happen, but who knows)
+        if interaction.guild_id != lib::discord::sync::ids::GUILD_ID {
+            return;
+        }
+        if let Some(data) = interaction.data {
+            match data.name.as_str() {
+                "link-meetup" => {
+                    interaction
+                        .channel_id
+                        .say(&ctx, "Yessir! Linking Meetup")
+                        .await
+                        .ok();
+                }
+                "unlink-meetup" => {
+                    interaction
+                        .channel_id
+                        .say(&ctx, "Un-linking Meetup")
+                        .await
+                        .ok();
+                }
+                _ => {
+                    interaction
+                        .channel_id
+                        .say(&ctx, "Unknown command")
+                        .await
+                        .ok();
+                }
+            };
+        }
     }
 }
 
