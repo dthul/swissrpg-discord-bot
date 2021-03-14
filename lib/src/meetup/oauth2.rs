@@ -46,13 +46,13 @@ impl OAuth2Consumer {
             Some(token_url),
         )
         .set_auth_type(oauth2::AuthType::RequestBody)
-        .set_redirect_url(RedirectUrl::new(format!(
+        .set_redirect_uri(RedirectUrl::new(format!(
             "{}/authorize/redirect",
             crate::urls::BASE_URL
         ))?);
         let link_client = authorization_client
             .clone()
-            .set_redirect_url(RedirectUrl::new(format!(
+            .set_redirect_uri(RedirectUrl::new(format!(
                 "{}/link/redirect",
                 crate::urls::BASE_URL
             ))?);

@@ -15,7 +15,7 @@ bottest = []
 askama = "0.10"
 backtrace = "0.3"
 base64 = "0.13.0"
-chrono = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 chrono-tz = "0.5"
 futures = "0.3"
 futures-util = "0.3"
@@ -23,7 +23,7 @@ geo = "0.17"
 hyper = "0.14"
 itertools = "0.10"
 lazy_static = "1.4"
-oauth2 = "4.0.0-alpha.3"
+oauth2 = "4.0.0-alpha.6"
 rand = "0.8"
 redis = { version = "0.20", default-features = false, features = ["tokio-comp"] }
 regex = "1"

@@ -336,7 +336,7 @@ async fn handle_link(
     let csrf_state = CsrfToken::new_random();
     let (_authorize_url_basic, csrf_state) = oauth2_link_client
         .clone()
-        .set_redirect_url(RedirectUrl::new(format!(
+        .set_redirect_uri(RedirectUrl::new(format!(
             "{}/link/{}/norsvp/redirect",
             lib::urls::BASE_URL,
             linking_id
@@ -346,7 +346,7 @@ async fn handle_link(
         .url();
     let (authorize_url_rsvp, csrf_state) = oauth2_link_client
         .clone()
-        .set_redirect_url(RedirectUrl::new(format!(
+        .set_redirect_uri(RedirectUrl::new(format!(
             "{}/link/{}/rsvp/redirect",
             lib::urls::BASE_URL,
             linking_id
@@ -431,7 +431,7 @@ async fn handle_link_redirect(
     let redirect_url = RedirectUrl::new(format!("{}{}", lib::urls::BASE_URL, path))?;
     let token_res = oauth2_link_client
         .clone()
-        .set_redirect_url(redirect_url)
+        .set_redirect_uri(redirect_url)
         .exchange_code(code)
         .request_async(oauth2::reqwest::async_http_client)
         .await?;
