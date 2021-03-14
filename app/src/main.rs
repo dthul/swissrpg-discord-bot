@@ -210,17 +210,20 @@ fn main() {
     let barrier = Arc::new(std::sync::Barrier::new(2));
 
     // Create the signal handling task
-    {
+    let (signals_handle, signals_thread) = {
         let barrier = barrier.clone();
-        let signals =
-            signal_hook::iterator::Signals::new(&[signal_hook::SIGINT, signal_hook::SIGTERM])
-                .expect("Could not register the signal handler");
-        std::thread::spawn(move || {
+        let mut signals = signal_hook::iterator::Signals::new(&[
+            signal_hook::consts::SIGINT,
+            signal_hook::consts::SIGTERM,
+        ])
+        .expect("Could not register the signal handler");
+        let handle = signals.handle();
+        let thread = std::thread::spawn(move || {
             // Wait for SIGINT or SIGTERM to arrive
-            for signal in signals.forever() {
+            for signal in &mut signals {
                 match signal {
-                    signal_hook::SIGINT => println!("Received SIGINT. Shutting down."),
-                    signal_hook::SIGTERM => println!("Received SIGTERM. Shutting down."),
+                    signal_hook::consts::SIGINT => println!("Received SIGINT. Shutting down."),
+                    signal_hook::consts::SIGTERM => println!("Received SIGTERM. Shutting down."),
                     _ => unreachable!(),
                 }
                 // Finally, tell the main thread to exit
@@ -228,7 +231,8 @@ fn main() {
                 break;
             }
         });
-    }
+        (handle, thread)
+    };
 
     // Spawn all tasks onto the async runtime
     {
@@ -273,6 +277,8 @@ fn main() {
     barrier.wait();
 
     // We received the signal to shut down.
+    // Stop the signal handler
+    signals_handle.close();
     // Abort all long running futures
     bot_shutdown_signal.store(true, Ordering::Release);
     abort_handle_organizer_token_refresh_task.abort();
@@ -282,10 +288,13 @@ fn main() {
     abort_handle_syncing_task.abort();
     abort_handle_stripe_subscription_refresh_task.abort();
     abort_web_server_tx.send(()).ok();
-    // Give any currently running tasks a chance to finish
-    println!("Waiting for tasks to finish.");
-    std::thread::sleep(std::time::Duration::from_secs(10));
     println!("About to shut down the tokio runtime.");
-    async_runtime.shutdown_timeout(tokio::time::Duration::from_secs(10));
-    println!("Tokio runtime shut down.\nHyperion out.");
+    // Give any currently running tasks a chance to finish
+    async_runtime.shutdown_timeout(tokio::time::Duration::from_secs(20));
+    println!("Tokio runtime shut down.");
+    println!("Joining signal handling thread.");
+    signals_thread
+        .join()
+        .expect("Could not join signal handling thread.");
+    println!("Signal handling thread shut down.\nHyperion out.");
 }

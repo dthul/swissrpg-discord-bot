@@ -17,9 +17,9 @@ ui = { path = "../ui", package = "swissrpg-ui" }
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"
-redis = { version = "0.19", default-features = false, features = ["tokio-comp"] }
-serenity = { git = "https://github.com/serenity-rs/serenity", rev = "517c32c", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend"] }
-signal-hook = "0.1"
+redis = { version = "0.20", default-features = false, features = ["tokio-comp"] }
+serenity = { git = "https://github.com/serenity-rs/serenity", rev = "4421be6", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
+signal-hook = "0.3"
 sqlx = { version = "0.5", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
 stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "update-deps", default-features = false, features = ["billing", "webhook-events", "rustls-tls"] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
