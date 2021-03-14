@@ -4,12 +4,14 @@ pub struct SyncStats {
     pub num_events_added: u64,
     pub num_participants_added: u64,
     pub num_hosts_added: u64,
+    pub num_links_added: u64,
     pub num_errors: u64,
 }
 
 pub async fn sync_redis_to_postgres(
     con: &mut redis::aio::Connection,
     pool: &sqlx::PgPool,
+    discord_api: &mut crate::discord::CacheAndHttp,
 ) -> Result<SyncStats, crate::meetup::Error> {
     // Move all game events to Postgres
     // let mut series_id_iter: redis::AsyncIter<'_, String> = con.sscan("event_series").await?;
@@ -17,6 +19,7 @@ pub async fn sync_redis_to_postgres(
     let mut num_events_added = 0;
     let mut num_participants_added = 0;
     let mut num_hosts_added = 0;
+    let mut num_links_added = 0;
     let mut num_errors = 0u64;
     let series_ids: Vec<String> = con.smembers("event_series").await?;
     for series_id in &series_ids {
@@ -88,10 +91,57 @@ pub async fn sync_redis_to_postgres(
             }
         }
     }
+    // Get linking information
+    let user_meetup_ids: Vec<u64> = con.smembers("meetup_users").await?;
+    for &user_meetup_id in &user_meetup_ids {
+        let user_discord_id: Option<u64> = con
+            .get(format!("meetup_user:{}:discord_user", user_meetup_id))
+            .await?;
+        if let Some(user_discord_id) = user_discord_id {
+            let mut transaction = pool.begin().await?;
+            let count = sqlx::query!(
+                "SELECT COUNT(*) FROM meetup_discord_linking WHERE meetup_id = $1 AND discord_id = $2",
+                user_meetup_id as i64,
+                user_discord_id as i64
+            )
+            .fetch_one(&mut transaction)
+            .await?.count.unwrap_or(0);
+            if count == 1 {
+                // Nothing to do, the correct mapping is already in the database
+                continue;
+            }
+            // Clear any potentially stale mapping and write the new one
+            sqlx::query!(
+                "DELETE FROM meetup_discord_linking WHERE meetup_id = $1 OR discord_id = $2",
+                user_meetup_id as i64,
+                user_discord_id as i64
+            )
+            .execute(&mut transaction)
+            .await?;
+            sqlx::query!(
+                "INSERT INTO meetup_discord_linking(meetup_id, discord_id) VALUES($1, $2)",
+                user_meetup_id as i64,
+                user_discord_id as i64
+            )
+            .execute(&mut transaction)
+            .await?;
+            transaction.commit().await?;
+            num_links_added += 1;
+        }
+    }
+    // Get nickname information
+    for user in discord_api.cache.users().await.values() {
+        sqlx::query!(
+            "INSERT INTO discord_nicknames(discord_id, nick) VALUES($1, $2) ON CONFLICT (discord_id) DO UPDATE SET nick = EXCLUDED.nick",
+            user.id.0 as i64,
+            &user.name
+        ).execute(pool).await?;
+    }
     Ok(SyncStats {
         num_events_added,
         num_participants_added,
         num_hosts_added,
+        num_links_added,
         num_errors,
     })
 }

@@ -12,8 +12,9 @@ fn archive<'a>(
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     let pool = context.pool().await?;
+    let mut discord_api = (&context.ctx).into();
     let con = context.async_redis_connection().await?;
-    let res = lib::tasks::archive::sync_redis_to_postgres(con, &pool).await?;
+    let res = lib::tasks::archive::sync_redis_to_postgres(con, &pool, &mut discord_api).await?;
     context
         .msg
         .channel_id
