@@ -2,7 +2,7 @@ import requests
 
 application_id = 643523617702936596
 guild_id = 601070848446824509
-bot_token = "NjQzNTIzNjE3NzAyOTM2NTk2.XcmuEg.gZV5ETFdZiaPa90YmoCFtfodlJM"
+bot_token = "..."
 url = "https://discord.com/api/v8/applications/{}/guilds/{}/commands".format(
     application_id, guild_id)
 
