@@ -15,9 +15,6 @@ Set of all currently tracked Meetup event IDs
 N:1 relationship between an event and the series it belongs to.\
 See `event_series:{}:meetup_events` for the inverse relationship.
 
-`meetup_event:{}:roles`: set of u64\
-Additional Discord roles participants of this event should be assigned to
-
 `meetup_event:{}`: hash
 * `name`: string. Title of the event as it appears on Meetup
 * `time`: string. Date and time of the event in RFC3339 format

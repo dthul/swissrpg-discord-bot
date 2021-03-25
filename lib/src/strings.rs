@@ -306,3 +306,8 @@ pub fn OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_CONTENT(bot_name: &str) -> String {
 
 pub const INTERNAL_SERVER_ERROR: &'static str =
     "Tiamat just crit on our server. Please try again soon.";
+
+#[allow(non_snake_case)]
+pub fn NEW_ROLE_ASSIGNED_DM(role_text: &str) -> String {
+    format!("Hey there adventurer! You have just been given the role {} on the **SwissRPG** server. Have fun!", role_text)
+}

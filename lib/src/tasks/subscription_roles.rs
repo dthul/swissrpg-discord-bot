@@ -171,7 +171,7 @@ pub async fn update_roles(
             if !current_gm_champions.contains(new_champion) {
                 // Assign GM champion role
                 if let Err(err) =
-                    add_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID).await
+                    add_member_role(discord_api, *new_champion, ids::GM_CHAMPION_ID).await
                 {
                     eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
                 }
@@ -179,7 +179,7 @@ pub async fn update_roles(
             if current_champions.contains(new_champion) {
                 // Remove (non-GM) champion role
                 if let Err(err) =
-                    remove_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await
+                    remove_member_role(discord_api, *new_champion, ids::CHAMPION_ID).await
                 {
                     eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
                 }
@@ -189,7 +189,7 @@ pub async fn update_roles(
             if !current_champions.contains(new_champion) {
                 // Assign champion role
                 if let Err(err) =
-                    add_member_role(discord_api.clone(), *new_champion, ids::CHAMPION_ID).await
+                    add_member_role(discord_api, *new_champion, ids::CHAMPION_ID).await
                 {
                     eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
                 }
@@ -197,8 +197,7 @@ pub async fn update_roles(
             if current_gm_champions.contains(new_champion) {
                 // Remove GM champion role
                 if let Err(err) =
-                    remove_member_role(discord_api.clone(), *new_champion, ids::GM_CHAMPION_ID)
-                        .await
+                    remove_member_role(discord_api, *new_champion, ids::GM_CHAMPION_ID).await
                 {
                     eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
                 }
@@ -208,9 +207,7 @@ pub async fn update_roles(
     for new_insider in &new_insiders {
         if !current_insiders.contains(new_insider) {
             // Assign insider role
-            if let Err(err) =
-                add_member_role(discord_api.clone(), *new_insider, ids::INSIDER_ID).await
-            {
+            if let Err(err) = add_member_role(discord_api, *new_insider, ids::INSIDER_ID).await {
                 eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
             }
         }
@@ -219,7 +216,7 @@ pub async fn update_roles(
         if !new_champions.contains(current_champion) {
             // Remove champion role
             if let Err(err) =
-                remove_member_role(discord_api.clone(), *current_champion, ids::CHAMPION_ID).await
+                remove_member_role(discord_api, *current_champion, ids::CHAMPION_ID).await
             {
                 eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
@@ -230,12 +227,8 @@ pub async fn update_roles(
             || !current_gms.contains(current_gm_champion)
         {
             // Remove GM champion role
-            if let Err(err) = remove_member_role(
-                discord_api.clone(),
-                *current_gm_champion,
-                ids::GM_CHAMPION_ID,
-            )
-            .await
+            if let Err(err) =
+                remove_member_role(discord_api, *current_gm_champion, ids::GM_CHAMPION_ID).await
             {
                 eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
@@ -245,7 +238,7 @@ pub async fn update_roles(
         if !new_insiders.contains(current_insider) {
             // Remove insider role
             if let Err(err) =
-                remove_member_role(discord_api.clone(), *current_insider, ids::INSIDER_ID).await
+                remove_member_role(discord_api, *current_insider, ids::INSIDER_ID).await
             {
                 eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
@@ -391,7 +384,7 @@ pub async fn discord_username_to_id(
 
 // TODO: move to discord utils
 pub async fn add_member_role(
-    discord_api: crate::discord::CacheAndHttp,
+    discord_api: &crate::discord::CacheAndHttp,
     user_id: UserId,
     role_id: RoleId,
 ) -> Result<(), crate::meetup::Error> {
@@ -416,7 +409,7 @@ pub async fn add_member_role(
 
 // TODO: move to discord utils
 async fn remove_member_role(
-    discord_api: crate::discord::CacheAndHttp,
+    discord_api: &crate::discord::CacheAndHttp,
     user_id: UserId,
     role_id: RoleId,
 ) -> Result<(), crate::meetup::Error> {

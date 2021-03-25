@@ -16,7 +16,7 @@ lazy_static! {
 #[derive(Debug, Clone)]
 pub struct EventCollector {
     // List of upcoming events and the number of free spots
-    events: Vec<(Event, u16)>,
+    pub events: Vec<Event>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -170,30 +170,8 @@ impl EventCollector {
         EventCollector { events: vec![] }
     }
 
-    pub fn add_event(&mut self, event: &Event) {
-        // Do a quick pre-filtering.
-        // Discard events which don't have free spots
-        let num_free_spots = match (event.rsvp_limit, event.yes_rsvp_count) {
-            (Some(rsvp_limit), Some(yes_rsvp_count)) if rsvp_limit > yes_rsvp_count => {
-                rsvp_limit - yes_rsvp_count
-            }
-            _ => return,
-        };
-        // Filter out events for which RSVPs are not open
-        let is_closed_event = event
-            .rsvp_rules
-            .as_ref()
-            .map(|rules| rules.closed)
-            .unwrap_or(false)
-            || CLOSED_REGEX.is_match(&event.description);
-        if is_closed_event {
-            return;
-        }
-        // Keep no events which are too far in the future
-        if event.time > chrono::Utc::now() + chrono::Duration::days(30) {
-            return;
-        }
-        self.events.push((event.clone(), num_free_spots));
+    pub fn add_event(&mut self, event: Event) {
+        self.events.push(event);
     }
 
     pub async fn update_channel(
@@ -207,13 +185,27 @@ impl EventCollector {
                 query.limit(2 * ALL_LOCATIONS.len() as u64)
             })
             .await?;
-        let mut localized_events = self.localized_events();
+        let relevant_events: Vec<&Event> = self
+            .events
+            .iter()
+            // Discard events which don't have free spots
+            .filter(|event| event.num_free_spots() > 0)
+            // Discard events for which RSVPs are not open
+            .filter(|event| {
+                let is_closed_event = event.rsvp_rules.map(|rules| rules.closed).unwrap_or(false)
+                    || CLOSED_REGEX.is_match(&event.description);
+                !is_closed_event
+            })
+            // Discard events which are too far in the future
+            .filter(|event| event.time < chrono::Utc::now() + chrono::Duration::days(30))
+            .collect();
+        let mut localized_events = Self::localized_events(&relevant_events);
         for location in ALL_LOCATIONS {
-            let events: &mut [(Event, u16)] = localized_events
+            let location_events: &mut [&Event] = localized_events
                 .get_mut(location)
                 .map(Vec::as_mut_slice)
                 .unwrap_or(&mut []);
-            events.sort_unstable_by_key(|(event, _)| event.time);
+            location_events.sort_unstable_by_key(|event| event.time);
             // Try to find an existing message that corresponds to this location
             let embed_author = location.name();
             let location_message = latest_messages.iter_mut().find(|message| {
@@ -229,7 +221,7 @@ impl EventCollector {
                 message
                     .edit(discord_api, |message| {
                         message.embed(|embed| {
-                            Self::build_embed(static_file_prefix, *location, events, embed)
+                            Self::build_embed(static_file_prefix, *location, location_events, embed)
                         })
                     })
                     .await?;
@@ -238,7 +230,7 @@ impl EventCollector {
                 channel_id
                     .send_message(&discord_api.http, |message| {
                         message.embed(|embed| {
-                            Self::build_embed(static_file_prefix, *location, events, embed)
+                            Self::build_embed(static_file_prefix, *location, location_events, embed)
                         })
                     })
                     .await?;
@@ -250,7 +242,7 @@ impl EventCollector {
     fn build_embed<'a>(
         static_file_prefix: &'_ str,
         location: Location,
-        events: &'_ [(Event, u16)],
+        events: &'_ [&'_ Event],
         embed_builder: &'a mut serenity::builder::CreateEmbed,
     ) -> &'a mut serenity::builder::CreateEmbed {
         let footer_text = chrono::Utc::now()
@@ -258,7 +250,8 @@ impl EventCollector {
             .format("Last update at %H:%M")
             .to_string();
         let mut description = "Updated every 15 minutes".to_string();
-        for (event, free_spots) in events {
+        for event in events {
+            let free_spots = event.num_free_spots();
             description.push_str("\n\n");
             write!(
                 &mut description,
@@ -268,7 +261,7 @@ impl EventCollector {
             )
             .ok();
             description.push_str(&event.time.format("_%a, %b %-d_").to_string());
-            if *free_spots == 1 {
+            if free_spots == 1 {
                 write!(&mut description, " — {} spot\n", free_spots).ok();
             } else {
                 write!(&mut description, " — {} spots\n", free_spots).ok();
@@ -299,15 +292,12 @@ impl EventCollector {
 
     // Returns all events for which a location can be determined, grouped by
     // their respective locations
-    fn localized_events(&self) -> HashMap<Location, Vec<(Event, u16)>> {
+    fn localized_events<'event>(events: &[&'event Event]) -> HashMap<Location, Vec<&'event Event>> {
         // Try to assign each event to one of our cities or the online category
-        let mut location_events: HashMap<Location, Vec<(Event, u16)>> = HashMap::new();
-        for (event, num_free_spots) in &self.events {
+        let mut location_events: HashMap<Location, Vec<&Event>> = HashMap::new();
+        for event in events {
             if let Some(location) = Self::event_location(event) {
-                location_events
-                    .entry(location)
-                    .or_default()
-                    .push((event.clone(), *num_free_spots));
+                location_events.entry(location).or_default().push(event);
             }
         }
         location_events

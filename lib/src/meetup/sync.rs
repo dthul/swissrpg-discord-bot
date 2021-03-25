@@ -53,7 +53,7 @@ pub async fn sync_task(
         match event {
             Err(err) => eprintln!("Couldn't query upcoming event: {}", err),
             Ok(event) => {
-                event_collector.add_event(&event);
+                event_collector.add_event(event.clone());
                 match sync_event(event, redis_connection).await {
                     Err(err) => eprintln!("Event sync failed: {}", err),
                     _ => (),
@@ -85,7 +85,6 @@ pub async fn sync_event(
     let is_online = ONLINE_REGEX.is_match(&event.description);
     let event_series_captures = EVENT_SERIES_REGEX.captures(&event.description);
     let channel_captures = CHANNEL_REGEX.captures(&event.description);
-    let role_captures = ROLE_REGEX.captures_iter(&event.description);
     let indicated_channel_id = match channel_captures {
         Some(captures) => match captures.name("channel_id") {
             Some(id) => match id.as_str().parse::<u64>() {
@@ -160,22 +159,6 @@ pub async fn sync_event(
     } else {
         None
     };
-    let additional_roles = {
-        let mut roles = vec![];
-        for captures in role_captures {
-            if let Some(role_id) = captures.name("role_id") {
-                match role_id.as_str().parse::<u64>() {
-                    Ok(id) => roles.push(id),
-                    _ => eprintln!(
-                        "Meetup event {} specifies invalid role id {}",
-                        event.id,
-                        role_id.as_str()
-                    ),
-                }
-            }
-        }
-        roles
-    };
     let redis_events_key = "meetup_events";
     let redis_series_key = "event_series";
     let redis_event_hosts_key = format!("meetup_event:{}:meetup_hosts", event.id);
@@ -185,7 +168,6 @@ pub async fn sync_event(
         "discord_channel:{}:event_series",
         indicated_channel_id.unwrap_or(0)
     );
-    let redis_event_roles_key = format!("meetup_event:{}:roles", event.id);
     let event_name = event.name.clone();
     // technically: check that series id doesn't exist yet and generate a new one until it does not
     // practically: we will never generate a colliding id
@@ -194,21 +176,17 @@ pub async fn sync_event(
         // by reference, we have to do it manually
         let event = &event;
         let indicated_event_series_id = &indicated_event_series_id;
-        let additional_roles = &additional_roles;
         let redis_event_hosts_key = &redis_event_hosts_key;
         let redis_event_series_key = &redis_event_series_key;
         let redis_event_key = &redis_event_key;
         let redis_channel_series_key = &redis_channel_series_key;
-        let redis_event_roles_key = &redis_event_roles_key;
         crate::redis::closure_type_helper(move |con, mut pipe: redis::Pipeline| {
             let event = event.clone();
             let indicated_event_series_id = indicated_event_series_id.clone();
-            let additional_roles = additional_roles.clone();
             let redis_event_hosts_key = redis_event_hosts_key.clone();
             let redis_event_series_key = redis_event_series_key.clone();
             let redis_event_key = redis_event_key.clone();
             let redis_channel_series_key = redis_channel_series_key.clone();
-            let redis_event_roles_key = redis_event_roles_key.clone();
             let fut = async move {
                 let mut query = redis::pipe();
                 query
@@ -346,8 +324,6 @@ pub async fn sync_event(
                     // Do not use hset_multiple, it deletes existing fields!
                     pipe.hset(&redis_event_key, field, value);
                 }
-                pipe.del(&redis_event_roles_key)
-                    .sadd(&redis_event_roles_key, additional_roles.as_slice());
                 pipe.query_async(con).await
             };
             fut.boxed()

@@ -76,6 +76,17 @@ pub struct Event {
     pub rsvp_rules: Option<RSVPRules>,
 }
 
+impl Event {
+    pub fn num_free_spots(&self) -> u16 {
+        match (self.rsvp_limit, self.yes_rsvp_count) {
+            (Some(rsvp_limit), Some(yes_rsvp_count)) if rsvp_limit > yes_rsvp_count => {
+                rsvp_limit - yes_rsvp_count
+            }
+            _ => 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Venue {
     pub id: u64,
@@ -181,7 +192,7 @@ impl<'de> Deserialize<'de> for RSVPResponse {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct RSVPRules {
     pub guest_limit: u16,
     pub closed: bool,

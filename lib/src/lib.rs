@@ -6,6 +6,7 @@ pub mod flow;
 mod free_spots;
 pub mod meetup;
 pub mod redis;
+pub mod role_shortcode;
 pub mod strings;
 pub mod stripe;
 pub mod tasks;

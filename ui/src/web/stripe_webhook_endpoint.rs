@@ -104,7 +104,7 @@ async fn handle_new_subscription(
                 {
                     println!("Adding GM Champion role");
                     lib::tasks::subscription_roles::add_member_role(
-                        discord_api.clone(),
+                        discord_api,
                         discord_id,
                         lib::tasks::subscription_roles::ids::GM_CHAMPION_ID,
                     )
@@ -112,7 +112,7 @@ async fn handle_new_subscription(
                 } else {
                     println!("Adding Champion role");
                     lib::tasks::subscription_roles::add_member_role(
-                        discord_api.clone(),
+                        discord_api,
                         discord_id,
                         lib::tasks::subscription_roles::ids::CHAMPION_ID,
                     )
@@ -122,7 +122,7 @@ async fn handle_new_subscription(
             if is_insider_product {
                 println!("Adding Insider role");
                 lib::tasks::subscription_roles::add_member_role(
-                    discord_api.clone(),
+                    discord_api,
                     discord_id,
                     lib::tasks::subscription_roles::ids::INSIDER_ID,
                 )

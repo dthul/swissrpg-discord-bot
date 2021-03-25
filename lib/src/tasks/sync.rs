@@ -27,19 +27,18 @@ pub async fn create_recurring_syncing_task(
             // Sync with Meetup
             let event_collector = tokio::time::timeout(
                 Duration::from_secs(360),
-                crate::meetup::sync::sync_task(meetup_client, &mut redis_connection).map_err(
-                    |err| {
+                crate::meetup::sync::sync_task(meetup_client.clone(), &mut redis_connection)
+                    .map_err(|err| {
                         eprintln!("Syncing task failed: {}", err);
                         err
-                    },
-                ),
+                    }),
             )
             .map_err(|err| {
                 eprintln!("Syncing task timed out: {}", err);
                 err
             })
             .await??;
-            // Send with Discord
+            // Sync with Discord
             if let Err(err) =
                 crate::discord::sync::sync_discord(&mut redis_connection, &discord_api, bot_id.0)
                     .await
@@ -56,6 +55,12 @@ pub async fn create_recurring_syncing_task(
                 }
             } else {
                 eprintln!("No channel configured for posting open game spots");
+            }
+            if let Err(err) = event_collector
+                .assign_roles(meetup_client.clone(), &mut redis_connection, &discord_api)
+                .await
+            {
+                eprintln!("Error in EventCollector::assign_roles:\n{:#?}", err);
             }
             Ok::<_, crate::BoxedError>(())
         });
