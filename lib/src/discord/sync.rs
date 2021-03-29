@@ -178,6 +178,18 @@ async fn sync_event_series(
     let is_online: Option<String> = redis_connection.get(&redis_series_is_online_key).await?;
     let is_online = is_online.map(|v| v == "true").unwrap_or(false);
 
+    // Update this series' Discord category to match the next upcoming event's (if any)
+    let redis_event_key = format!("meetup_event:{}", next_event.id);
+    let discord_category: Option<u64> = redis_connection
+        .hget(&redis_event_key, "discord_category")
+        .await?;
+    if let Some(discord_category) = discord_category {
+        let redis_series_category_key = format!("event_series:{}:discord_category", series_id);
+        let _: () = redis_connection
+            .set(&redis_series_category_key, discord_category)
+            .await?;
+    }
+
     // Figure out the title of this event series
     // Parse the series name from the event title
     let series_name = match EVENT_NAME_REGEX.captures(event_name) {
@@ -344,14 +356,25 @@ async fn sync_event_series(
     )
     .await?;
     // Step 6: Keep the channel's topic up-to-date
-    sync_channel_topic_and_category(
+    sync_channel_topic(channel_id, next_event, discord_api).await?;
+    sync_channel_category(
         series_id,
+        ChannelType::Text,
         channel_id,
-        next_event,
         redis_connection,
         discord_api,
     )
     .await?;
+    if let Some(voice_channel_id) = voice_channel_id {
+        sync_channel_category(
+            series_id,
+            ChannelType::Voice,
+            voice_channel_id,
+            redis_connection,
+            discord_api,
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -717,9 +740,6 @@ async fn sync_channel_impl(
                 ChannelType::Text => serenity::model::channel::ChannelType::Text,
                 ChannelType::Voice => serenity::model::channel::ChannelType::Voice,
             };
-            if channel_type == ChannelType::Voice {
-                channel_builder.category(VOICE_CHANNELS_CATEGORY_ID);
-            }
             channel_builder
                 .name(channel_name)
                 .kind(kind)
@@ -1129,41 +1149,19 @@ async fn sync_game_master_role(
     Ok(())
 }
 
-async fn sync_channel_topic_and_category(
-    series_id: &str,
+async fn sync_channel_topic(
     channel_id: ChannelId,
     next_event: &Event,
-    redis_connection: &mut redis::aio::Connection,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
-    // Sync the topic and the category
+    // Sync the topic
     let topic = format!("Next session: {}", &next_event.link);
-    let redis_series_type_key = format!("event_series:{}:type", series_id);
-    let event_type: Option<String> = redis_connection.get(&redis_series_type_key).await?;
-    let categories = match event_type.as_ref().map(String::as_str) {
-        Some("campaign") => CAMPAIGN_CATEGORY_IDS,
-        Some("adventure") => ONE_SHOT_CATEGORY_IDS,
-        _ => {
-            eprintln!(
-                "Event series {} does not have a type of 'campaign' or 'adventure'",
-                series_id
-            );
-            CAMPAIGN_CATEGORY_IDS
-        }
-    };
     let channel = channel_id.to_channel(discord_api).await?;
     if let serenity::model::channel::Channel::Guild(channel) = channel {
-        let (topic_needs_update, category_needs_update) = {
-            let topic_needs_update = if let Some(current_topic) = channel.topic {
-                current_topic != topic
-            } else {
-                true
-            };
-            let category_needs_update = match channel.category_id {
-                Some(channel_category) => !categories.contains(&channel_category),
-                None => true,
-            };
-            (topic_needs_update, category_needs_update)
+        let topic_needs_update = if let Some(current_topic) = channel.topic {
+            current_topic != topic
+        } else {
+            true
         };
         if topic_needs_update {
             channel_id
@@ -1173,6 +1171,56 @@ async fn sync_channel_topic_and_category(
                 })
                 .await?;
         }
+    }
+    Ok(())
+}
+
+async fn sync_channel_category(
+    series_id: &str,
+    channel_type: ChannelType,
+    channel_id: ChannelId,
+    redis_connection: &mut redis::aio::Connection,
+    discord_api: &super::CacheAndHttp,
+) -> Result<(), crate::meetup::Error> {
+    // Sync the category
+    let redis_series_type_key = format!("event_series:{}:type", series_id);
+    let redis_series_category_key = format!("event_series:{}:discord_category", series_id);
+    let event_type: Option<String> = redis_connection.get(&redis_series_type_key).await?;
+    let special_category: Option<u64> = redis_connection.get(&redis_series_category_key).await?;
+    let special_category = special_category.map(ChannelId);
+    let mut categories = if let Some(special_category) = special_category {
+        vec![special_category]
+    } else {
+        vec![]
+    };
+    match channel_type {
+        ChannelType::Text => match event_type.as_ref().map(String::as_str) {
+            Some("campaign") => categories.extend_from_slice(CAMPAIGN_CATEGORY_IDS),
+            Some("adventure") => categories.extend_from_slice(ONE_SHOT_CATEGORY_IDS),
+            _ => {
+                eprintln!(
+                    "Event series {} does not have a type of 'campaign' or 'adventure'",
+                    series_id
+                );
+                categories.extend_from_slice(CAMPAIGN_CATEGORY_IDS)
+            }
+        },
+        ChannelType::Voice => {
+            categories.push(VOICE_CHANNELS_CATEGORY_ID);
+        }
+    }
+    let channel = channel_id.to_channel(discord_api).await?;
+    if let serenity::model::channel::Channel::Guild(channel) = channel {
+        let category_needs_update = match channel.category_id {
+            Some(channel_category) => {
+                if let Some(special_category) = special_category {
+                    special_category != channel_category
+                } else {
+                    !categories.contains(&channel_category)
+                }
+            }
+            None => true,
+        };
         if category_needs_update {
             // Try the categories in order and put the channel in the first
             // one that works. Meetup has an undocumented limit of 50 channels
@@ -1180,7 +1228,7 @@ async fn sync_channel_topic_and_category(
             for category in categories {
                 if let Ok(_) = channel_id
                     .edit(&discord_api.http, |channel_edit| {
-                        channel_edit.category(Some(*category));
+                        channel_edit.category(Some(category));
                         channel_edit
                     })
                     .await

@@ -21,6 +21,7 @@ See `event_series:{}:meetup_events` for the inverse relationship.
 * `link`: string. URL to the Meetup event page
 * `urlname`: string. 'urlname' of the Meetup group this event belongs to
 * `is_online`: string, optional. "true" or "false"
+* `discord_category`: u64, optional. The Discord category channels associated with this event should be assigned to
 
 ## Meetup Users
 
@@ -69,6 +70,9 @@ See `discord_voice_channel:{}:event_series` for the inverse relationship.
 
 `event_series:{}:is_online`: bool\
 `true` for online campaigns, non-existent or "falsy" otherwise
+
+`event_series:{}:discord_category`: u64\
+Optional Discord category to associate this series' channels with
 
 ## Discord Channels
 

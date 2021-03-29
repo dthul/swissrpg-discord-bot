@@ -12,6 +12,7 @@ pub const CHANNEL_PATTERN: &'static str = r"(?i)\[\s*channel\s*(?P<channel_id>[0
 pub const SESSION_PATTERN: &'static str = r"(?i)\s*session\s*(?P<number>[0-9]+)";
 pub const ONLINE_PATTERN: &'static str = r"(?i)\[\s*online\s*\]";
 pub const ROLE_PATTERN: &'static str = r"(?i)\[\s*role\s*(?P<role_id>[0-9]+)\s*\]";
+pub const CATEGORY_PATTERN: &'static str = r"(?i)\[\s*category\s*(?P<category_id>[0-9]+)\s*\]";
 
 lazy_static! {
     pub static ref NEW_ADVENTURE_REGEX: regex::Regex =
@@ -24,6 +25,7 @@ lazy_static! {
     pub static ref SESSION_REGEX: regex::Regex = regex::Regex::new(SESSION_PATTERN).unwrap();
     pub static ref ONLINE_REGEX: regex::Regex = regex::Regex::new(ONLINE_PATTERN).unwrap();
     pub static ref ROLE_REGEX: regex::Regex = regex::Regex::new(ROLE_PATTERN).unwrap();
+    pub static ref CATEGORY_REGEX: regex::Regex = regex::Regex::new(CATEGORY_PATTERN).unwrap();
 }
 
 // TODO: Introduce a type like "Meetup connection" that contains
@@ -85,6 +87,7 @@ pub async fn sync_event(
     let is_online = ONLINE_REGEX.is_match(&event.description);
     let event_series_captures = EVENT_SERIES_REGEX.captures(&event.description);
     let channel_captures = CHANNEL_REGEX.captures(&event.description);
+    let category_captures = CATEGORY_REGEX.captures(&event.description);
     let indicated_channel_id = match channel_captures {
         Some(captures) => match captures.name("channel_id") {
             Some(id) => match id.as_str().parse::<u64>() {
@@ -92,6 +95,26 @@ pub async fn sync_event(
                 _ => return Err(SimpleError::new("Invalid channel id").into()),
             },
             _ => return Err(SimpleError::new("Internal error parsing channel id").into()),
+        },
+        _ => None,
+    };
+    let category_id = match category_captures {
+        Some(captures) => match captures.name("category_id") {
+            Some(id) => match id.as_str().parse::<u64>() {
+                Ok(id) => Some(id),
+                _ => {
+                    eprintln!(
+                        "Event {} specifies invalid category ID {}",
+                        event.name,
+                        id.as_str()
+                    );
+                    None
+                }
+            },
+            _ => {
+                eprintln!("Internal error parsing category ID");
+                None
+            }
         },
         _ => None,
     };
@@ -323,6 +346,9 @@ pub async fn sync_event(
                 for &(field, value) in event_hash {
                     // Do not use hset_multiple, it deletes existing fields!
                     pipe.hset(&redis_event_key, field, value);
+                }
+                if let Some(category_id) = category_id {
+                    pipe.hset(&redis_event_key, "discord_category", category_id);
                 }
                 pipe.query_async(con).await
             };
