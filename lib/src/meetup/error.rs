@@ -7,7 +7,7 @@ use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
 use std::num::ParseIntError;
-use stripe::Error as StripeError;
+use stripe::StripeError;
 use tokio::task::JoinError;
 use tokio::time::error::Elapsed;
 use url::ParseError as UrlParseError;
@@ -119,7 +119,7 @@ impl From<ParseIntError> for Error {
 }
 
 impl From<StripeError> for Error {
-    fn from(err: stripe::Error) -> Self {
+    fn from(err: StripeError) -> Self {
         Error::CommonError(err.into())
     }
 }

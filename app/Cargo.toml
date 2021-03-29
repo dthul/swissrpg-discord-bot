@@ -21,5 +21,5 @@ redis = { version = "0.20", default-features = false, features = ["tokio-comp"] 
 serenity = { git = "https://github.com/serenity-rs/serenity", rev = "4421be6", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
 signal-hook = "0.3"
 sqlx = { version = "0.5", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
-stripe-rust = { git = "https://github.com/dthul/stripe-rs", branch = "update-deps", default-features = false, features = ["billing", "webhook-events", "rustls-tls"] }
+async-stripe = { version = "0.13.0-rc3", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events"] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }

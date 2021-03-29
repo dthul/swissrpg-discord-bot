@@ -252,37 +252,34 @@ pub async fn get_customer_and_product(
     subscription: &stripe::Subscription,
 ) -> Result<(stripe::Customer, stripe::Product), crate::meetup::Error> {
     // First, figure out which product was bought
-    // Subscription -> Plan -> Product
-    let product = match &subscription.plan {
-        Some(plan) => match &plan.product {
-            Some(product) => match product {
-                stripe::Expandable::Object(product) => Some(*product.clone()),
-                stripe::Expandable::Id(product_id) => {
-                    let product = stripe::Product::retrieve(client, product_id, &[]).await?;
-                    Some(product)
-                }
-            },
-            _ => None,
-        },
-        _ => None,
+    // Subscription -> Item -> Price -> Product
+    let product = subscription
+        .items
+        .data
+        .first()
+        .and_then(|item| item.price.as_ref())
+        .and_then(|price| price.product.as_ref())
+        .ok_or_else(|| {
+            simple_error::SimpleError::new(format!(
+                "Could not find a product associated with Stripe subscription {}",
+                subscription.id
+            ))
+        })?;
+    let product = match product {
+        stripe::Expandable::Object(product) => *product.clone(),
+        stripe::Expandable::Id(product_id) => {
+            stripe::Product::retrieve(client, &product_id, &[]).await?
+        }
     };
-    if let Some(product) = product {
-        // Now, figure out who the customer is
-        let customer = match &subscription.customer {
-            stripe::Expandable::Object(customer) => *customer.clone(),
-            stripe::Expandable::Id(customer_id) => {
-                let customer = stripe::Customer::retrieve(client, customer_id, &[]).await?;
-                customer
-            }
-        };
-        Ok((customer, product))
-    } else {
-        Err(simple_error::SimpleError::new(format!(
-            "Could not find a product associated with Stripe subscription {}",
-            subscription.id
-        ))
-        .into())
-    }
+    // Now, figure out who the customer is
+    let customer = match &subscription.customer {
+        stripe::Expandable::Object(customer) => *customer.clone(),
+        stripe::Expandable::Id(customer_id) => {
+            let customer = stripe::Customer::retrieve(client, customer_id, &[]).await?;
+            customer
+        }
+    };
+    Ok((customer, product))
 }
 
 async fn ensure_customer_has_discord_id(

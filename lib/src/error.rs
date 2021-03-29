@@ -8,7 +8,7 @@ use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
 use std::num::ParseIntError;
-use stripe::Error as StripeError;
+use stripe::StripeError;
 use tokio::{task::JoinError, time::error::Elapsed};
 use url::ParseError as UrlParseError;
 
