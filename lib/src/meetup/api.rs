@@ -74,6 +74,7 @@ pub struct Event {
     pub how_to_find_us: Option<String>,
     pub venue: Option<Venue>,
     pub rsvp_rules: Option<RSVPRules>,
+    pub is_online_event: Option<bool>,
 }
 
 impl Event {
@@ -332,7 +333,7 @@ impl AsyncClient {
         let url = format!(
             "{}/{}/events?&sign=true&photo-host=public&page=200&fields=event_hosts,rsvp_rules&\
              has_ended=false&status=upcoming&only=description,event_hosts.id,event_hosts.name,id,\
-             link,time,name,group.urlname,rsvp_limit,yes_rsvp_count,venue,rsvp_rules",
+             link,time,name,group.urlname,rsvp_limit,yes_rsvp_count,venue,rsvp_rules,is_online_event",
             BASE_URL, urlname
         );
         let request = self.client.get(&url);

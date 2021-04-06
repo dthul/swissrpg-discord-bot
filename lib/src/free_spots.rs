@@ -313,7 +313,7 @@ impl EventCollector {
             }
         };
         // Is this event online?
-        if venue.name.to_lowercase() == "online game"
+        if event.is_online_event.unwrap_or(false)
             || crate::meetup::sync::ONLINE_REGEX.is_match(&event.description)
         {
             return Some(Location::Online);
