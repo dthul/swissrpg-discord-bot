@@ -178,12 +178,28 @@ fn list_players<'a>(
         .to_string();
 
     if !meetup_id_with_discord_id.is_empty() {
-        reply += "The following Discord users signed up for an upcoming event on Meetup:\n";
+        reply += "Discord users signed up for an upcoming event on Meetup:\n";
         for (&meetup_id, &discord_id) in &meetup_id_with_discord_id {
             let is_in_channel = discord_player_ids.contains(&discord_id);
+            // If the user is in the channel try to not use the <@...> syntax
+            // in order not to unnecessarily ping them
+            let user_mention = if is_in_channel {
+                match discord_id.to_user(&context.ctx).await {
+                    Ok(user) => match user
+                        .nick_in(&context.ctx, lib::discord::sync::ids::GUILD_ID)
+                        .await
+                    {
+                        Some(nick) => nick,
+                        None => user.name,
+                    },
+                    Err(_) => format!("<@{discord_id}>", discord_id = discord_id.0),
+                }
+            } else {
+                format!("<@{discord_id}>", discord_id = discord_id.0)
+            };
             reply += &format!(
-                "• <@{discord_id}> (<https://www.meetup.com/members/{meetup_id}/>)\n",
-                discord_id = discord_id.0,
+                "• {user_mention} (<https://www.meetup.com/members/{meetup_id}/>)\n",
+                user_mention = user_mention,
                 meetup_id = meetup_id
             );
             if is_in_channel {
@@ -196,11 +212,11 @@ fn list_players<'a>(
     }
 
     if !meetup_id_only.is_empty() {
-        reply += "The following people are signed up for an upcoming event on Meetup but are not \
+        reply += ":warning: People signed up for an upcoming event on Meetup but not \
                   linked to a Discord user:\n";
         for &meetup_id in &meetup_id_only {
             reply += &format!(
-                "• <https://www.meetup.com/members/{meetup_id}/>\n",
+                "• :x: <https://www.meetup.com/members/{meetup_id}/>\n",
                 meetup_id = meetup_id
             );
         }
@@ -210,7 +226,7 @@ fn list_players<'a>(
     if !discord_id_with_meetup_id.is_empty()
         || (!discord_id_only.is_empty() && meetup_id_only.is_empty())
     {
-        reply += "The following Discord users are in this channel but did not sign up for an \
+        reply += "Discord users in this channel but not signed up for an \
                   upcoming event on Meetup:\n";
         for (&discord_id, &meetup_id) in &discord_id_with_meetup_id {
             reply += &format!(
@@ -228,7 +244,7 @@ fn list_players<'a>(
     }
 
     if !discord_id_only.is_empty() && !meetup_id_only.is_empty() {
-        reply += "The following Discord users are in this channel but are not linked to a Meetup \
+        reply += "Discord users in this channel but not linked to a Meetup \
                   account. I cannot tell whether they signed up for an upcoming event on Meetup \
                   or not:\n";
         for &discord_id in &discord_id_only {
