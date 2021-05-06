@@ -18,7 +18,7 @@ futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"
 redis = { version = "0.20", default-features = false, features = ["tokio-comp"] }
-serenity = { git = "https://github.com/serenity-rs/serenity", rev = "4421be6", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
+serenity = { version = "0.10", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
 signal-hook = "0.3"
 sqlx = { version = "0.5", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
 async-stripe = { version = "0.13.0-rc3", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events"] }
