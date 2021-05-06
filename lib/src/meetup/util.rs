@@ -190,6 +190,7 @@ pub struct Event {
     pub time: chrono::DateTime<chrono::Utc>,
     pub link: String,
     pub urlname: String,
+    pub is_online: bool,
 }
 
 // Queries all events belonging to the specified series from Redis,
@@ -202,49 +203,27 @@ pub async fn get_events_for_series(
     let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
     // Get all events belonging to this event series
     let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key).await?;
-    let mut events = vec![];
-    for event_id in event_ids {
-        let redis_event_key = format!("meetup_event:{}", event_id);
-        let res: redis::RedisResult<(String, String, String, String)> = redis_connection
-            .hget(&redis_event_key, &["time", "name", "link", "urlname"])
-            .await;
-        if let Ok((time, name, link, urlname)) = res {
-            if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
-                events.push(Event {
-                    id: event_id,
-                    name: name,
-                    time: time.with_timezone(&chrono::Utc),
-                    link: link,
-                    urlname: urlname,
-                });
-            }
-        }
-    }
-    Ok(events)
-}
-
-pub async fn get_events_for_series_async(
-    redis_connection: &mut redis::aio::Connection,
-    series_id: &str,
-) -> Result<Vec<Event>, super::Error> {
-    let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
-    // Get all events belonging to this event series
-    let event_ids: Vec<String> = redis_connection.smembers(&redis_series_events_key).await?;
     let mut events = Vec::with_capacity(event_ids.len());
     for event_id in event_ids {
         let redis_event_key = format!("meetup_event:{}", event_id);
-        let (time, name, link, urlname): (String, String, String, String) = redis_connection
-            .hget(&redis_event_key, &["time", "name", "link", "urlname"])
-            .await?;
-        if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
-            let event = Event {
-                id: event_id,
-                name: name,
-                time: time.with_timezone(&chrono::Utc),
-                link: link,
-                urlname: urlname,
-            };
-            events.push(event);
+        let res: redis::RedisResult<(String, String, String, String, Option<String>)> =
+            redis_connection
+                .hget(
+                    &redis_event_key,
+                    &["time", "name", "link", "urlname", "is_online"],
+                )
+                .await;
+        if let Ok((time, name, link, urlname, is_online)) = res {
+            if let Ok(time) = chrono::DateTime::parse_from_rfc3339(&time) {
+                events.push(Event {
+                    id: event_id,
+                    name,
+                    time: time.with_timezone(&chrono::Utc),
+                    link,
+                    urlname,
+                    is_online: is_online.map(|v| v == "true").unwrap_or(false),
+                });
+            }
         }
     }
     Ok(events)

@@ -29,7 +29,7 @@ pub async fn sync_redis_to_postgres(
             .await?;
         let is_online = is_online.map(|v| v == "true").unwrap_or(false);
         // Get event information from Redis
-        let events = crate::meetup::util::get_events_for_series_async(con, series_id).await?;
+        let events = crate::meetup::util::get_events_for_series(con, series_id).await?;
         for event in &events {
             // Ignore the event if it is in the future
             if event.time > chrono::Utc::now() {

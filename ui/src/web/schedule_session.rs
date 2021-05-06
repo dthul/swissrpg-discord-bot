@@ -148,8 +148,7 @@ async fn handle_schedule_session(
     };
     eprintln!("... got it!\nRetrieving events...");
     let mut events =
-        lib::meetup::util::get_events_for_series_async(redis_connection, &flow.event_series_id)
-            .await?;
+        lib::meetup::util::get_events_for_series(redis_connection, &flow.event_series_id).await?;
     eprintln!("... got them!");
     // Sort by date
     events.sort_unstable_by_key(|event| event.time);
@@ -202,7 +201,7 @@ async fn handle_schedule_session_post(
     };
     let event_series_id = flow.event_series_id.clone();
     let mut events =
-        lib::meetup::util::get_events_for_series_async(redis_connection, &event_series_id).await?;
+        lib::meetup::util::get_events_for_series(redis_connection, &event_series_id).await?;
     // Sort by date
     events.sort_unstable_by_key(|event| event.time);
     // Check that the form contains all necessary data

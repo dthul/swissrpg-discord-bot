@@ -313,12 +313,6 @@ pub async fn sync_event(
                         }
                     }
                 };
-                // If the [online] shortcode has been set (even if this is not
-                // the first event in the series), mark the series as online.
-                if is_online {
-                    let redis_series_online_key = format!("event_series:{}:is_online", &series_id);
-                    pipe.set(&redis_series_online_key, "true");
-                }
                 let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
                 let host_user_ids: Vec<_> = event.event_hosts.iter().map(|user| user.id).collect();
                 let event_time = event.time.to_rfc3339();
@@ -413,7 +407,19 @@ async fn sync_event_series(
         };
         // Sync the RSVPs
         println!("Syncing task: Found {} RSVPs", rsvps.len());
-        return sync_rsvps(&next_event_id, rsvps, redis_connection).await;
+        sync_rsvps(&next_event_id, rsvps, redis_connection).await?;
+        // Mark the "online" status of the event series
+        let redis_series_online_key = format!("event_series:{}:is_online", &series_id);
+        redis_connection
+            .set(
+                &redis_series_online_key,
+                if next_event.is_online {
+                    "true"
+                } else {
+                    "false"
+                },
+            )
+            .await?;
     }
     Ok(())
 }
