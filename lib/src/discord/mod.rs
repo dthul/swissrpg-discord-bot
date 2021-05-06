@@ -2,7 +2,7 @@ pub mod sync;
 pub mod util;
 
 use serenity::model::{
-    channel::{PermissionOverwrite, PermissionOverwriteType},
+    channel::{Channel, PermissionOverwrite, PermissionOverwriteType},
     id::{ChannelId, UserId},
     permissions::Permissions,
 };
@@ -38,10 +38,10 @@ pub async fn is_host(
     user_id: UserId,
     redis_connection: &mut redis::aio::Connection,
 ) -> Result<bool, crate::meetup::Error> {
-    let channel = if let Some(channel) = discord_api.cache.guild_channel(channel_id).await {
+    let channel = if let Channel::Guild(channel) = channel_id.to_channel(discord_api).await? {
         channel
     } else {
-        return Err(simple_error::SimpleError::new("Could not find this channel").into());
+        return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
     };
     // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
     // MENTION_EVERYONE permission are channel hosts
@@ -88,10 +88,10 @@ pub async fn add_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Some(channel) = discord_api.cache.guild_channel(channel_id).await {
+    let channel = if let Channel::Guild(channel) = channel_id.to_channel(discord_api).await? {
         channel
     } else {
-        return Err(simple_error::SimpleError::new("Could not find this channel").into());
+        return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
     };
     let current_permission_overwrites = channel
         .permission_overwrites
@@ -125,10 +125,10 @@ pub async fn remove_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Some(channel) = discord_api.cache.guild_channel(channel_id).await {
+    let channel = if let Channel::Guild(channel) = channel_id.to_channel(discord_api).await? {
         channel
     } else {
-        return Err(simple_error::SimpleError::new("Could not find this channel").into());
+        return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
     };
     let current_permission_overwrites = channel
         .permission_overwrites
