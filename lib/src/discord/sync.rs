@@ -291,7 +291,7 @@ async fn sync_event_series(
     //     discord_api,
     // )?;
     // Step 4: Sync the channel permissions
-    sync_channel_permissions(
+    if let Err(err) = sync_channel_permissions(
         channel_id,
         ChannelType::Text,
         channel_role_id,
@@ -299,7 +299,13 @@ async fn sync_event_series(
         bot_id,
         discord_api,
     )
-    .await?;
+    .await
+    {
+        eprintln!(
+            "Error in sync_channel_permissions (for text channel):\n{:#?}",
+            err
+        );
+    }
     // Step 5: If this is an online campaign, also create a voice channel
     let voice_channel_id = if is_online {
         match sync_channel(
