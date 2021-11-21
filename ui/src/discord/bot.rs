@@ -329,37 +329,39 @@ impl EventHandler for Handler {
         // };
         // In contrast to the message handler we don't need to check that this
         // is indeed a command.
+        let interaction = match interaction {
+            Interaction::ApplicationCommand(inner) => inner,
+            _ => return,
+        };
 
         // Ignore all messages that might have come from another guild
         // (shouldn't happen, but who knows)
-        if interaction.guild_id != lib::discord::sync::ids::GUILD_ID {
+        if interaction.guild_id != Some(lib::discord::sync::ids::GUILD_ID) {
             return;
         }
-        if let Some(data) = interaction.data {
-            match data.name.as_str() {
-                "link-meetup" => {
-                    interaction
-                        .channel_id
-                        .say(&ctx, "Yessir! Linking Meetup")
-                        .await
-                        .ok();
-                }
-                "unlink-meetup" => {
-                    interaction
-                        .channel_id
-                        .say(&ctx, "Un-linking Meetup")
-                        .await
-                        .ok();
-                }
-                _ => {
-                    interaction
-                        .channel_id
-                        .say(&ctx, "Unknown command")
-                        .await
-                        .ok();
-                }
-            };
-        }
+        match interaction.data.name.as_str() {
+            "link-meetup" => {
+                interaction
+                    .channel_id
+                    .say(&ctx, "Yessir! Linking Meetup")
+                    .await
+                    .ok();
+            }
+            "unlink-meetup" => {
+                interaction
+                    .channel_id
+                    .say(&ctx, "Un-linking Meetup")
+                    .await
+                    .ok();
+            }
+            _ => {
+                interaction
+                    .channel_id
+                    .say(&ctx, "Unknown command")
+                    .await
+                    .ok();
+            }
+        };
     }
 }
 
