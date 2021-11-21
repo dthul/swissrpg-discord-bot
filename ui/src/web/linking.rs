@@ -5,6 +5,8 @@ use hyper::Response;
 use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, RedirectUrl, Scope, TokenResponse};
 use redis::AsyncCommands;
 use serde::Deserialize;
+use serenity::model::id::InteractionId;
+use serenity::model::{id::ApplicationId, interactions::Interaction};
 use std::{borrow::Cow, sync::Arc};
 use warp::Filter;
 
@@ -20,6 +22,7 @@ pub fn create_routes(
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
     bot_name: String,
+    discord_cache_http: lib::discord::CacheAndHttp,
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let authorize_route = {
         let redis_client = redis_client.clone();
@@ -140,10 +143,30 @@ pub fn create_routes(
                 },
             )
     };
+    let link_dummy_route = {
+        let redis_client = redis_client.clone();
+        let discord_cache_http = discord_cache_http.clone();
+        warp::get()
+            .and(warp::path!("link_dummy" / String))
+            .and_then(move |linking_id: String| {
+                let redis_client = redis_client.clone();
+                let mut discord_cache_http = discord_cache_http.clone();
+                async move {
+                    let mut redis_connection = redis_client
+                        .get_async_connection()
+                        .err_into::<lib::meetup::Error>()
+                        .await?;
+                    handle_dummy_link(&mut redis_connection, &mut discord_cache_http, &linking_id)
+                        .err_into::<warp::Rejection>()
+                        .await
+                }
+            })
+    };
     authorize_route
         .or(authorize_redirect_route)
         .or(link_route)
         .or(link_redirect_route)
+        .or(link_dummy_route)
 }
 
 #[derive(Template)]
@@ -559,4 +582,47 @@ async fn handle_link_redirect(
         )
             .into())
     }
+}
+
+async fn handle_dummy_link(
+    redis_connection: &mut redis::aio::Connection,
+    discord_cache_http: &mut lib::discord::CacheAndHttp,
+    linking_id: &str,
+) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
+    // The linking ID was stored in Redis when the linking link was created.
+    // Check that it is still valid
+    let redis_key = format!("meetup_linking_dummy:{}:interaction", linking_id);
+    let interaction_serialized: Option<String> = redis_connection.get(&redis_key).await?;
+    let interaction_serialized = match interaction_serialized {
+        Some(s) => s,
+        _ => return Ok(("No success!", "Link invalid or expired").into()),
+    };
+    let interaction: Interaction = match serde_json::from_str(&interaction_serialized) {
+        Ok(i) => i,
+        Err(err) => return Ok(("Serde Error", err.to_string()).into()),
+    };
+    // let interaction_token: Option<String> = redis_connection.get(&redis_key).await?;
+    // let interaction_token = match interaction_token {
+    //     Some(s) => s,
+    //     _ => return Ok(("No success!", "Link invalid or expired").into()),
+    // };
+    // let interaction = Interaction {
+    //     id: InteractionId(0),
+    //     application_id: ApplicationId(0),
+    //     kind: InteractionType::MessageComponent,
+    //     data: None,
+    //     message: None,
+    //     guild_id: None,
+    //     channel_id: None,
+    //     member: None,
+    //     user: None,
+    //     token: interaction_token,
+    //     version: 0,
+    // };
+    interaction
+        .edit_original_interaction_response(&discord_cache_http.http, |e| {
+            e.content("Thanks for linking!")
+        })
+        .await?; // TODO: don't error here
+    Ok(("Success!", "great!").into())
 }

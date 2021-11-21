@@ -113,6 +113,7 @@ pub fn create_server(
         oauth2_consumer.clone(),
         async_meetup_client.clone(),
         bot_name.clone(),
+        discord_cache_http.clone(),
     );
     let schedule_session_routes = super::schedule_session::create_routes(
         redis_client.clone(),

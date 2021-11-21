@@ -1,7 +1,13 @@
+use crate::web::linking;
+
 use super::commands::CommandContext;
 use super::commands::PreparedCommands;
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
+use redis::AsyncCommands;
+use serenity::model::interactions::ButtonStyle;
+use serenity::model::interactions::InteractionApplicationCommandCallbackDataFlags;
+use serenity::model::interactions::InteractionData;
 use serenity::{
     async_trait,
     client::bridge::gateway::GatewayIntents,
@@ -318,48 +324,83 @@ impl EventHandler for Handler {
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        // let (bot_id, shutdown_signal) = {
-        //     let data = ctx.data.read().await;
-        //     let bot_id = data.get::<BotIdKey>().expect("Bot ID was not set").clone();
-        //     let shutdown_signal = data
-        //         .get::<ShutdownSignalKey>()
-        //         .expect("Shutdown signal was not set")
-        //         .load(Ordering::Acquire);
-        //     (bot_id, shutdown_signal)
-        // };
+        let redis_client = {
+            let data = ctx.data.read().await;
+            data.get::<RedisClientKey>()
+                .expect("Redis client was not set")
+                .clone()
+        };
         // In contrast to the message handler we don't need to check that this
         // is indeed a command.
 
         // Ignore all messages that might have come from another guild
         // (shouldn't happen, but who knows)
-        if interaction.guild_id != lib::discord::sync::ids::GUILD_ID {
-            return;
+        if let Some(guild_id) = interaction.guild_id {
+            if guild_id != lib::discord::sync::ids::GUILD_ID {
+                return;
+            }
         }
-        if let Some(data) = interaction.data {
-            match data.name.as_str() {
+        let channel_id = match interaction.channel_id {
+            Some(channel_id) => channel_id,
+            _ => return, // DMs have no channel id, but slash commands are only available in the guild anyway
+        };
+        match &interaction.data {
+            Some(InteractionData::ApplicationCommand(data)) => {
+                let reply = match data.name.as_str() {
+                    "link-meetup" => "Yessir! Linking Meetup",
+                    "unlink-meetup" => "Un-linking Meetup",
+                    _ => "Unknown command",
+                };
+                channel_id.say(&ctx, reply).await.ok();
+            }
+            Some(InteractionData::MessageComponent(data)) => match data.custom_id.as_str() {
                 "link-meetup" => {
+                    // let interaction_serialized =
+                    //     match serde_json::to_string(&interaction).map_err(|_| {
+                    //         simple_error::SimpleError::new("Could not serialize the interaction")
+                    //     }) {
+                    //         Ok(s) => s,
+                    //         _ => return,
+                    //     };
+                    let mut redis_connection = match redis_client.get_async_connection().await {
+                        Ok(c) => c,
+                        _ => return,
+                    };
+                    let linking_id: u32 = rand::random();
+                    let redis_key =
+                        format!("meetup_linking_dummy:{}:interaction_token", linking_id);
+                    let _: Option<()> = redis_connection
+                        .set(&redis_key, &interaction.token)
+                        .await
+                        .ok();
                     interaction
-                        .channel_id
-                        .say(&ctx, "Yessir! Linking Meetup")
+                        .create_interaction_response(&ctx, |r| {
+                            r.interaction_response_data(|d| {
+                                d.content(
+                                    "This is your personal link for linking your Meetup profile:",
+                                )
+                                .flags(InteractionApplicationCommandCallbackDataFlags::EPHEMERAL)
+                                .components(|c| {
+                                    c.create_action_row(|a| {
+                                        a.create_button(|b| {
+                                            b.label("Finish linking at meetup.com")
+                                                .style(ButtonStyle::Link)
+                                                .url(format!(
+                                                    "https://bot.swissrpg.ch/link_dummy/{}",
+                                                    linking_id
+                                                ))
+                                        })
+                                    })
+                                })
+                            })
+                        })
                         .await
                         .ok();
                 }
-                "unlink-meetup" => {
-                    interaction
-                        .channel_id
-                        .say(&ctx, "Un-linking Meetup")
-                        .await
-                        .ok();
-                }
-                _ => {
-                    interaction
-                        .channel_id
-                        .say(&ctx, "Unknown command")
-                        .await
-                        .ok();
-                }
-            };
-        }
+                _ => {}
+            },
+            _ => {}
+        };
     }
 }
 

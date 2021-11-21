@@ -17,6 +17,7 @@ mod add_user;
 mod archive;
 // mod clone_event;
 mod count_inactive;
+mod create_linking_message;
 mod end_adventure;
 mod help;
 mod link_meetup;
@@ -70,6 +71,7 @@ static ALL_COMMANDS: &[&Command] = &[
     // &rsvp_user::RSVP_USER_COMMAND,
     // &test::TEST_COMMAND,
     &archive::ARCHIVE_COMMAND,
+    &create_linking_message::CREATE_LINKING_MESSAGE_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
