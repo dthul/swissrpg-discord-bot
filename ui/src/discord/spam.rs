@@ -22,6 +22,12 @@ impl TypeMapKey for GameChannelsListKey {
 pub async fn message_hook(
     cmdctx: &mut super::commands::CommandContext,
 ) -> Result<(), lib::meetup::Error> {
+    let alert_channel_id = if let Some(channel_id) = lib::discord::sync::ids::BOT_ALERTS_CHANNEL_ID
+    {
+        channel_id
+    } else {
+        return Ok(());
+    };
     // Ignore messages from game channels
     let game_channels = get_game_channels_list(cmdctx).await?;
     if game_channels.channel_ids.contains(&cmdctx.msg.channel_id.0) {
@@ -31,21 +37,24 @@ pub async fn message_hook(
     let (word_list, spam_matcher) = &*spam_list;
     if let Some(mat) = spam_matcher.find(&cmdctx.msg.content) {
         let word = &word_list[mat.pattern()];
-        let msg = format!(
-            "**Spam Alert**\nTrigger: {trigger}\nUser: <@{user_id}>\nMessage: {msg}\nhttps://discordapp.com/channels/{guild_id}/{channel_id}/{message_id}",
-            trigger=word,
-            user_id=cmdctx.msg.author.id.0,
-            msg=cmdctx.msg.content,
-            guild_id=lib::discord::sync::ids::GUILD_ID.0,
-            channel_id=cmdctx.msg.channel_id,
-            message_id=cmdctx.msg.id.0);
-        for user_id in lib::discord::sync::ids::SPAM_ALERT_USER_IDS {
-            if let Ok(user) = user_id.to_user(&cmdctx.ctx).await {
-                user.direct_message(&cmdctx.ctx, |builder| builder.content(&msg))
-                    .await
-                    .ok();
-            }
+        let mut msg = serenity::utils::MessageBuilder::new();
+        msg.push_bold("Spam Alert ");
+        if let Some(admin_role_id) = lib::discord::sync::ids::ADMIN_ROLE_ID {
+            msg.mention(&admin_role_id);
         }
+        msg.push("\nTrigger: ");
+        msg.push_line_safe(word);
+        msg.push("User: ");
+        msg.mention(&cmdctx.msg.author.id);
+        msg.push("\nMessage: ");
+        msg.push_line_safe(&cmdctx.msg.content);
+        msg.push(format!(
+            "https://discordapp.com/channels/{guild_id}/{channel_id}/{message_id}",
+            guild_id = lib::discord::sync::ids::GUILD_ID.0,
+            channel_id = cmdctx.msg.channel_id,
+            message_id = cmdctx.msg.id.0
+        ));
+        alert_channel_id.say(&cmdctx.ctx, &msg).await?;
     }
     Ok(())
 }

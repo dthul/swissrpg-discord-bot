@@ -28,9 +28,8 @@ pub mod ids {
     pub const VOICE_CHANNELS_CATEGORY_IDS: &'static [ChannelId] = &[ChannelId(601070848446824512)];
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650656330390175764));
     pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(704988201038643270));
-    pub const SPAM_ALERT_USER_IDS: &'static [UserId] =
-        &[UserId(401292991307841536), UserId(456545153923022849)];
     pub const USER_TOPIC_VOICE_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(807270405672140831));
+    pub const ADMIN_ROLE_ID: Option<RoleId> = None;
 }
 
 #[cfg(not(feature = "bottest"))]
@@ -51,8 +50,8 @@ pub mod ids {
         &[ChannelId(401856511233753110), ChannelId(831140794952843324)];
     pub const BOT_ALERTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(650660608705822723));
     pub const FREE_SPOTS_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(706131908102324345));
-    pub const SPAM_ALERT_USER_IDS: &'static [UserId] = &[UserId(401292991307841536)];
     pub const USER_TOPIC_VOICE_CHANNEL_ID: Option<ChannelId> = Some(ChannelId(811601700736729129));
+    pub const ADMIN_ROLE_ID: Option<RoleId> = Some(RoleId(412927099855437825));
 }
 
 use ids::*;
