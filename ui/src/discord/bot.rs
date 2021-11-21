@@ -22,6 +22,7 @@ use std::sync::{
 
 pub async fn create_discord_client(
     discord_token: &str,
+    application_id: u64,
     redis_client: redis::Client,
     pool: sqlx::PgPool,
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
@@ -33,6 +34,7 @@ pub async fn create_discord_client(
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
     let client = Client::builder(&discord_token)
+        .application_id(application_id)
         .intents(
             GatewayIntents::GUILDS
                 | GatewayIntents::GUILD_MEMBERS
