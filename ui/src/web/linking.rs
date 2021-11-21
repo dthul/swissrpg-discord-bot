@@ -165,7 +165,7 @@ async fn generate_csrf_cookie(
         .domain(lib::urls::DOMAIN)
         .http_only(true)
         .same_site(cookie::SameSite::Lax)
-        .max_age(time::Duration::hours(1))
+        .max_age(cookie::time::Duration::hours(1))
         .finish())
 }
 
