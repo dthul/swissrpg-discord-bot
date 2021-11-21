@@ -251,6 +251,23 @@ fn list_players<'a>(
             reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
         }
     }
-    context.msg.channel_id.say(&context.ctx, &reply).await.ok();
+    const LIMIT: usize = serenity::constants::MESSAGE_CODE_LIMIT;
+    // Split the reply if necessary
+    let mut reply = reply.as_str();
+    while reply.chars().count() > 0 {
+        if let Some((idx, _c)) = reply.char_indices().skip(LIMIT / 2).next() {
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx, &reply[..idx])
+                .await
+                .ok();
+            reply = &reply[idx..];
+        } else {
+            // Send the rest of the message
+            context.msg.channel_id.say(&context.ctx, reply).await.ok();
+            break;
+        }
+    }
     Ok(())
 }
