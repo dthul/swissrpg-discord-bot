@@ -100,7 +100,7 @@ pub fn create_server(
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     addr: std::net::SocketAddr,
     redis_client: redis::Client,
-    async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
+    async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     discord_cache_http: lib::discord::CacheAndHttp,
     bot_name: String,
     stripe_webhook_secret: Option<String>,
@@ -117,7 +117,6 @@ pub fn create_server(
     let schedule_session_routes = super::schedule_session::create_routes(
         redis_client.clone(),
         async_meetup_client.clone(),
-        oauth2_consumer.clone(),
         discord_cache_http.clone(),
     );
     #[cfg(feature = "bottest")]

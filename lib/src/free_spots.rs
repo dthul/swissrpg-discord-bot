@@ -1,7 +1,7 @@
 // While syncing upcoming Meetup events, the code in this file is used to build
 // a list of events with free spots and post those to Discord.
 
-use crate::meetup::api::Event;
+use crate::{meetup::newapi::UpcomingEventDetails, DefaultStr};
 use geo::{euclidean_distance::EuclideanDistance, Point};
 use lazy_static::lazy_static;
 use serenity::model::id::ChannelId;
@@ -16,7 +16,7 @@ lazy_static! {
 #[derive(Debug, Clone)]
 pub struct EventCollector {
     // List of upcoming events and the number of free spots
-    pub events: Vec<Event>,
+    pub events: Vec<UpcomingEventDetails>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -170,7 +170,7 @@ impl EventCollector {
         EventCollector { events: vec![] }
     }
 
-    pub fn add_event(&mut self, event: Event) {
+    pub fn add_event(&mut self, event: UpcomingEventDetails) {
         self.events.push(event);
     }
 
@@ -185,27 +185,31 @@ impl EventCollector {
                 query.limit(2 * ALL_LOCATIONS.len() as u64)
             })
             .await?;
-        let relevant_events: Vec<&Event> = self
+        let relevant_events: Vec<&UpcomingEventDetails> = self
             .events
             .iter()
             // Discard events which don't have free spots
             .filter(|event| event.num_free_spots() > 0)
             // Discard events for which RSVPs are not open
             .filter(|event| {
-                let is_closed_event = event.rsvp_rules.map(|rules| rules.closed).unwrap_or(false)
-                    || CLOSED_REGEX.is_match(&event.description);
+                let is_closed_event = event
+                    .rsvp_settings
+                    .as_ref()
+                    .and_then(|rsvp_settings| rsvp_settings.rsvps_closed)
+                    .unwrap_or(false)
+                    || CLOSED_REGEX.is_match(event.description.unwrap_or_str(""));
                 !is_closed_event
             })
             // Discard events which are too far in the future
-            .filter(|event| event.time < chrono::Utc::now() + chrono::Duration::days(30))
+            .filter(|event| event.date_time.0 < chrono::Utc::now() + chrono::Duration::days(30))
             .collect();
         let mut localized_events = Self::localized_events(&relevant_events);
         for location in ALL_LOCATIONS {
-            let location_events: &mut [&Event] = localized_events
+            let location_events: &mut [&UpcomingEventDetails] = localized_events
                 .get_mut(location)
                 .map(Vec::as_mut_slice)
                 .unwrap_or(&mut []);
-            location_events.sort_unstable_by_key(|event| event.time);
+            location_events.sort_unstable_by_key(|event| event.date_time.0);
             // Try to find an existing message that corresponds to this location
             let embed_author = location.name();
             let location_message = latest_messages.iter_mut().find(|message| {
@@ -242,7 +246,7 @@ impl EventCollector {
     fn build_embed<'a>(
         static_file_prefix: &'_ str,
         location: Location,
-        events: &'_ [&'_ Event],
+        events: &'_ [&'_ UpcomingEventDetails],
         embed_builder: &'a mut serenity::builder::CreateEmbed,
     ) -> &'a mut serenity::builder::CreateEmbed {
         let footer_text = chrono::Utc::now()
@@ -257,16 +261,21 @@ impl EventCollector {
                 &mut description,
                 "**{}**\n",
                 // TODO: proper escaping
-                &event.name.replace("*", r"\*")
+                event.title.unwrap_or_str("No title").replace("*", r"\*")
             )
             .ok();
-            description.push_str(&event.time.format("_%a, %b %-d_").to_string());
+            description.push_str(&event.date_time.format("_%a, %b %-d_").to_string());
             if free_spots == 1 {
                 write!(&mut description, " — {} spot\n", free_spots).ok();
             } else {
                 write!(&mut description, " — {} spots\n", free_spots).ok();
             }
-            write!(&mut description, "[Sign up on Meetup](<{}>)", &event.link).ok();
+            write!(
+                &mut description,
+                "[Sign up on Meetup](<{}>)",
+                &event.short_url
+            )
+            .ok();
         }
         embed_builder
             .author(|author| {
@@ -292,9 +301,11 @@ impl EventCollector {
 
     // Returns all events for which a location can be determined, grouped by
     // their respective locations
-    fn localized_events<'event>(events: &[&'event Event]) -> HashMap<Location, Vec<&'event Event>> {
+    fn localized_events<'event>(
+        events: &[&'event UpcomingEventDetails],
+    ) -> HashMap<Location, Vec<&'event UpcomingEventDetails>> {
         // Try to assign each event to one of our cities or the online category
-        let mut location_events: HashMap<Location, Vec<&Event>> = HashMap::new();
+        let mut location_events: HashMap<Location, Vec<&UpcomingEventDetails>> = HashMap::new();
         for event in events {
             if let Some(location) = Self::event_location(event) {
                 location_events.entry(location).or_default().push(event);
@@ -304,7 +315,7 @@ impl EventCollector {
     }
 
     // Figure out which location (if any) an event belongs to
-    fn event_location(event: &Event) -> Option<Location> {
+    fn event_location(event: &UpcomingEventDetails) -> Option<Location> {
         let venue = match &event.venue {
             Some(venue) => venue,
             None => {
@@ -313,22 +324,14 @@ impl EventCollector {
             }
         };
         // Is this event online?
-        if event.is_online_event.unwrap_or(false)
-            || crate::meetup::sync::ONLINE_REGEX.is_match(&event.description)
+        if event.is_online
+            || crate::meetup::sync::ONLINE_REGEX.is_match(event.description.unwrap_or_str(""))
         {
             return Some(Location::Online);
         }
         // Doesn't seem to be an online event. We will use latitude and
         // longitude to figure out the city instead
-        let (lat, lon) = match (venue.lat, venue.lon) {
-            (Some(lat), Some(lon)) => (lat, lon),
-            _ => {
-                // No latitude and longitude?
-                // No idea where it is then.
-                return None;
-            }
-        };
-        let point = Point::new(lon, lat);
+        let point = Point::new(venue.lng, venue.lat);
         let location = Location::closest(point);
         Some(location)
     }

@@ -20,65 +20,18 @@ fn link_meetup<'a>(
         .get(&redis_key_d2m)
         .await?;
     if let Some(linked_meetup_id) = linked_meetup_id {
-        // Return value of the async block:
-        // None = Meetup API unavailable
-        // Some(None) = Meetup API available but no user found
-        // Some(Some(user)) = User found
-        let meetup_user = {
-            let meetup_client = context.meetup_client().await?.lock().await.clone();
-            match meetup_client {
-                None => Ok::<_, lib::meetup::Error>(None),
-                Some(meetup_client) => match meetup_client
-                    .get_member_profile(Some(linked_meetup_id))
-                    .await?
-                {
-                    None => Ok(Some(None)),
-                    Some(user) => Ok(Some(Some(user))),
-                },
-            }
-        }?;
         let bot_id = context.bot_id().await?;
-        match meetup_user {
-            Some(meetup_user) => match meetup_user {
-                Some(meetup_user) => {
-                    context
-                        .msg
-                        .author
-                        .direct_message(&context.ctx, |message| {
-                            message.content(lib::strings::DISCORD_ALREADY_LINKED_MESSAGE1(
-                                &meetup_user.name,
-                                bot_id.0,
-                            ))
-                        })
-                        .await
-                        .ok();
-                    context.msg.react(&context.ctx, '\u{2705}').await.ok();
-                }
-                _ => {
-                    context
-                        .msg
-                        .author
-                        .direct_message(&context.ctx, |message| {
-                            message
-                                .content(lib::strings::NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id.0))
-                        })
-                        .await
-                        .ok();
-                    context.msg.react(&context.ctx, '\u{2705}').await.ok();
-                }
-            },
-            _ => {
-                context
-                    .msg
-                    .author
-                    .direct_message(&context.ctx, |message| {
-                        message.content(lib::strings::DISCORD_ALREADY_LINKED_MESSAGE2(bot_id.0))
-                    })
-                    .await
-                    .ok();
-                context.msg.react(&context.ctx, '\u{2705}').await.ok();
-            }
-        }
+        context
+            .msg
+            .author
+            .direct_message(&context.ctx, |message| {
+                message.content(lib::strings::DISCORD_ALREADY_LINKED_MESSAGE(
+                    &format!("https://www.meetup.com/members/{}/", linked_meetup_id),
+                    bot_id.0,
+                ))
+            })
+            .await
+            .ok();
         return Ok(());
     };
     let user_id = context.msg.author.id.0;
@@ -217,84 +170,58 @@ fn link_meetup_bot_admin<'a>(
         return Ok(());
     }
     // The user has not yet linked their meetup account.
-    // Test whether the specified Meetup user actually exists.
-    let meetup_client = context.meetup_client().await?.lock().await.clone();
-    let meetup_user = match meetup_client {
-        None => {
-            return Err(lib::meetup::Error::from(simple_error::SimpleError::new(
-                "Meetup API unavailable",
-            )))
-        }
-        Some(meetup_client) => meetup_client.get_member_profile(Some(meetup_id)).await?,
-    };
-    match meetup_user {
-        None => {
-            let _ = context.msg.channel_id.say(
-                &context.ctx,
-                "It looks like this Meetup profile does not exist",
-            );
-            return Ok(());
-        }
-        Some(meetup_user) => {
-            let successful = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            // Try to atomically set the meetup id
-            let redis_connection = context.async_redis_connection().await?;
-            lib::redis::async_redis_transaction(
-                redis_connection,
-                &[&redis_key_d2m, &redis_key_m2d],
-                |con, mut pipe| {
-                    let redis_key_d2m = redis_key_d2m.clone();
-                    let redis_key_m2d = redis_key_m2d.clone();
-                    let successful = Arc::clone(&successful);
-                    async move {
-                        let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m).await?;
-                        let linked_discord_id: Option<u64> = con.get(&redis_key_m2d).await?;
-                        if linked_meetup_id.is_some() || linked_discord_id.is_some() {
-                            // The meetup id was linked in the meantime, abort
-                            successful.store(false, std::sync::atomic::Ordering::Release);
-                            // Execute empty transaction just to get out of the closure
-                            pipe.query_async(con).await
-                        } else {
-                            pipe.sadd("meetup_users", meetup_id)
-                                .sadd("discord_users", discord_id)
-                                .set(&redis_key_d2m, meetup_id)
-                                .set(&redis_key_m2d, discord_id);
-                            successful.store(true, std::sync::atomic::Ordering::Release);
-                            pipe.query_async(con).await
-                        }
-                    }
-                    .boxed()
-                },
-            )
-            .await?;
-            if successful.load(std::sync::atomic::Ordering::Acquire) {
-                let photo_url = meetup_user.photo.as_ref().map(|p| p.thumb_link.as_str());
-                let _ = context
-                    .msg
-                    .channel_id
-                    .send_message(&context.ctx, |message| {
-                        message.embed(|embed| {
-                            embed.title("Linked Meetup account");
-                            embed.description(format!(
-                                "Successfully linked <@{}> to {}'s Meetup account",
-                                discord_id, meetup_user.name
-                            ));
-                            if let Some(photo_url) = photo_url {
-                                embed.image(photo_url)
-                            } else {
-                                embed
-                            }
-                        })
-                    });
-                return Ok(());
-            } else {
-                let _ = context
-                    .msg
-                    .channel_id
-                    .say(&context.ctx, "Could not assign meetup id (timing error)");
-                return Ok(());
+    let successful = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Try to atomically set the meetup id
+    let redis_connection = context.async_redis_connection().await?;
+    lib::redis::async_redis_transaction(
+        redis_connection,
+        &[&redis_key_d2m, &redis_key_m2d],
+        |con, mut pipe| {
+            let redis_key_d2m = redis_key_d2m.clone();
+            let redis_key_m2d = redis_key_m2d.clone();
+            let successful = Arc::clone(&successful);
+            async move {
+                let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m).await?;
+                let linked_discord_id: Option<u64> = con.get(&redis_key_m2d).await?;
+                if linked_meetup_id.is_some() || linked_discord_id.is_some() {
+                    // The meetup id was linked in the meantime, abort
+                    successful.store(false, std::sync::atomic::Ordering::Release);
+                    // Execute empty transaction just to get out of the closure
+                    pipe.query_async(con).await
+                } else {
+                    pipe.sadd("meetup_users", meetup_id)
+                        .sadd("discord_users", discord_id)
+                        .set(&redis_key_d2m, meetup_id)
+                        .set(&redis_key_m2d, discord_id);
+                    successful.store(true, std::sync::atomic::Ordering::Release);
+                    pipe.query_async(con).await
+                }
             }
-        }
+            .boxed()
+        },
+    )
+    .await?;
+    if successful.load(std::sync::atomic::Ordering::Acquire) {
+        let _ = context
+            .msg
+            .channel_id
+            .send_message(&context.ctx, |message| {
+                message.embed(|embed| {
+                    embed.title("Linked Meetup account");
+                    embed.description(format!(
+                        "Successfully linked <@{}> to this Meetup account: https://www.meetup.com/members/{}/",
+                        discord_id, meetup_id
+                    ));
+                    embed
+                })
+            });
+        return Ok(());
+    } else {
+        let _ = context
+            .msg
+            .channel_id
+            .say(&context.ctx, "Could not assign meetup id (timing error)");
+        return Ok(());
     }
 }
 

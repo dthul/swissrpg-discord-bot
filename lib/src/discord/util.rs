@@ -1,5 +1,7 @@
+// use itertools::Itertools;
 use redis::AsyncCommands;
 use serenity::model::id::ChannelId;
+// use unicode_segmentation::UnicodeSegmentation;
 
 // TODO: introduce newtyoes for series id, event id, ...
 pub async fn say_in_event_series_channel(
@@ -54,3 +56,28 @@ pub async fn say_in_bot_alerts_channel(
         .into())
     }
 }
+
+// pub fn split_message(text: &'_ str) -> Vec<&'_ str> {
+//     // Maximum number of Unicode code points in a message
+//     const LIMIT: usize = serenity::constants::MESSAGE_CODE_LIMIT;
+//     let mut parts = vec![];
+//     let mut graphemes = UnicodeSegmentation::grapheme_indices(text, true)
+//         .collect_vec()
+//         .as_slice();
+//     // Count the number of code points (scalar values) in each grapheme
+//     let mut lengths = graphemes
+//         .iter()
+//         .map(|(_, grapheme)| grapheme.chars().count())
+//         .collect_vec()
+//         .as_slice();
+//     while !graphemes.is_empty() {
+//         // Find the next cut point
+//         let mut current_length = 0;
+//         let mut
+//     }
+//     for (&(offset, grapheme), &length) in graphemes.iter().zip(lengths.iter()) {}
+//     let remaining = text.chars().collect_vec().as_slice();
+//     let mut remaining = text;
+//     while !remaining.is_empty() {}
+//     parts
+// }

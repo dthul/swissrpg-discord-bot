@@ -21,5 +21,5 @@ redis = { version = "0.21", default-features = false, features = ["tokio-comp"] 
 serenity = { version = "0.10", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
 signal-hook = "0.3"
 sqlx = { version = "0.5", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
-async-stripe = { version = "0.13.0-rc3", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events"] }
+async-stripe = { version = "0.13", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout"] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }

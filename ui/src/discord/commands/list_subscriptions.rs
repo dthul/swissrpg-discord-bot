@@ -31,7 +31,7 @@ fn list_subscriptions<'a>(
             product
                 .name
                 .as_ref()
-                .map(String::as_str)
+                .map(|boxed_name| boxed_name.as_str())
                 .unwrap_or("Unknown product")
         ));
     }

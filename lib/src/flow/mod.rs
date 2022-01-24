@@ -44,17 +44,11 @@ impl ScheduleSessionFlow {
     pub async fn schedule<'a>(
         self,
         mut redis_connection: redis::aio::Connection,
-        meetup_client: &'a crate::meetup::api::AsyncClient,
-        oauth2_consumer: &'a crate::meetup::oauth2::OAuth2Consumer,
+        meetup_client: &'a crate::meetup::newapi::AsyncClient,
+        // oauth2_consumer: &'a crate::meetup::oauth2::OAuth2Consumer,
         date_time: chrono::DateTime<chrono::Utc>,
         is_open_event: bool,
-    ) -> Result<
-        (
-            crate::meetup::api::Event,
-            Option<crate::meetup::util::CloneRSVPResult>,
-        ),
-        crate::meetup::Error,
-    > {
+    ) -> Result<crate::meetup::newapi::NewEventResponse, crate::meetup::Error> {
         // Query the latest event in the series
         let mut events = crate::meetup::util::get_events_for_series(
             &mut redis_connection,
@@ -76,7 +70,7 @@ impl ScheduleSessionFlow {
         // Clone the event
         let new_event_hook = Box::new(|new_event| {
             Self::new_event_hook(new_event, date_time, &latest_event.id, is_open_event)
-        });
+        }) as _;
         let new_event = crate::meetup::util::clone_event(
             &latest_event.urlname,
             &latest_event.id,
@@ -84,35 +78,35 @@ impl ScheduleSessionFlow {
             Some(new_event_hook),
         )
         .await?;
-        // Try to transfer the RSVPs to the new event
-        let rsvp_result = match crate::meetup::util::clone_rsvps(
-            &latest_event.urlname,
-            &latest_event.id,
-            &new_event.id,
-            &mut redis_connection,
-            meetup_client,
-            oauth2_consumer,
-        )
-        .await
-        {
-            Ok(result) => Some(result),
-            Err(err) => {
-                eprintln!("Could not transfer all RSVPs to the new event.\n{:#?}", err);
-                None
-            }
-        };
+        // // Try to transfer the RSVPs to the new event
+        // let rsvp_result = match crate::meetup::util::clone_rsvps(
+        //     &latest_event.urlname,
+        //     &latest_event.id,
+        //     &new_event.id,
+        //     &mut redis_connection,
+        //     meetup_client,
+        //     oauth2_consumer,
+        // )
+        // .await
+        // {
+        //     Ok(result) => Some(result),
+        //     Err(err) => {
+        //         eprintln!("Could not transfer all RSVPs to the new event.\n{:#?}", err);
+        //         None
+        //     }
+        // };
         let redis_key = format!("flow:schedule_session:{}", self.id);
         let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
         let sync_future = {
             let new_event = new_event.clone();
-            let rsvps = rsvp_result.as_ref().map(|res| res.cloned_rsvps.clone());
+            // let rsvps = rsvp_result.as_ref().map(|res| res.cloned_rsvps.clone());
             async move {
-                let event_id = new_event.id.clone();
-                crate::meetup::sync::sync_event(new_event, &mut redis_connection).await?;
-                if let Some(rsvps) = rsvps {
-                    crate::meetup::sync::sync_rsvps(&event_id, rsvps, &mut redis_connection)
-                        .await?;
-                }
+                // let event_id = new_event.id.clone();
+                crate::meetup::sync::sync_event(new_event.into(), &mut redis_connection).await?;
+                // if let Some(rsvps) = rsvps {
+                //     crate::meetup::sync::sync_rsvps(&event_id, rsvps, &mut redis_connection)
+                //         .await?;
+                // }
                 Ok::<_, crate::meetup::Error>(())
             }
         };
@@ -121,7 +115,7 @@ impl ScheduleSessionFlow {
                 eprintln!("Could not sync the newly scheduled event:\n{:#?}", err);
             }
         }));
-        Ok((new_event, rsvp_result))
+        Ok(new_event)
     }
 
     pub async fn delete(
@@ -134,11 +128,11 @@ impl ScheduleSessionFlow {
     }
 
     pub fn new_event_hook(
-        mut new_event: crate::meetup::api::NewEvent,
+        mut new_event: crate::meetup::newapi::NewEvent,
         new_date_time: chrono::DateTime<chrono::Utc>,
         old_event_id: &str,
         is_open_event: bool,
-    ) -> Result<crate::meetup::api::NewEvent, crate::meetup::Error> {
+    ) -> Result<crate::meetup::newapi::NewEvent, crate::meetup::Error> {
         // Remove unnecessary shortcodes from follow-up sessions
         let description = new_event.description;
         let description = crate::meetup::sync::NEW_ADVENTURE_REGEX.replace_all(&description, "");
@@ -164,8 +158,7 @@ impl ScheduleSessionFlow {
             description.push_str(&format!("\n[campaign {}]", old_event_id));
         }
         // Increase the Session number
-        let name = new_event.name.clone();
-        let title_captures = crate::meetup::sync::SESSION_REGEX.captures_iter(&new_event.name);
+        let title_captures = crate::meetup::sync::SESSION_REGEX.captures_iter(&new_event.title);
         // Match the rightmost occurence of " Session X" in the event name.
         // Returns the event name without the session number (title_only) and
         // the current session number
@@ -177,17 +170,17 @@ impl ScheduleSessionFlow {
             let session_number = session_number.parse::<i32>()?;
             // Find the range of the " Session X" match and remove it from the string
             let session_x_match = capture.get(0).unwrap();
-            let mut title_only = name;
+            let mut title_only = new_event.title.clone();
             title_only.truncate(session_x_match.start());
             (title_only, session_number)
         } else {
             // If there is no match, return the whole name and Session number 1
-            (name, 1)
+            (new_event.title.clone(), 1)
         };
         // Create a new " Session X+1" suffix
         let new_session_suffix = format!(" Session {}", session_number + 1);
         // Check if the concatenation of event title and session suffix is short enough
-        let new_event_name = if title_only.encode_utf16().count()
+        let new_event_title = if title_only.encode_utf16().count()
             + new_session_suffix.encode_utf16().count()
             <= crate::meetup::MAX_EVENT_NAME_UTF16_LEN
         {
@@ -204,9 +197,9 @@ impl ScheduleSessionFlow {
                 crate::meetup::util::truncate_str(title_only, max_title_utf16_len);
             shortened_title + ellipsis + &new_session_suffix
         };
-        new_event.name = new_event_name;
+        new_event.title = new_event_title;
         new_event.description = description;
-        new_event.time = new_date_time;
+        new_event.startDateTime = crate::meetup::newapi::ZonedDateTime(new_date_time);
         Ok(new_event)
     }
 }

@@ -6,7 +6,7 @@ use tokio::time::{Duration, Instant};
 
 pub async fn create_recurring_syncing_task(
     redis_client: redis::Client,
-    meetup_client: Arc<Mutex<Option<Arc<crate::meetup::api::AsyncClient>>>>,
+    meetup_client: Arc<Mutex<Option<Arc<crate::meetup::newapi::AsyncClient>>>>,
     discord_api: crate::discord::CacheAndHttp,
     bot_id: UserId,
     static_file_prefix: &'static str,

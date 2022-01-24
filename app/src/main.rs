@@ -64,7 +64,7 @@ fn main() {
         .expect("Meetup access token could not be loaded from Redis");
     let async_meetup_client = match meetup_access_token {
         Some(meetup_access_token) => Arc::new(futures_util::lock::Mutex::new(Some(Arc::new(
-            lib::meetup::api::AsyncClient::new(&meetup_access_token),
+            lib::meetup::newapi::AsyncClient::new(&meetup_access_token),
         )))),
         None => Arc::new(futures_util::lock::Mutex::new(None)),
     };

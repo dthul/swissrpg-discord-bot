@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub async fn organizer_token_refresh_task(
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
     redis_client: redis::Client,
-    async_meetup_client: Arc<Mutex<Option<Arc<crate::meetup::api::AsyncClient>>>>,
+    async_meetup_client: Arc<Mutex<Option<Arc<crate::meetup::newapi::AsyncClient>>>>,
 ) -> ! {
     let mut next_refresh_time = chrono::Utc::now();
     if let Ok(mut redis_connection) = redis_client.get_async_connection().await {
@@ -89,7 +89,7 @@ pub async fn organizer_token_refresh_task(
 async fn organizer_token_refresh_task_impl(
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
     redis_client: redis::Client,
-    async_meetup_client: Arc<Mutex<Option<Arc<crate::meetup::api::AsyncClient>>>>,
+    async_meetup_client: Arc<Mutex<Option<Arc<crate::meetup::newapi::AsyncClient>>>>,
 ) -> Result<(), crate::meetup::Error> {
     // Get an async Redis connection
     let mut redis_connection = redis_client.get_async_connection().await?;
@@ -101,7 +101,7 @@ async fn organizer_token_refresh_task_impl(
     )
     .await?;
     let mut async_meetup_guard = async_meetup_client.lock().await;
-    *async_meetup_guard = Some(Arc::new(crate::meetup::api::AsyncClient::new(
+    *async_meetup_guard = Some(Arc::new(crate::meetup::newapi::AsyncClient::new(
         new_auth_token.secret(),
     )));
     drop(async_meetup_guard);

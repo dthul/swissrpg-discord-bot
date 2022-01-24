@@ -19,7 +19,8 @@ type RequestTokenError = oauth2::RequestTokenError<
 
 #[derive(Debug)]
 pub enum Error {
-    APIError(super::api::Error),
+    // APIError(super::api::Error),
+    NewAPIError(super::newapi::Error),
     OAuthError(RequestTokenError),
     CommonError(crate::BoxedError),
 }
@@ -33,16 +34,23 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::APIError(err) => Some(err),
+            // Error::APIError(err) => Some(err),
+            Error::NewAPIError(err) => Some(err),
             Error::OAuthError(_err) => None,
             Error::CommonError(err) => Some(err),
         }
     }
 }
 
-impl From<super::api::Error> for Error {
-    fn from(err: super::api::Error) -> Self {
-        Error::APIError(err)
+// impl From<super::api::Error> for Error {
+//     fn from(err: super::api::Error) -> Self {
+//         Error::APIError(err)
+//     }
+// }
+
+impl From<super::newapi::Error> for Error {
+    fn from(err: super::newapi::Error) -> Self {
+        Error::NewAPIError(err)
     }
 }
 

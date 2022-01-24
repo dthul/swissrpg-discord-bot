@@ -1,5 +1,5 @@
-pub mod api;
 pub mod error;
+pub mod newapi;
 pub mod oauth2;
 pub mod sync;
 pub mod util;

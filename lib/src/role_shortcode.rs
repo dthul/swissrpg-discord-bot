@@ -1,3 +1,5 @@
+use crate::DefaultStr;
+
 use super::free_spots::EventCollector;
 use futures_util::lock::Mutex;
 use redis::AsyncCommands;
@@ -8,7 +10,7 @@ use std::sync::Arc;
 impl EventCollector {
     pub async fn assign_roles(
         &self,
-        meetup_client: Arc<Mutex<Option<Arc<super::meetup::api::AsyncClient>>>>,
+        meetup_client: Arc<Mutex<Option<Arc<super::meetup::newapi::AsyncClient>>>>,
         redis_connection: &mut redis::aio::Connection,
         discord_api: &crate::discord::CacheAndHttp,
     ) -> Result<(), crate::meetup::Error> {
@@ -23,7 +25,8 @@ impl EventCollector {
         println!("Role shortcode: Checking {} events", self.events.len());
         for event in &self.events {
             // Check whether this event uses the role shortcode
-            let role_captures = crate::meetup::sync::ROLE_REGEX.captures_iter(&event.description);
+            let role_captures =
+                crate::meetup::sync::ROLE_REGEX.captures_iter(event.description.unwrap_or_str(""));
             let roles = {
                 let mut roles = vec![];
                 for captures in role_captures {
@@ -40,11 +43,12 @@ impl EventCollector {
                 }
                 roles
             };
+            let title = event.title.unwrap_or_str("No title");
             if roles.is_empty() {
-                println!("Role shortcode: skipping {}", event.name);
+                println!("Role shortcode: skipping {}", title);
                 continue;
             }
-            println!("Role shortcode: event {} has role(s)", event.name);
+            println!("Role shortcode: event {} has role(s)", title);
             // Some events (games) might already have their RSVPs stored in Redis.
             // For the others we query Meetup.
             let redis_event_key = format!("meetup_event:{}", event.id);
@@ -52,38 +56,26 @@ impl EventCollector {
             // Meetup user IDs
             let meetup_rsvps: Vec<u64> = if event_is_in_redis {
                 // Get the RSVPs from Redis
-                println!("Role shortcode: event {} has RSVPs in Redis", event.name);
+                println!("Role shortcode: event {} has RSVPs in Redis", title);
                 let hosts =
-                    crate::redis::get_events_participants(&[&event.id], true, redis_connection)
+                    crate::redis::get_events_participants(&[&event.id.0], true, redis_connection)
                         .await?;
                 let participants =
-                    crate::redis::get_events_participants(&[&event.id], false, redis_connection)
+                    crate::redis::get_events_participants(&[&event.id.0], false, redis_connection)
                         .await?;
                 hosts.into_iter().chain(participants.into_iter()).collect()
             } else {
                 // Get the RSVPs from Meetup
                 println!(
                     "Role shortcode: querying RSVPs for event {} from Meetup",
-                    event.name
+                    title
                 );
-                match meetup_client
-                    .get_rsvps(&event.group.urlname, &event.id)
-                    .await
-                {
+                match meetup_client.get_tickets_vec(event.id.0.clone()).await {
                     Err(err) => {
                         eprintln!("Error in assign_roles::get_rsvps:\n{:#?}", err);
                         continue;
                     }
-                    Ok(rsvps) => rsvps
-                        .iter()
-                        .filter_map(|rsvp| {
-                            if rsvp.response == super::meetup::api::RSVPResponse::Yes {
-                                Some(rsvp.member.id)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
+                    Ok(tickets) => tickets.iter().map(|ticket| ticket.user.id.0).collect(),
                 }
             };
             // Assign each role to each user

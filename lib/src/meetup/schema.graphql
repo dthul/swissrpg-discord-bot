@@ -1,0 +1,229 @@
+scalar AlphaNumericId
+scalar Duration
+scalar NumericId
+scalar ZonedDateTime
+
+type CreateEventPayload {
+    event: Event
+    errors: [PayloadError!]
+}
+
+type Event {
+    id: AlphaNumericId!
+    title: String
+    eventUrl: String!
+    shortUrl: String!
+    description: String
+    shortDescription: String
+    host: User
+    hosts: [User!]
+    howToFindUs: String
+    dateTime: ZonedDateTime!
+    endTime: ZonedDateTime!
+    maxTickets: Int!
+    going: Int!
+    tickets: EventTicketsConnection!
+    isOnline: Boolean!
+    venue: Venue
+    onlineVenue: OnlineVenue
+    status: EventStatus
+    eventType: EventType
+    image: EventImage!
+    rsvpSettings: RsvpOpenSettings
+    group: Group
+    numberOfAllowedGuests: Int!
+}
+
+type EventImage {
+    id: NumericId!
+    baseUrl: String!
+}
+
+type EventsConnection {
+    pageInfo: PageInfo!
+    count: Int!
+    edges: [EventsEdge!]!
+}
+
+type EventsEdge {
+    cursor: String!
+    node: Event!
+}
+
+type EventTicketsConnection {
+    pageInfo: PageInfo!
+    count: Int!
+    edges: [EventTicketsEdge!]!
+}
+
+type EventTicketsEdge {
+    cursor: String!
+    node: Ticket!
+}
+
+type Group {
+    id: AlphaNumericId!
+    isMember: Boolean!
+    isOrganizer: Boolean!
+    isPrimaryOrganizer: Boolean!
+    urlname: String
+    upcomingEvents(input: ConnectionInput!): EventsConnection!
+    unifiedEvents(input: ConnectionInput!): EventsConnection!
+    membershipMetadata: GroupMembership
+}
+
+type GroupMembership {
+    status: MembershipStatus!
+    role: MemberRole
+}
+
+type Image {
+    id: AlphaNumericId!
+    baseUrl: String
+    preview: String
+}
+
+type Mutation {
+    createEvent(input: CreateEventInput!): CreateEventPayload!
+}
+
+type OnlineVenue {
+    type: OnlineVenueType!
+    url: String
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String!
+    endCursor: String!
+}
+
+type PayloadError {
+    code: String!
+    message: String!
+    field: String
+}
+
+type Query {
+    event(id: ID!): Event
+    groupByUrlname(urlname: String!): Group
+    self: User
+}
+
+type RsvpOpenSettings {
+    rsvpsClosed: Boolean
+}
+
+type Ticket {
+    id: AlphaNumericId!
+    event: Event!
+    user: User!
+    membership: GroupMembership
+    quantity: Int!
+    createdAt: ZonedDateTime!
+    updatedAt: ZonedDateTime!
+    url: String! # The event's URL
+    guestsCount: Int!
+}
+
+type User {
+    id: NumericId!
+    name: String
+    isAdmin: Boolean
+    memberPhoto: Image
+}
+
+type Venue {
+    id: AlphaNumericId!
+    name: String
+    address: String
+    city: String
+    lat: Float!
+    lng: Float!
+}
+
+enum EventStatus {
+    PUBLISHED
+    DRAFT
+    CANCELLED
+    AUTOSCHED
+    ACTIVE
+    PAST
+}
+
+enum EventType {
+    ONLINE
+    PHYSICAL
+}
+
+enum MemberRole {
+    ORGANIZER
+    COORGANIZER
+    ASSISTANT_ORGANIZER
+    EVENT_ORGANIZER
+    MEMBER
+}
+
+enum MembershipStatus {
+    PENDING_PAYMENT
+    GROUP_BLOCKED_ORG
+    GROUP_BLOCKED
+    ABANDONED
+    DEAD
+    BOOTED
+    BOUNCED
+    UNAPPROVED
+    REMOVED
+    BLOCKED
+    INCOMPLETE
+    PENDING
+    ACTIVE
+    LEADER
+}
+
+enum OnlineVenueType {
+    GOOGLEHANGOUT
+    ZOOM
+    SKYPE
+    OTHER
+}
+
+enum PublishStatus {
+    DRAFT
+    PUBLISHED
+    # not sure if there can be more variants since documentation for this enum is missing
+}
+
+input ConnectionInput {
+    first: Int
+    last: Int
+    after: String
+    before: String
+    reverse: Boolean
+}
+
+input CreateEventInput {
+    groupUrlname: String!
+    title: String! # Must be at least 1 character and may not be longer than 80 characters.
+    description: String! # in simple HTML format. May not be longer than 50000 characters.
+    startDateTime: ZonedDateTime!
+    duration: Duration
+    rsvpSettings: RsvpSettings,
+    eventHosts: [Int!]
+    venueId: String # For online events, set to "online"
+    selfRsvp: Boolean
+    howToFindUs: String # the description for the location of the host(s) at the event venue. For online events this field is used for the event's url. To unset this field, provide an empty string
+    question: String # the RSVP survey question for the event. May not be longer than 250 characters. To unset this field, provide an empty string
+    featuredPhotoId: Int
+    publishStatus: PublishStatus
+}
+
+input RsvpSettings {
+    rsvpOpenTime: ZonedDateTime
+    rsvpCloseTime: ZonedDateTime
+    rsvpOpenDuration: Duration
+    rsvpCloseDuration: Duration
+    rsvpLimit: Int
+    guestLimit: Int
+}

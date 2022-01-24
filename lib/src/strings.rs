@@ -126,29 +126,11 @@ pub fn MEETUP_LINKING_MESSAGE(linking_url: &str) -> String {
 }
 
 #[allow(non_snake_case)]
-pub fn DISCORD_ALREADY_LINKED_MESSAGE1(meetup_name: &str, bot_id: u64) -> String {
+pub fn DISCORD_ALREADY_LINKED_MESSAGE(meetup_profile_url: &str, bot_id: u64) -> String {
     format!(
-        "It seems you are already linked to {}'s Meetup profile. If you would like to change \
+        "It seems you are already linked to the following Meetup profile: {}. If you would like to change \
          this, please unlink your profile first by typing:\n<@{}> unlink meetup",
-        meetup_name, bot_id
-    )
-}
-
-#[allow(non_snake_case)]
-pub fn DISCORD_ALREADY_LINKED_MESSAGE2(bot_id: u64) -> String {
-    format!(
-        "It seems you are already linked to a Meetup profile. If you would like to change this, \
-         please unlink your profile first by typing:\n<@{}> unlink meetup",
-        bot_id
-    )
-}
-
-#[allow(non_snake_case)]
-pub fn NONEXISTENT_MEETUP_LINKED_MESSAGE(bot_id: u64) -> String {
-    format!(
-        "You are linked to a seemingly non-existent Meetup account. If you want to change this, \
-         unlink the currently linked meetup account by writing:\n<@{}> unlink meetup",
-        bot_id
+         meetup_profile_url, bot_id
     )
 }
 

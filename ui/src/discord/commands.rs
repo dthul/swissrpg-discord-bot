@@ -110,7 +110,7 @@ pub struct CommandContext {
     // pub captures: regex::Captures<'a>,
     redis_client: OnceCell<redis::Client>,
     async_redis_connection: OnceCell<redis::aio::Connection>,
-    meetup_client: OnceCell<Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>>,
+    meetup_client: OnceCell<Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>>,
     oauth2_consumer: OnceCell<Arc<lib::meetup::oauth2::OAuth2Consumer>>,
     stripe_client: OnceCell<Arc<stripe::Client>>,
     bot_id: OnceCell<UserId>,
@@ -190,7 +190,7 @@ impl CommandContext {
 
     pub async fn meetup_client(
         &self,
-    ) -> Result<Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>, lib::meetup::Error>
+    ) -> Result<Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>, lib::meetup::Error>
     {
         if let Some(client) = self.meetup_client.get() {
             Ok(Arc::clone(client))

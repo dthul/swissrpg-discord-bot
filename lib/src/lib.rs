@@ -153,3 +153,13 @@ pub async fn get_channel_voice_channel(
         Ok(None)
     }
 }
+
+pub trait DefaultStr {
+    fn unwrap_or_str<'s>(&'s self, default: &'s str) -> &'s str;
+}
+
+impl DefaultStr for Option<String> {
+    fn unwrap_or_str<'s>(&'s self, default: &'s str) -> &'s str {
+        self.as_ref().map(String::as_str).unwrap_or(default)
+    }
+}

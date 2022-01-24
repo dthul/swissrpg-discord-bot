@@ -25,7 +25,7 @@ pub async fn create_discord_client(
     application_id: u64,
     redis_client: redis::Client,
     pool: sqlx::PgPool,
-    async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
+    async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     stripe_client: Arc<stripe::Client>,
     shutdown_signal: Arc<AtomicBool>,
@@ -90,7 +90,7 @@ impl TypeMapKey for BotNameKey {
 
 pub struct AsyncMeetupClientKey;
 impl TypeMapKey for AsyncMeetupClientKey {
-    type Value = Arc<AsyncMutex<Option<Arc<lib::meetup::api::AsyncClient>>>>;
+    type Value = Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>;
 }
 
 pub struct RedisClientKey;

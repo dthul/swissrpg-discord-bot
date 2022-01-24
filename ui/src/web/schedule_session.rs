@@ -3,14 +3,14 @@ use askama::Template;
 use chrono::{offset::TimeZone, Datelike, Timelike};
 use chrono_tz::Europe;
 use futures_util::{lock::Mutex, TryFutureExt};
+use lib::DefaultStr;
 use redis::AsyncCommands;
 use std::{collections::HashMap, sync::Arc};
 use warp::Filter;
 
 pub fn create_routes(
     redis_client: redis::Client,
-    meetup_client: Arc<Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>>,
-    oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
+    meetup_client: Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     discord_cache_http: lib::discord::CacheAndHttp,
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let get_route = {
@@ -71,7 +71,6 @@ pub fn create_routes(
     let post_route = {
         let redis_client = redis_client.clone();
         let meetup_client = meetup_client.clone();
-        let oauth2_consumer = oauth2_consumer.clone();
         let discord_cache_http = discord_cache_http.clone();
         warp::post()
             .and(warp::path!("schedule_session" / u64))
@@ -80,7 +79,6 @@ pub fn create_routes(
             .and_then(move |flow_id, form_data: HashMap<String, String>| {
                 let redis_client = redis_client.clone();
                 let meetup_client = meetup_client.clone();
-                let oauth2_consumer = oauth2_consumer.clone();
                 let discord_cache_http = discord_cache_http.clone();
                 async move {
                     let mut redis_connection = redis_client
@@ -90,7 +88,7 @@ pub fn create_routes(
                     handle_schedule_session_post(
                         &mut redis_connection,
                         &meetup_client,
-                        oauth2_consumer,
+                        // oauth2_consumer,
                         &discord_cache_http,
                         flow_id,
                         form_data,
@@ -157,11 +155,20 @@ async fn handle_schedule_session(
         let local_time = event.time.with_timezone(&Europe::Zurich);
         // We don't just add 7 * 24 hours, since that might break across
         // daylight saving time boundaries
-        let next_event_local_datetime =
+        let mut next_event_local_datetime =
             match (local_time.date() + chrono::Duration::weeks(1)).and_time(local_time.time()) {
                 Some(time) => time,
                 None => local_time,
             };
+        // If the proposed next event time is in the past, propose a time in the future instead
+        let now = chrono::Utc::now().with_timezone(&Europe::Zurich);
+        if next_event_local_datetime < now {
+            next_event_local_datetime = now
+                .with_timezone(&Europe::Zurich)
+                .date()
+                .and_time(local_time.time())
+                .unwrap_or(now + chrono::Duration::days(1));
+        }
         let template = ScheduleSessionTemplate {
             day: next_event_local_datetime.day() as u8,
             month: next_event_local_datetime.month() as u8,
@@ -188,8 +195,8 @@ async fn handle_schedule_session(
 
 async fn handle_schedule_session_post(
     redis_connection: &mut redis::aio::Connection,
-    meetup_client: &Mutex<Option<Arc<lib::meetup::api::AsyncClient>>>,
-    oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
+    meetup_client: &Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>,
+    // oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     discord_cache_http: &lib::discord::CacheAndHttp,
     flow_id: u64,
     form_data: HashMap<String, String>,
@@ -287,16 +294,17 @@ async fn handle_schedule_session_post(
     // We go from the event furthest into the future backwards until we find one
     // that has not been deleted to use as a template
     for event in events.into_iter().rev() {
-        let new_event_hook = Box::new(|mut new_event: lib::meetup::api::NewEvent| {
-            new_event.duration_ms = Some(1000 * 60 * duration as u64);
-            new_event.published = true;
+        let new_event_hook = Box::new(|mut new_event: lib::meetup::newapi::NewEvent| {
+            new_event.duration = Some(chrono::Duration::minutes(duration as i64).into());
+            new_event.publishStatus =
+                Some(lib::meetup::newapi::create_event_mutation::PublishStatus::PUBLISHED);
             lib::flow::ScheduleSessionFlow::new_event_hook(
                 new_event,
                 date_time,
                 &event.id,
                 is_open_game,
             )
-        });
+        }) as _;
         let new_event = match lib::meetup::util::clone_event(
             &event.urlname,
             &event.id,
@@ -305,7 +313,7 @@ async fn handle_schedule_session_post(
         )
         .await
         {
-            Err(lib::meetup::Error::APIError(lib::meetup::api::Error::ResourceNotFound)) => {
+            Err(lib::meetup::Error::NewAPIError(lib::meetup::newapi::Error::ResourceNotFound)) => {
                 // Event was deleted, try the next one
                 continue;
             }
@@ -320,37 +328,39 @@ async fn handle_schedule_session_post(
             );
         }
         let transferred_all_rsvps = if transfer_rsvps {
-            // Try to transfer the RSVPs to the new event
-            if let Err(_) = lib::meetup::util::clone_rsvps(
-                &event.urlname,
-                &event.id,
-                &new_event.id,
-                redis_connection,
-                &meetup_client,
-                oauth2_consumer.as_ref(),
-            )
-            .await
-            {
-                Some(false)
-            } else {
-                Some(true)
-            }
+            // // Try to transfer the RSVPs to the new event
+            // if let Err(_) = lib::meetup::util::clone_rsvps(
+            //     &event.urlname,
+            //     &event.id,
+            //     &new_event.id,
+            //     redis_connection,
+            //     &meetup_client,
+            //     oauth2_consumer.as_ref(),
+            // )
+            // .await
+            // {
+            //     Some(false)
+            // } else {
+            //     Some(true)
+            // }
+            Some(false)
         } else {
             None
         };
-        // Close the RSVPs, ignoring errors
-        let rsvps_are_closed = if let Err(err) = meetup_client
-            .close_rsvps(&event.urlname, &new_event.id)
-            .await
-        {
-            eprintln!(
-                "RSVPs for event {} could not be closed:\n{:#?}",
-                &new_event.id, err
-            );
-            false
-        } else {
-            true
-        };
+        // // Close the RSVPs, ignoring errors
+        // let rsvps_are_closed = if let Err(err) = meetup_client
+        //     .close_rsvps(&event.urlname, &new_event.id)
+        //     .await
+        // {
+        //     eprintln!(
+        //         "RSVPs for event {} could not be closed:\n{:#?}",
+        //         &new_event.id, err
+        //     );
+        //     false
+        // } else {
+        //     true
+        // };
+        let rsvps_are_closed = false;
         // Remove any possibly existing channel snoozes
         {
             let redis_series_channel_key =
@@ -370,14 +380,14 @@ async fn handle_schedule_session_post(
                 "Your adventure continues here, heroes of <@&{channel_role_id}>: {link}. Slay the \
                  dragon, save the prince, get the treasure, or whatever shenanigans you like to \
                  get into.",
-                link = &new_event.link,
+                link = &new_event.short_url,
                 channel_role_id = channel_roles.user
             )
         } else {
             format!(
                 "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
                  the treasure, or whatever shenanigans you like to get into.",
-                link = &new_event.link
+                link = &new_event.short_url
             )
         };
         if let Err(err) = lib::discord::util::say_in_event_channel(
@@ -401,7 +411,7 @@ async fn handle_schedule_session_post(
                  this session for new players to join. Don't forget to **open RSVPs** when you do \
                  that.",
                 organiser_id = lib::discord::sync::ids::ORGANISER_ID.0,
-                link = &new_event.link,
+                link = &new_event.event_url,
             );
             if let Err(err) =
                 lib::discord::util::say_in_bot_alerts_channel(&message, discord_cache_http).await
@@ -414,8 +424,8 @@ async fn handle_schedule_session_post(
             }
         }
         let template = ScheduleSessionSuccessTemplate {
-            title: &new_event.name,
-            link: &new_event.link,
+            title: new_event.title.unwrap_or_str("No title"),
+            link: &new_event.event_url,
             transferred_all_rsvps: transferred_all_rsvps,
             closed_rsvps: rsvps_are_closed,
         };
