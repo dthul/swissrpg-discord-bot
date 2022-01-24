@@ -1,4 +1,4 @@
-use chrono::DateTime;
+use chrono::TimeZone;
 use futures::{stream, Stream, StreamExt};
 use graphql_client::{GraphQLQuery, Response};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
@@ -162,16 +162,48 @@ impl<'de> Deserialize<'de> for ZonedDateTime {
             Some(pos) => &s[..pos],
             None => &s,
         };
-        let datetime = match DateTime::parse_from_rfc3339(without_suffix) {
-            Ok(datetime) => datetime,
-            Err(_err) => {
-                return Err(D::Error::invalid_value(
-                    serde::de::Unexpected::Str(&s),
-                    &"a date time string like '2022-01-16T13:43:19-05:00'",
-                ))
-            }
-        };
-        Ok(ZonedDateTime(datetime.with_timezone(&chrono::Utc)))
+        let datetime = iso8601::datetime(without_suffix).ok().and_then(|datetime| {
+            chrono::FixedOffset::east_opt(
+                60 * (60 * datetime.time.tz_offset_hours + datetime.time.tz_offset_minutes),
+            )
+            .and_then(|timezone| {
+                let date = match datetime.date {
+                    iso8601::Date::YMD { year, month, day } => {
+                        timezone.ymd_opt(year, month, day).earliest()
+                    }
+                    iso8601::Date::Week { year, ww, d } => {
+                        let weekday = match d {
+                            1 => Some(chrono::Weekday::Mon),
+                            2 => Some(chrono::Weekday::Tue),
+                            3 => Some(chrono::Weekday::Wed),
+                            4 => Some(chrono::Weekday::Thu),
+                            5 => Some(chrono::Weekday::Fri),
+                            6 => Some(chrono::Weekday::Sat),
+                            7 => Some(chrono::Weekday::Sun),
+                            _ => None,
+                        };
+                        weekday
+                            .and_then(|weekday| timezone.isoywd_opt(year, ww, weekday).earliest())
+                    }
+                    iso8601::Date::Ordinal { year, ddd } => timezone.yo_opt(year, ddd).earliest(),
+                };
+                date.and_then(|date| {
+                    date.and_hms_opt(
+                        datetime.time.hour,
+                        datetime.time.minute,
+                        datetime.time.second,
+                    )
+                })
+            })
+        });
+        if let Some(datetime) = datetime {
+            Ok(ZonedDateTime(datetime.with_timezone(&chrono::Utc)))
+        } else {
+            Err(D::Error::invalid_value(
+                serde::de::Unexpected::Str(&s),
+                &"a date time string like '2022-01-16T13:43:19-05:00'",
+            ))
+        }
     }
 }
 
