@@ -20,7 +20,7 @@ pub struct AlphaNumericId(pub String);
 #[derive(Debug, Clone, Copy)]
 pub struct NumericId(pub u64);
 
-pub struct Duration(chrono::Duration); // TODO: implement Serialize
+pub struct Duration(chrono::Duration);
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -362,40 +362,6 @@ impl AsyncClient {
             _ => Err(Error::GraphQL(response.errors.unwrap_or(vec![]))),
         }
     }
-
-    // pub async fn get_upcoming_event_ids(&self, urlname: &str) -> Result<Vec<String>, Error> {
-    //     use upcoming_event_ids_query::*;
-    //     let num_events_per_query = 20;
-    //     let mut event_ids = vec![];
-    //     let mut page_cursor = None;
-    //     loop {
-    //         // Query the next page of upcoming events
-    //         let query_variables = Variables {
-    //             urlname: urlname.into(),
-    //             first: num_events_per_query,
-    //             after: page_cursor.clone(),
-    //         };
-    //         let query = UpcomingEventIdsQuery::build_query(query_variables);
-    //         let http_response = self.client.post(API_ENDPOINT).json(&query).send().await?;
-    //         let response: Response<ResponseData> = http_response.json().await?;
-    //         if let Some(ResponseData {
-    //             group_by_urlname: Some(UpcomingEventIdsQueryGroupByUrlname { upcoming_events }),
-    //         }) = response.data
-    //         {
-    //             event_ids.extend(upcoming_events.edges.into_iter().map(|edge| edge.node.id));
-    //             if upcoming_events.page_info.has_next_page {
-    //                 // There are more result pages, continue querying
-    //                 page_cursor = Some(upcoming_events.page_info.end_cursor);
-    //             } else {
-    //                 // There are no more results, we are done
-    //                 break;
-    //             }
-    //         } else {
-    //             return Err(Error::GraphQL(response.errors.unwrap_or(vec![])));
-    //         }
-    //     }
-    //     Ok(event_ids)
-    // }
 
     pub fn get_upcoming_events<'a>(
         &'a self,
