@@ -460,34 +460,38 @@ impl AsyncClient {
                                 Err(error) => return Some((Err(error.into()), States::End)),
                                 Ok(response) => response,
                             };
-                            if let Some(ResponseData {
-                                group_by_urlname:
-                                    Some(UpcomingEventsQueryGroupByUrlname { upcoming_events }),
-                            }) = response.data
-                            {
-                                // event_ids
-                                //     .extend(upcoming_events.edges.into_iter().map(|edge| edge.node.id));
-                                let next_page_cursor = if upcoming_events.page_info.has_next_page {
-                                    // There are more result pages, continue querying
-                                    Some(upcoming_events.page_info.end_cursor)
-                                } else {
-                                    // There are no more results, we are done
-                                    None
-                                };
-                                let events = upcoming_events
-                                    .edges
-                                    .into_iter()
-                                    .map(|edge| edge.node)
-                                    .collect();
-                                States::YieldEvents {
-                                    next_page_cursor,
-                                    events,
+                            match response.data {
+                                Some(ResponseData {
+                                    group_by_urlname: None,
+                                }) => return Some((Err(Error::ResourceNotFound), States::End)),
+                                Some(ResponseData {
+                                    group_by_urlname:
+                                        Some(UpcomingEventsQueryGroupByUrlname { upcoming_events }),
+                                }) => {
+                                    let next_page_cursor =
+                                        if upcoming_events.page_info.has_next_page {
+                                            // There are more result pages, continue querying
+                                            Some(upcoming_events.page_info.end_cursor)
+                                        } else {
+                                            // There are no more results, we are done
+                                            None
+                                        };
+                                    let events = upcoming_events
+                                        .edges
+                                        .into_iter()
+                                        .map(|edge| edge.node)
+                                        .collect();
+                                    States::YieldEvents {
+                                        next_page_cursor,
+                                        events,
+                                    }
                                 }
-                            } else {
-                                return Some((
-                                    Err(Error::GraphQL(response.errors.unwrap_or(vec![]))),
-                                    States::End,
-                                ));
+                                _ => {
+                                    return Some((
+                                        Err(Error::GraphQL(response.errors.unwrap_or(vec![]))),
+                                        States::End,
+                                    ));
+                                }
                             }
                         }
                     }
