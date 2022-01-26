@@ -348,19 +348,16 @@ async fn handle_schedule_session_post(
             None
         };
         // // Close the RSVPs, ignoring errors
-        // let rsvps_are_closed = if let Err(err) = meetup_client
-        //     .close_rsvps(&event.urlname, &new_event.id)
-        //     .await
-        // {
-        //     eprintln!(
-        //         "RSVPs for event {} could not be closed:\n{:#?}",
-        //         &new_event.id, err
-        //     );
-        //     false
-        // } else {
-        //     true
-        // };
-        let rsvps_are_closed = false;
+        let rsvps_are_closed =
+            if let Err(err) = meetup_client.close_rsvps(new_event.id.0.clone()).await {
+                eprintln!(
+                    "RSVPs for event {} could not be closed:\n{:#?}",
+                    &new_event.id, err
+                );
+                false
+            } else {
+                true
+            };
         // Remove any possibly existing channel snoozes
         {
             let redis_series_channel_key =

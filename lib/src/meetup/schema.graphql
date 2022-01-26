@@ -3,6 +3,11 @@ scalar Duration
 scalar NumericId
 scalar ZonedDateTime
 
+type CloseEventRsvpsPayload {
+    event: Event
+    errors: [PayloadError!]
+}
+
 type CreateEventPayload {
     event: Event
     errors: [PayloadError!]
@@ -85,6 +90,7 @@ type Image {
 
 type Mutation {
     createEvent(input: CreateEventInput!): CreateEventPayload!
+    closeEventRsvps(input: CloseEventRsvpsInput!): CloseEventRsvpsPayload!
 }
 
 type OnlineVenue {
@@ -193,6 +199,10 @@ enum PublishStatus {
     DRAFT
     PUBLISHED
     # not sure if there can be more variants since documentation for this enum is missing
+}
+
+input CloseEventRsvpsInput {
+    eventId: ID!
 }
 
 input ConnectionInput {

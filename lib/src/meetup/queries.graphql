@@ -143,3 +143,16 @@ mutation CreateEventMutation($input: CreateEventInput!) {
     }
   }
 }
+
+mutation CloseEventRsvpsMutation($input: CloseEventRsvpsInput!) {
+  closeEventRsvps(input: $input) {
+    event {
+      id
+    }
+    errors {
+      code
+      message
+      field
+    }
+  }
+}

@@ -70,6 +70,14 @@ pub struct GroupMembershipQuery;
 )]
 pub struct CreateEventMutation;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    schema_path = "src/meetup/schema.graphql",
+    query_path = "src/meetup/queries.graphql",
+    response_derives = "Debug,Clone"
+)]
+pub struct CloseEventRsvpsMutation;
+
 pub type UpcomingEventDetails =
     upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNode;
 
@@ -631,6 +639,28 @@ impl AsyncClient {
             }) => Ok(group_membership),
             Some(ResponseData {
                 group_by_urlname: None,
+            }) => Err(Error::ResourceNotFound),
+            _ => Err(Error::GraphQL(response.errors.unwrap_or(vec![]))),
+        }
+    }
+
+    pub async fn close_rsvps(&self, event_id: String) -> Result<(), Error> {
+        use close_event_rsvps_mutation::*;
+        let query_variables = Variables {
+            input: CloseEventRsvpsInput { eventId: event_id },
+        };
+        let query = CloseEventRsvpsMutation::build_query(query_variables);
+        let http_response = self.client.post(API_ENDPOINT).json(&query).send().await?;
+        let response: Response<ResponseData> = http_response.json().await?;
+        match response.data {
+            Some(ResponseData {
+                close_event_rsvps:
+                    CloseEventRsvpsMutationCloseEventRsvps {
+                        event: Some(..), ..
+                    },
+            }) => Ok(()),
+            Some(ResponseData {
+                close_event_rsvps: CloseEventRsvpsMutationCloseEventRsvps { event: None, .. },
             }) => Err(Error::ResourceNotFound),
             _ => Err(Error::GraphQL(response.errors.unwrap_or(vec![]))),
         }
