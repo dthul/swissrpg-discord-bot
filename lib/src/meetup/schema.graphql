@@ -1,4 +1,5 @@
 scalar AlphaNumericId
+scalar DateTime
 scalar Duration
 scalar NumericId
 scalar ZonedDateTime
@@ -118,6 +119,8 @@ type Query {
 }
 
 type RsvpOpenSettings {
+    rsvpOpenTime: DateTime
+    rsvpCloseTime: DateTime
     rsvpsClosed: Boolean
 }
 
@@ -217,7 +220,7 @@ input CreateEventInput {
     groupUrlname: String!
     title: String! # Must be at least 1 character and may not be longer than 80 characters.
     description: String! # in simple HTML format. May not be longer than 50000 characters.
-    startDateTime: ZonedDateTime!
+    startDateTime: DateTime!
     duration: Duration
     rsvpSettings: RsvpSettings,
     eventHosts: [Int!]
@@ -230,8 +233,8 @@ input CreateEventInput {
 }
 
 input RsvpSettings {
-    rsvpOpenTime: ZonedDateTime
-    rsvpCloseTime: ZonedDateTime
+    rsvpOpenTime: DateTime
+    rsvpCloseTime: DateTime
     rsvpOpenDuration: Duration
     rsvpCloseDuration: Duration
     rsvpLimit: Int

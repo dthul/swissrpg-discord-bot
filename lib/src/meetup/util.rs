@@ -103,7 +103,7 @@ pub async fn clone_event<'a>(
         description: event
             .description
             .unwrap_or_else(|| "Missing description".into()),
-        startDateTime: event.date_time,
+        startDateTime: event.date_time.into(),
         duration: None,
         rsvpSettings: Some(super::newapi::NewEventRsvpSettings {
             rsvpLimit: Some(event.max_tickets),
@@ -121,9 +121,17 @@ pub async fn clone_event<'a>(
                 .map(|host| host.id.0 as i64)
                 .collect(),
         ),
-        venueId: event.venue.map(|venue| venue.id.0),
+        venueId: if event.is_online {
+            Some("online".into())
+        } else {
+            event.venue.map(|venue| venue.id.0)
+        },
         selfRsvp: Some(false),
-        howToFindUs: event.how_to_find_us,
+        howToFindUs: if event.is_online {
+            None
+        } else {
+            event.how_to_find_us
+        },
         question: None,
         featuredPhotoId: Some(event.image.id.0 as i64),
         publishStatus: Some(super::newapi::NewEventPublishStatus::DRAFT),

@@ -12,6 +12,9 @@ pub const URLNAMES: [&'static str; 3] =
     ["SwissRPG-Zurich", "SwissRPG-Central", "SwissRPG-Romandie"];
 
 #[derive(Debug, Clone)]
+pub struct DateTime(pub chrono::DateTime<chrono::Utc>); // serialized w/o time zone
+
+#[derive(Debug, Clone)]
 pub struct ZonedDateTime(pub chrono::DateTime<chrono::Utc>);
 
 #[derive(Debug, Clone)]
@@ -20,6 +23,7 @@ pub struct AlphaNumericId(pub String);
 #[derive(Debug, Clone, Copy)]
 pub struct NumericId(pub u64);
 
+#[derive(Debug, Clone)]
 pub struct Duration(chrono::Duration);
 
 #[derive(GraphQLQuery)]
@@ -66,7 +70,8 @@ pub struct GroupMembershipQuery;
 #[graphql(
     schema_path = "src/meetup/schema.graphql",
     query_path = "src/meetup/queries.graphql",
-    response_derives = "Debug,Clone"
+    response_derives = "Debug,Clone",
+    variables_derives = "Debug"
 )]
 pub struct CreateEventMutation;
 
@@ -150,6 +155,12 @@ impl From<chrono::Duration> for Duration {
     }
 }
 
+impl From<ZonedDateTime> for DateTime {
+    fn from(time: ZonedDateTime) -> Self {
+        DateTime(time.0)
+    }
+}
+
 impl std::ops::Deref for ZonedDateTime {
     type Target = chrono::DateTime<chrono::Utc>;
     fn deref(&self) -> &Self::Target {
@@ -222,6 +233,18 @@ impl Serialize for ZonedDateTime {
         S: Serializer,
     {
         self.0.serialize(serializer)
+    }
+}
+
+impl Serialize for DateTime {
+    /// Serialize into a local (unzoned) date time
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // For now we assume that we want to serialize relative to a Swiss timezone
+        let zurich_time = self.0.with_timezone(&chrono_tz::Europe::Zurich);
+        serializer.serialize_str(&zurich_time.format("%Y-%m-%dT%H:%M:%S").to_string())
     }
 }
 

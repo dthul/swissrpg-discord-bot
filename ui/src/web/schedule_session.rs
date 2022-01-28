@@ -298,12 +298,19 @@ async fn handle_schedule_session_post(
             new_event.duration = Some(chrono::Duration::minutes(duration as i64).into());
             new_event.publishStatus =
                 Some(lib::meetup::newapi::create_event_mutation::PublishStatus::PUBLISHED);
-            lib::flow::ScheduleSessionFlow::new_event_hook(
+            let result = lib::flow::ScheduleSessionFlow::new_event_hook(
                 new_event,
                 date_time,
                 &event.id,
                 is_open_game,
-            )
+            );
+            if let Ok(event_input) = &result {
+                println!(
+                    "Trying to create a Meetup event with the following details:\n{:#?}",
+                    event_input
+                );
+            }
+            result
         }) as _;
         let new_event = match lib::meetup::util::clone_event(
             &event.urlname,

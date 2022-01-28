@@ -199,7 +199,7 @@ impl ScheduleSessionFlow {
         };
         new_event.title = new_event_title;
         new_event.description = description;
-        new_event.startDateTime = crate::meetup::newapi::ZonedDateTime(new_date_time);
+        new_event.startDateTime = crate::meetup::newapi::DateTime(new_date_time);
         Ok(new_event)
     }
 }
