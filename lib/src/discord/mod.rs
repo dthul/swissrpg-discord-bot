@@ -36,7 +36,7 @@ pub async fn is_host(
     discord_api: &CacheAndHttp,
     channel_id: ChannelId,
     user_id: UserId,
-    redis_connection: &mut redis::aio::Connection,
+    db_connection: &sqlx::PgPool,
 ) -> Result<bool, crate::meetup::Error> {
     let channel = if let Channel::Guild(channel) = channel_id.to_channel(discord_api).await? {
         channel
@@ -59,7 +59,7 @@ pub async fn is_host(
     });
     if !is_host {
         // Maybe the user is still on the old host roles
-        let channel_roles = crate::get_channel_roles(channel_id.0, redis_connection).await?;
+        let channel_roles = crate::get_channel_roles(channel_id, db_connection).await?;
         if let Some(crate::ChannelRoles {
             host: Some(host_role),
             ..

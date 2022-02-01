@@ -44,7 +44,8 @@ CREATE TABLE event (
     end_time timestamp (0) with time zone,
     title text NOT NULL,
     description text NOT NULL,
-    is_online boolean NOT NULL DEFAULT FALSE
+    is_online boolean NOT NULL DEFAULT FALSE,
+    discord_category_id bigint,
 );
 ALTER SEQUENCE event_id_seq OWNED BY event.id;
 -- CREATE INDEX event_id_idx ON event USING btree (id);
@@ -82,7 +83,7 @@ CREATE TABLE event_series_removed_host (
 );
 
 CREATE TABLE event_series_removed_user (
-    event_series_id bigint NOT NULL REFERENCES event_series (id),
+    event_series_id integer NOT NULL REFERENCES event_series (id),
     member_id integer NOT NULL REFERENCES "member" (id),
     removal_time timestamp (0) with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

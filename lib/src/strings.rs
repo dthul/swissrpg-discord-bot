@@ -187,7 +187,7 @@ pub const CHANNEL_ROLE_REMOVE_ERROR: &'static str =
     "Something went wrong removing the channel role";
 
 #[allow(non_snake_case)]
-pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[u64]) -> String {
+pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[UserId]) -> String {
     let mentions = itertools::join(
         discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
         ", ",
@@ -200,7 +200,7 @@ pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[u64]) -> String {
 }
 
 #[allow(non_snake_case)]
-pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[u64]) -> String {
+pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[UserId]) -> String {
     let mentions = itertools::join(
         discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
         ", ",
