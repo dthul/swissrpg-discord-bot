@@ -15,7 +15,7 @@ pub mod urls;
 
 pub use error::BoxedError;
 use rand::Rng;
-use serenity::model::id::ChannelId;
+use serenity::model::id::{ChannelId, RoleId};
 
 pub type BoxedFuture<T> = Box<dyn std::future::Future<Output = T> + Send>;
 
@@ -27,8 +27,8 @@ pub fn new_random_id(num_bytes: u32) -> String {
 }
 
 pub struct ChannelRoles {
-    pub user: u64,
-    pub host: Option<u64>,
+    pub user: RoleId,
+    pub host: Option<RoleId>,
 }
 
 pub async fn get_event_series_roles(
@@ -43,8 +43,8 @@ pub async fn get_event_series_roles(
     .await?;
     match (row.discord_role_id, row.discord_host_role_id) {
         (Some(role), host_role) => Ok(Some(ChannelRoles {
-            user: role as u64,
-            host: host_role.map(|role| role as u64),
+            user: RoleId(role as u64),
+            host: host_role.map(|role| RoleId(role as u64)),
         })),
         (None, None) => Ok(None),
         _ => {

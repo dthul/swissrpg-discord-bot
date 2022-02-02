@@ -67,6 +67,32 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
                         f"{meetup_user_id}<->{discord_user_id} was supposed to be inserted but {result_row[0]}<->{result_row[1]} already exists"
                     )
 
+    print("Transferring Discord roles")
+    discord_role_ids = [
+        int(role_id.decode("utf8")) for role_id in r.smembers("discord_roles")
+    ]
+    for i, discord_role_id in enumerate(discord_role_ids):
+        print(f"\r{i+1} / {len(discord_role_ids)}", end="", flush=True)
+        with conn.transaction():
+            cur.execute(
+                "INSERT INTO event_series_role (discord_id) VALUES (%s)",
+                (discord_role_id,),
+            )
+    print()
+
+    print("Transferring Discord host roles")
+    discord_host_role_ids = [
+        int(role_id.decode("utf8")) for role_id in r.smembers("discord_host_roles")
+    ]
+    for i, discord_host_role_id in enumerate(discord_host_role_ids):
+        print(f"\r{i+1} / {len(discord_host_role_ids)}", end="", flush=True)
+        with conn.transaction():
+            cur.execute(
+                "INSERT INTO event_series_host_role (discord_id) VALUES (%s)",
+                (discord_host_role_id,),
+            )
+    print()
+
     print("Transferring Discord text channels")
     discord_channel_ids = [
         int(channel_id.decode("utf8")) for channel_id in r.smembers("discord_channels")
@@ -89,6 +115,14 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
         deletion_time = r.get(f"discord_channel:{discord_channel_id}:deletion_time")
         if deletion_time is not None:
             deletion_time = dateutil.parser.isoparse(deletion_time.decode("utf8"))
+        discord_role_id = r.get(f"discord_channel:{discord_channel_id}:discord_role")
+        if discord_role_id is not None:
+            discord_role_id = int(discord_role_id.decode("utf8"))
+        discord_host_role_id = r.get(
+            f"discord_channel:{discord_channel_id}:discord_host_role"
+        )
+        if discord_host_role_id is not None:
+            discord_host_role_id = int(discord_host_role_id.decode("utf8"))
         with conn.transaction():
             cur.execute(
                 "INSERT INTO event_series_text_channel (discord_id, expiration_time, last_expiration_reminder_time, snooze_until, deletion_time) VALUES (%s, %s, %s, %s, %s)",
@@ -100,6 +134,22 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
                     deletion_time,
                 ),
             )
+            if deletion_time is not None and discord_role_id is not None:
+                cur.execute(
+                    "UPDATE event_series_role SET deletion_time = %s WHERE discord_id = %s",
+                    (
+                        deletion_time,
+                        discord_role_id,
+                    ),
+                )
+            if deletion_time is not None and discord_host_role_id is not None:
+                cur.execute(
+                    "UPDATE event_series_host_role SET deletion_time = %s WHERE discord_id = %s",
+                    (
+                        deletion_time,
+                        discord_host_role_id,
+                    ),
+                )
     print()
 
     print("Transferring Discord voice channels")
