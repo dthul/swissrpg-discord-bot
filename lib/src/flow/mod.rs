@@ -117,8 +117,7 @@ impl ScheduleSessionFlow {
             let new_event = new_event.clone();
             // let rsvps = rsvp_result.as_ref().map(|res| res.cloned_rsvps.clone());
             async move {
-                // let event_id = new_event.id.clone();
-                crate::meetup::sync::sync_event(new_event.into(), &mut redis_connection).await?;
+                crate::meetup::sync::sync_event(new_event.into(), &db_connection).await?;
                 // if let Some(rsvps) = rsvps {
                 //     crate::meetup::sync::sync_rsvps(&event_id, rsvps, &mut redis_connection)
                 //         .await?;

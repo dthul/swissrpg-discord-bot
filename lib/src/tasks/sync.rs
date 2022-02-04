@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::time::{Duration, Instant};
 
 pub async fn create_recurring_syncing_task(
+    db_connection: sqlx::PgPool,
     redis_client: redis::Client,
     meetup_client: Arc<Mutex<Option<Arc<crate::meetup::newapi::AsyncClient>>>>,
     discord_api: crate::discord::CacheAndHttp,
@@ -19,6 +20,7 @@ pub async fn create_recurring_syncing_task(
     loop {
         // Wait for the next interval tick
         interval_timer.tick().await;
+        let db_connection = db_connection.clone();
         let redis_client = redis_client.clone();
         let discord_api = discord_api.clone();
         let meetup_client = meetup_client.clone();
@@ -27,11 +29,12 @@ pub async fn create_recurring_syncing_task(
             // Sync with Meetup
             let event_collector = tokio::time::timeout(
                 Duration::from_secs(360),
-                crate::meetup::sync::sync_task(meetup_client.clone(), &mut redis_connection)
-                    .map_err(|err| {
+                crate::meetup::sync::sync_task(meetup_client.clone(), &db_connection).map_err(
+                    |err| {
                         eprintln!("Syncing task failed: {}", err);
                         err
-                    }),
+                    },
+                ),
             )
             .map_err(|err| {
                 eprintln!("Syncing task timed out: {}", err);
@@ -39,9 +42,13 @@ pub async fn create_recurring_syncing_task(
             })
             .await??;
             // Sync with Discord
-            if let Err(err) =
-                crate::discord::sync::sync_discord(&mut redis_connection, &discord_api, bot_id.0)
-                    .await
+            if let Err(err) = crate::discord::sync::sync_discord(
+                &mut redis_connection,
+                &db_connection,
+                &discord_api,
+                bot_id.0,
+            )
+            .await
             {
                 eprintln!("Discord syncing task failed: {}", err);
             }
@@ -57,7 +64,7 @@ pub async fn create_recurring_syncing_task(
                 eprintln!("No channel configured for posting open game spots");
             }
             if let Err(err) = event_collector
-                .assign_roles(meetup_client.clone(), &mut redis_connection, &discord_api)
+                .assign_roles(meetup_client.clone(), &db_connection, &discord_api)
                 .await
             {
                 eprintln!("Error in EventCollector::assign_roles:\n{:#?}", err);

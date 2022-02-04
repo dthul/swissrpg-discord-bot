@@ -1,9 +1,8 @@
-use crate::DefaultStr;
+use crate::{db, DefaultStr};
 
 use super::free_spots::EventCollector;
 use futures_util::lock::Mutex;
-use redis::AsyncCommands;
-use serenity::model::id::{RoleId, UserId};
+use serenity::model::id::RoleId;
 use simple_error::SimpleError;
 use std::sync::Arc;
 
@@ -11,7 +10,7 @@ impl EventCollector {
     pub async fn assign_roles(
         &self,
         meetup_client: Arc<Mutex<Option<Arc<super::meetup::newapi::AsyncClient>>>>,
-        redis_connection: &mut redis::aio::Connection,
+        db_connection: &sqlx::PgPool,
         discord_api: &crate::discord::CacheAndHttp,
     ) -> Result<(), crate::meetup::Error> {
         let meetup_client = {
@@ -49,20 +48,23 @@ impl EventCollector {
                 continue;
             }
             println!("Role shortcode: event {} has role(s)", title);
-            // Some events (games) might already have their RSVPs stored in Redis.
+            // Some events (games) might already have their RSVPs stored in the database.
             // For the others we query Meetup.
-            let redis_event_key = format!("meetup_event:{}", event.id);
-            let event_is_in_redis: bool = redis_connection.exists(&redis_event_key).await?;
+            let db_event_id = sqlx::query!(
+                r#"SELECT event.id FROM meetup_event INNER JOIN event ON meetup_event.event_id = event.id WHERE meetup_event.meetup_id = $1"#,
+                event.id.0
+            )
+            .map(|row| db::EventId(row.id))
+            .fetch_optional(db_connection)
+            .await?;
             // Meetup user IDs
-            let meetup_rsvps: Vec<u64> = if event_is_in_redis {
-                // Get the RSVPs from Redis
-                println!("Role shortcode: event {} has RSVPs in Redis", title);
+            let rsvps: Vec<db::Member> = if let Some(db_event_id) = db_event_id {
+                // Get the RSVPs from the database
+                println!("Role shortcode: event {} has RSVPs in the database", title);
                 let hosts =
-                    crate::redis::get_events_participants(&[&event.id.0], true, redis_connection)
-                        .await?;
+                    db::get_events_participants(&[db_event_id], true, db_connection).await?;
                 let participants =
-                    crate::redis::get_events_participants(&[&event.id.0], false, redis_connection)
-                        .await?;
+                    db::get_events_participants(&[db_event_id], false, db_connection).await?;
                 hosts.into_iter().chain(participants.into_iter()).collect()
             } else {
                 // Get the RSVPs from Meetup
@@ -70,39 +72,46 @@ impl EventCollector {
                     "Role shortcode: querying RSVPs for event {} from Meetup",
                     title
                 );
-                match meetup_client.get_tickets_vec(event.id.0.clone()).await {
-                    Err(err) => {
-                        eprintln!("Error in assign_roles::get_rsvps:\n{:#?}", err);
-                        continue;
-                    }
-                    Ok(tickets) => tickets.iter().map(|ticket| ticket.user.id.0).collect(),
-                }
+                let meetup_participant_ids: Vec<_> =
+                    match meetup_client.get_tickets_vec(event.id.0.clone()).await {
+                        Err(err) => {
+                            eprintln!("Error in assign_roles::get_rsvps:\n{:#?}", err);
+                            continue;
+                        }
+                        Ok(tickets) => tickets.iter().map(|ticket| ticket.user.id.0).collect(),
+                    };
+                // Look up the members corresponding to the Meetup IDs
+                let members =
+                    db::meetup_ids_to_members(&meetup_participant_ids, db_connection).await?;
+                // Filter out null values
+                members
+                    .into_iter()
+                    .filter_map(|(_, member)| member)
+                    .collect()
             };
             // Assign each role to each user
-            let discord_user_ids =
-                crate::redis::meetup_to_discord_ids(&meetup_rsvps, redis_connection).await?;
-            let discord_user_ids: Vec<_> = discord_user_ids
-                .into_iter()
-                .filter_map(|(_meetup_id, discord_id)| discord_id)
-                .map(|id| UserId(id))
-                .collect();
-            for &user_id in &discord_user_ids {
-                let member = match crate::discord::sync::ids::GUILD_ID
-                    .member(discord_api, user_id)
+            for member in &rsvps {
+                let discord_user_id = if let Some(discord_user_id) = member.discord_id {
+                    discord_user_id
+                } else {
+                    continue;
+                };
+                let discord_member = match crate::discord::sync::ids::GUILD_ID
+                    .member(discord_api, discord_user_id)
                     .await
                 {
                     Err(err) => {
-                        eprintln!("Could not find Discord member:\n{:#?}", err);
+                        eprintln!("Could not find Discord discord_member:\n{:#?}", err);
                         continue;
                     }
-                    Ok(member) => member,
+                    Ok(discord_member) => discord_member,
                 };
                 for &role_id in &roles {
-                    if !member.roles.contains(&role_id) {
+                    if !discord_member.roles.contains(&role_id) {
                         // Assign the role
                         if let Ok(_) = crate::tasks::subscription_roles::add_member_role(
                             discord_api,
-                            user_id,
+                            discord_user_id,
                             role_id,
                         )
                         .await
@@ -113,7 +122,7 @@ impl EventCollector {
                                 .map(|role| format!("**{}**", role.name))
                                 .unwrap_or_else(|| format!("<@&{}>", role_id.0));
                             // Let the user know about the new role
-                            if let Ok(user) = user_id.to_user(discord_api).await {
+                            if let Ok(user) = discord_user_id.to_user(discord_api).await {
                                 user.direct_message(discord_api, |m| {
                                     m.content(crate::strings::NEW_ROLE_ASSIGNED_DM(&role_text))
                                 })

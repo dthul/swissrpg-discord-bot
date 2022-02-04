@@ -15,6 +15,18 @@ CREATE TABLE event_series_voice_channel (
 );
 -- CREATE INDEX discord_voice_channel_discord_id_idx ON discord_voice_channel USING btree (id);
 
+CREATE TABLE event_series_role (
+    discord_id bigint PRIMARY KEY,
+    deletion_time timestamp (0) with time zone,
+    deleted timestamp (0) with time zone
+);
+
+CREATE TABLE event_series_host_role (
+    discord_id bigint PRIMARY KEY,
+    deletion_time timestamp (0) with time zone,
+    deleted timestamp (0) with time zone
+);
+
 -- More flexible than an enum
 CREATE TABLE event_series_type (
     "type" text PRIMARY KEY
@@ -26,8 +38,8 @@ CREATE TABLE event_series (
     id integer PRIMARY KEY DEFAULT nextval('event_series_id_seq'),
     discord_text_channel_id bigint UNIQUE REFERENCES event_series_text_channel (discord_id),
     discord_voice_channel_id bigint UNIQUE REFERENCES event_series_voice_channel (discord_id),
-    discord_role_id bigint UNIQUE,
-    discord_host_role_id bigint UNIQUE,
+    discord_role_id bigint UNIQUE REFERENCES event_series_role (discord_id),
+    discord_host_role_id bigint UNIQUE REFERENCES event_series_host_role (discord_id),
     discord_category_id bigint,
     "type" text NOT NULL REFERENCES event_series_type ("type"),
     redis_series_id text UNIQUE
@@ -46,6 +58,7 @@ CREATE TABLE event (
     description text NOT NULL,
     is_online boolean NOT NULL DEFAULT FALSE,
     discord_category_id bigint,
+    deleted timestamp (0) with time zone,
 );
 ALTER SEQUENCE event_id_seq OWNED BY event.id;
 -- CREATE INDEX event_id_idx ON event USING btree (id);

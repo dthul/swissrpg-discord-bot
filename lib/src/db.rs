@@ -1,4 +1,4 @@
-use serenity::model::id::ChannelId;
+use serenity::model::id::{ChannelId, UserId};
 
 // macro_rules! create_wrapped_type {
 //     ($Wrapper:ident, $T:ident) => {
@@ -63,9 +63,18 @@ pub struct EventId(pub i32);
 
 #[derive(sqlx::Type, Debug, Clone, Copy)]
 #[sqlx(transparent)]
+pub struct MeetupEventId(pub i32);
+
+#[derive(sqlx::Type, Debug, Clone, Copy)]
+#[sqlx(transparent)]
 pub struct DiscordChannelId(pub u64);
 
+#[derive(sqlx::Type, Debug, Clone, Copy)]
+#[sqlx(transparent)]
+pub struct MemberId(pub i32);
+
 pub struct MeetupEvent {
+    pub id: MeetupEventId,
     pub meetup_id: String,
     pub url: String,
     pub urlname: String,
@@ -94,6 +103,20 @@ struct EventQueryHelper {
     meetup_event_urlname: Option<String>,
 }
 
+pub struct Member {
+    pub id: MemberId,
+    pub meetup_id: Option<u64>,
+    pub discord_id: Option<UserId>,
+    pub discord_nick: Option<String>,
+}
+
+struct MemberQueryHelper {
+    id: i32,
+    meetup_id: Option<i64>,
+    discord_id: Option<i64>,
+    discord_nick: Option<String>,
+}
+
 impl From<EventQueryHelper> for Event {
     fn from(row: EventQueryHelper) -> Self {
         let meetup_event = match (
@@ -103,6 +126,7 @@ impl From<EventQueryHelper> for Event {
             row.meetup_event_urlname,
         ) {
             (Some(id), Some(meetup_id), Some(url), Some(urlname)) => Some(MeetupEvent {
+                id: MeetupEventId(id),
                 meetup_id: meetup_id,
                 url: url,
                 urlname: urlname,
@@ -121,6 +145,17 @@ impl From<EventQueryHelper> for Event {
     }
 }
 
+impl From<MemberQueryHelper> for Member {
+    fn from(row: MemberQueryHelper) -> Self {
+        Member {
+            id: MemberId(row.id),
+            meetup_id: row.meetup_id.map(|id| id as u64),
+            discord_id: row.discord_id.map(|id| UserId(id as u64)),
+            discord_nick: row.discord_nick,
+        }
+    }
+}
+
 pub async fn get_next_event_in_series(
     db_connection: &sqlx::PgPool,
     series_id: EventSeriesId,
@@ -130,7 +165,7 @@ pub async fn get_next_event_in_series(
         r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
         FROM event
         LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
-        WHERE event_series_id = $1 AND start_time > now()
+        WHERE event_series_id = $1 AND start_time > now() AND event.deleted IS NULL
         ORDER BY start_time
         FETCH FIRST ROW ONLY"#,
         series_id.0
@@ -149,7 +184,7 @@ pub async fn get_last_event_in_series(
         r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
         FROM event
         LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
-        WHERE event_series_id = $1
+        WHERE event_series_id = $1 AND event.deleted IS NULL
         ORDER BY start_time DESC
         FETCH FIRST ROW ONLY"#,
         series_id.0
@@ -169,7 +204,7 @@ pub async fn get_events_for_series(
         r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
         FROM event
         LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
-        WHERE event_series_id = $1
+        WHERE event_series_id = $1 AND event.deleted IS NULL
         ORDER BY start_time DESC"#,
         series_id.0
     )
@@ -177,4 +212,116 @@ pub async fn get_events_for_series(
     .fetch_all(db_connection)
     .await?;
     Ok(events)
+}
+
+// Queries upcoming events belonging to the specified series from closest in time to furthest in the future
+pub async fn get_upcoming_events_for_series(
+    db_connection: &sqlx::PgPool,
+    series_id: EventSeriesId,
+) -> Result<Vec<Event>, crate::meetup::Error> {
+    let events = sqlx::query_as!(
+        EventQueryHelper,
+        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
+        FROM event
+        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
+        WHERE event_series_id = $1 AND event.start_time > NOW() AND event.deleted IS NULL
+        ORDER BY start_time"#,
+        series_id.0
+    )
+    .map(Into::into)
+    .fetch_all(db_connection)
+    .await?;
+    Ok(events)
+}
+
+pub async fn get_or_create_member_for_meetup_id(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    meetup_id: u64,
+) -> Result<MemberId, crate::meetup::Error> {
+    let member_id = sqlx::query!(
+        r#"SELECT id FROM "member" WHERE meetup_id = $1"#,
+        meetup_id as i64
+    )
+    .map(|row| MemberId(row.id))
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(member_id) = member_id {
+        Ok(member_id)
+    } else {
+        // Create a new member entry for this (so far unknown) Meetup user
+        let member_id = sqlx::query!(
+            r#"INSERT INTO "member" (meetup_id) VALUES ($1) RETURNING id"#,
+            meetup_id as i64
+        )
+        .map(|row| MemberId(row.id))
+        .fetch_one(&mut *tx)
+        .await?;
+        Ok(member_id)
+    }
+}
+
+// Return a list of members attending the specified events.
+// If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
+pub async fn get_events_participants(
+    event_ids: &[EventId],
+    hosts: bool,
+    db_connection: &sqlx::PgPool,
+) -> Result<Vec<Member>, crate::meetup::Error> {
+    let event_ids: Vec<i32> = event_ids.iter().map(|id| id.0).collect();
+    // Find all members RSVP'd to the specified events
+    let members = if hosts {
+        sqlx::query_as!(
+            MemberQueryHelper,
+            r#"SELECT "member".id as "id!", "member".meetup_id, "member".discord_id, "member".discord_nick
+            FROM event
+            INNER JOIN event_host ON event.id = event_host.event_id
+            INNER JOIN "member" ON event_host.member_id = "member".id
+            WHERE event.id = ANY($1)
+            "#,
+            &event_ids
+        ).map(Into::into).fetch_all(db_connection).await?
+    } else {
+        sqlx::query_as!(
+            MemberQueryHelper,
+            r#"SELECT "member".id as "id!", "member".meetup_id, "member".discord_id, "member".discord_nick
+            FROM event
+            INNER JOIN event_participant ON event.id = event_participant.event_id
+            INNER JOIN "member" ON event_participant.member_id = "member".id
+            WHERE event.id = ANY($1)
+            "#,
+            &event_ids
+        ).map(Into::into).fetch_all(db_connection).await?
+    };
+    Ok(members)
+}
+
+// Try to translate Meetup user IDs to Members. Returns mappings from
+// the Meetup ID to a Member or None if the user is unknown. The order of
+// the mapping is the same as the input order.
+pub async fn meetup_ids_to_members(
+    meetup_user_ids: &[u64],
+    db_connection: &sqlx::PgPool,
+) -> Result<Vec<(u64, Option<Member>)>, crate::meetup::Error> {
+    let meetup_user_ids: Vec<i64> = meetup_user_ids.into_iter().map(|&id| id as i64).collect();
+    let members = sqlx::query!(
+        r#"SELECT query_meetup_id AS "query_meetup_id!", "member".id as "id?", "member".meetup_id, "member".discord_id, "member".discord_nick
+        FROM UNNEST($1::bigint[]) AS query_meetup_id
+        LEFT OUTER JOIN "member" ON query_meetup_id = "member".meetup_id;"#,
+        &meetup_user_ids
+    )
+    .map(|row| {
+        if let Some(id) = row.id {
+            (row.query_meetup_id as u64, Some(Member {
+                id: MemberId(id),
+                meetup_id: row.meetup_id.map(|id| id as u64),
+                discord_id: row.discord_id.map(|id| UserId(id as u64)),
+                discord_nick: row.discord_nick,
+            }))
+        } else {
+            (row.query_meetup_id as u64, None)
+        }
+    })
+    .fetch_all(db_connection)
+    .await?;
+    Ok(members)
 }

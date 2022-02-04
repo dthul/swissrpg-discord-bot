@@ -10,7 +10,6 @@ use std::collections::HashMap;
 // Sends channel deletion reminders to expired Discord channels
 pub async fn create_recurring_end_of_game_task(
     db_connection: sqlx::PgPool,
-    redis_client: redis::Client,
     mut discord_api: crate::discord::CacheAndHttp,
     bot_id: UserId,
 ) -> ! {
@@ -33,24 +32,7 @@ pub async fn create_recurring_end_of_game_task(
     loop {
         // Wait for the next interval tick
         interval_timer.tick().await;
-        let mut redis_connection = match redis_client.get_async_connection().await {
-            Ok(con) => con,
-            Err(err) => {
-                eprintln!(
-                    "End of game task: Could not acquire Redis connection:\n{:#?}",
-                    err
-                );
-                continue;
-            }
-        };
-        if let Err(err) = end_of_game_task(
-            &db_connection,
-            &mut redis_connection,
-            &mut discord_api,
-            bot_id,
-        )
-        .await
-        {
+        if let Err(err) = end_of_game_task(&db_connection, &mut discord_api, bot_id).await {
             eprintln!("End of game task failed:\n{:#?}", err);
         }
     }
@@ -58,7 +40,6 @@ pub async fn create_recurring_end_of_game_task(
 
 pub async fn end_of_game_task(
     db_connection: &sqlx::PgPool,
-    redis_connection: &mut redis::aio::Connection,
     discord_api: &mut crate::discord::CacheAndHttp,
     bot_id: UserId,
 ) -> Result<(), crate::meetup::Error> {

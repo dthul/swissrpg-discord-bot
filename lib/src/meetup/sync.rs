@@ -1,10 +1,9 @@
 use futures_util::{lock::Mutex, stream::StreamExt};
 use lazy_static::lazy_static;
-use redis::{self, AsyncCommands};
 use simple_error::SimpleError;
 use std::sync::Arc;
 
-use crate::DefaultStr;
+use crate::{db, DefaultStr};
 
 pub const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)\[\s*new\s*adventure\s*\]";
 pub const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)\[\s*new\s*campaign\s*\]";
@@ -37,7 +36,6 @@ lazy_static! {
 pub async fn sync_task(
     meetup_client: Arc<Mutex<Option<Arc<super::newapi::AsyncClient>>>>,
     db_connection: &sqlx::PgPool,
-    redis_connection: &mut redis::aio::Connection,
 ) -> Result<crate::free_spots::EventCollector, super::Error> {
     let meetup_client = {
         let guard = meetup_client.lock().await;
@@ -59,7 +57,7 @@ pub async fn sync_task(
             Err(err) => eprintln!("Couldn't query upcoming event: {}", err),
             Ok(event) => {
                 event_collector.add_event(event.clone());
-                match sync_event(event, db_connection, redis_connection).await {
+                match sync_event(event, db_connection).await {
                     Err(err) => eprintln!("Event sync failed: {}", err),
                     _ => (),
                 }
@@ -67,8 +65,18 @@ pub async fn sync_task(
         }
     }
     // Sync event series
-    let event_series: Vec<String> = redis_connection.smembers("event_series").await?;
-    for series_id in event_series {
+    let meetup_active_event_series = sqlx::query!(
+        r#"SELECT event_series.id
+        FROM event_series
+        INNER JOIN event ON event_series.id = event.event_series_id
+        INNER JOIN meetup_event ON event.id = meetup_event.event_id
+        WHERE event.start_time > NOW() AND event.deleted IS NULL
+        GROUP BY event_series.id"#
+    )
+    .map(|row| db::EventSeriesId(row.id))
+    .fetch_all(db_connection)
+    .await?;
+    for series_id in meetup_active_event_series {
         match sync_event_series(series_id, meetup_client.as_ref(), db_connection).await {
             Err(err) => eprintln!("Series sync failed: {}", err),
             _ => (),
@@ -84,7 +92,6 @@ pub async fn sync_task(
 pub async fn sync_event(
     event: super::newapi::UpcomingEventDetails,
     db_connection: &sqlx::PgPool,
-    redis_connection: &mut redis::aio::Connection,
 ) -> Result<(), super::Error> {
     let description = event.description.unwrap_or_str("");
     let title = event.title.unwrap_or_str("No title");
@@ -169,7 +176,7 @@ pub async fn sync_event(
         INNER JOIN event ON meetup_event.event_id = event.id
         WHERE meetup_event.meetup_id = $1
         FOR UPDATE"#,
-        event.id.0).fetch_optional(&mut tx).await?; // TODO: lock something here?
+        event.id.0).fetch_optional(&mut tx).await?;
     let db_meetup_event_id = row.as_ref().map(|row| row.meetup_event_id);
     let db_event_id = row.as_ref().map(|row| row.event_id);
     let existing_series_id = row.as_ref().map(|row| row.event_series_id);
@@ -352,7 +359,7 @@ pub async fn sync_event(
             category_id.map(|id| id as i64)
         ).fetch_one(&mut tx).await?
     };
-    let db_meetup_event_id = if let Some(db_meetup_event_id) = db_meetup_event_id {
+    let _db_meetup_event_id = if let Some(db_meetup_event_id) = db_meetup_event_id {
         sqlx::query_scalar!(
             r#"UPDATE meetup_event
             SET url = $2, urlname = $3
@@ -377,6 +384,18 @@ pub async fn sync_event(
         .await?
     };
 
+    // Mark event hosts
+    if let Some(hosts) = event.hosts {
+        for host in hosts {
+            let member_id = db::get_or_create_member_for_meetup_id(&mut tx, host.id.0).await?;
+            sqlx::query!(
+                r#"INSERT INTO event_host (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+                db_event_id,
+                member_id.0
+            ).execute(&mut tx).await?;
+        }
+    }
+
     tx.commit().await?;
 
     println!("Event syncing task: Synced event \"{}\"", title);
@@ -384,40 +403,41 @@ pub async fn sync_event(
 }
 
 async fn sync_event_series(
-    series_id: String,
+    series_id: db::EventSeriesId,
     meetup_client: &super::newapi::AsyncClient,
     db_connection: &sqlx::PgPool,
 ) -> Result<(), super::Error> {
     // Get all events belonging to this event series
-    let events = super::util::get_events_for_series(redis_connection, &series_id).await?;
-    // Filter past events
-    let now = chrono::Utc::now();
-    let mut upcoming: Vec<_> = events
-        .into_iter()
-        .filter(|event| event.time > now)
-        .collect();
-    // Sort by date
-    upcoming.sort_unstable_by_key(|event| event.time);
+    let upcoming_events = db::get_upcoming_events_for_series(db_connection, series_id).await?;
     // We loop since the next event might have been deleted on Meetup.
     // So we just continue until we find one that has not been deleted or the list is exhausted.
-    for next_event in upcoming {
+    for next_event in upcoming_events {
+        // If this event is not linked to Meetup we don't need to query any RSVPs
+        let meetup_event = if let Some(meetup_event) = next_event.meetup_event {
+            meetup_event
+        } else {
+            break;
+        };
         // The first element in this vector will be the next upcoming event
-        let next_event_id = next_event.id.clone();
-        let next_event_name = &next_event.name;
         println!(
             "Syncing task: Querying RSVPs for event \"{}\"",
-            next_event_name
+            next_event.title
         );
         // Query the RSVPs for that event
-        let tickets = match meetup_client.get_tickets_vec(next_event_id.clone()).await {
+        let tickets = match meetup_client.get_tickets_vec(meetup_event.meetup_id).await {
             Err(super::newapi::Error::ResourceNotFound) => {
-                // Remove this event from Redis
+                // Remove this event from the database
                 eprintln!(
                     "Event {} was deleted from Meetup, removing from database...",
-                    &next_event.id
+                    next_event.id.0
                 );
-                crate::redis::delete_event(redis_connection, &next_event.id).await?;
-                eprintln!("Removed event {} from database", &next_event.id);
+                sqlx::query!(
+                    "UPDATE event SET deleted = NOW() WHERE id = $1",
+                    next_event.id.0
+                )
+                .execute(db_connection)
+                .await?;
+                eprintln!("Removed event {} from database", next_event.id.0);
                 continue;
             }
             Err(err) => return Err(err.into()),
@@ -425,27 +445,15 @@ async fn sync_event_series(
         };
         // Sync the RSVPs
         println!("Syncing task: Found {} RSVPs", tickets.len());
-        sync_rsvps(&next_event_id, tickets, redis_connection).await?;
-        // Mark the "online" status of the event series
-        let redis_series_online_key = format!("event_series:{}:is_online", &series_id);
-        redis_connection
-            .set(
-                &redis_series_online_key,
-                if next_event.is_online {
-                    "true"
-                } else {
-                    "false"
-                },
-            )
-            .await?;
+        sync_rsvps(next_event.id, tickets, db_connection).await?;
     }
     Ok(())
 }
 
 pub async fn sync_rsvps(
-    event_id: &str,
+    event_id: db::EventId,
     tickets: Vec<super::newapi::Ticket>,
-    redis_connection: &mut redis::aio::Connection,
+    db_connection: &sqlx::PgPool,
 ) -> Result<(), super::Error> {
     let rsvp_yes_user_ids: Vec<_> = tickets.iter().map(|ticket| ticket.user.id.0).collect();
     // let rsvp_no_user_ids: Vec<_> = tickets
@@ -457,14 +465,16 @@ pub async fn sync_rsvps(
     //         _ => None,
     //     })
     //     .collect();
-    let redis_event_users_key = format!("meetup_event:{}:meetup_users", event_id);
-    let mut pipe = redis::pipe();
-    if rsvp_yes_user_ids.len() > 0 {
-        pipe.sadd(&redis_event_users_key, rsvp_yes_user_ids);
+    let mut tx = db_connection.begin().await?;
+    for user_id in rsvp_yes_user_ids {
+        let member_id = db::get_or_create_member_for_meetup_id(&mut tx, user_id).await?;
+        // Mark this member as attending
+        sqlx::query!(
+            r#"INSERT INTO event_participant (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+            event_id.0,
+            member_id.0
+        ).execute(&mut tx).await?;
     }
-    // if rsvp_no_user_ids.len() > 0 {
-    //     pipe.srem(&redis_event_users_key, rsvp_no_user_ids);
-    // }
-    let _: () = pipe.query_async(redis_connection).await?;
+    tx.commit().await?;
     Ok(())
 }

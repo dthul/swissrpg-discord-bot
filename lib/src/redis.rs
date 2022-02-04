@@ -83,31 +83,6 @@ pub async fn async_redis_transaction<
 //     Ok(())
 // }
 
-// // Return a list of Meetup IDs of all participants of the specified events.
-// // If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
-// pub async fn get_events_participants(
-//     event_ids: &[&str],
-//     hosts: bool,
-//     redis_connection: &mut redis::aio::Connection,
-// ) -> Result<Vec<u64>, crate::meetup::Error> {
-//     // Find all Meetup users RSVP'd to the specified events
-//     let redis_event_users_keys: Vec<_> = event_ids
-//         .iter()
-//         .map(|event_id| {
-//             if hosts {
-//                 format!("meetup_event:{}:meetup_hosts", event_id)
-//             } else {
-//                 format!("meetup_event:{}:meetup_users", event_id)
-//             }
-//         })
-//         .collect();
-//     let (meetup_user_ids,): (Vec<u64>,) = redis::pipe()
-//         .sunion(redis_event_users_keys)
-//         .query_async(redis_connection)
-//         .await?;
-//     Ok(meetup_user_ids)
-// }
-
 // Try to translate Meetup user IDs to Discord user IDs. Returns mappings from
 // the Meetup ID to a Discord ID or None if the user is not linked. The order of
 // the mapping is the same as the input order.
