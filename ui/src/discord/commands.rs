@@ -1,6 +1,5 @@
 use futures_util::lock::Mutex as AsyncMutex;
 use once_cell::sync::OnceCell;
-use redis::AsyncCommands;
 use regex::{Regex, RegexSet};
 use serenity::{
     model::{
@@ -14,7 +13,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 mod add_user;
-mod archive;
+// mod archive;
 // mod clone_event;
 mod count_inactive;
 mod end_adventure;
@@ -117,15 +116,6 @@ pub struct CommandContext {
     channel: OnceCell<Channel>,
     pool: OnceCell<sqlx::PgPool>,
 }
-
-// Send + Sync: redis::Client
-// Send: redis::aio::Connection, Context
-
-// fn test(context: CommandContext) {
-//     assert_impl::assert_impl!(Sync: CommandContext);
-// }
-
-// unsafe impl Sync for CommandContext {}
 
 impl CommandContext {
     pub fn new(ctx: Context, msg: Message) -> Self {
@@ -306,26 +296,30 @@ impl CommandContext {
         let ctx = (&self.ctx).into();
         let channel_id = self.msg.channel_id;
         let user_id = self.msg.author.id;
-        let redis_connection = self.async_redis_connection().await?;
-        lib::discord::is_host(&ctx, channel_id, user_id, redis_connection).await
+        let pool = self.pool().await?;
+        lib::discord::is_host(&ctx, channel_id, user_id, &pool).await
     }
 
     pub async fn is_game_channel(&mut self) -> Result<bool, lib::meetup::Error> {
         let channel_id = self.msg.channel_id.0;
-        Ok(self
-            .async_redis_connection()
-            .await?
-            .sismember("discord_channels", channel_id)
-            .await?)
+        let pool = self.pool().await?;
+        Ok(sqlx::query_scalar!(
+            r#"SELECT COUNT(*) > 0 AS "is_game_channel!" FROM event_series_text_channel WHERE discord_id = $1"#,
+            channel_id as i64
+        )
+        .fetch_one(&pool)
+        .await?)
     }
 
     pub async fn is_managed_channel(&mut self) -> Result<bool, lib::meetup::Error> {
         let channel_id = self.msg.channel_id.0;
-        Ok(self
-            .async_redis_connection()
-            .await?
-            .sismember("managed_discord_channels", channel_id)
-            .await?)
+        let pool = self.pool().await?;
+        Ok(sqlx::query_scalar!(
+            r#"SELECT COUNT(*) > 0 AS "is_managed_channel!" FROM managed_channel WHERE discord_id = $1"#,
+            channel_id as i64
+        )
+        .fetch_one(&pool)
+        .await?)
     }
 }
 
