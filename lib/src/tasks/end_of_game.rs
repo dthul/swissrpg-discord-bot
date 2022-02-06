@@ -322,7 +322,8 @@ async fn send_channel_expiration_reminder(
         }
         // Send a reminder and update the last reminder time
         println!("Reminding channel {} of its expiration", channel_id);
-        let channel_roles = crate::get_channel_roles(channel_id, db_connection).await?;
+        let channel_roles =
+            crate::get_channel_roles(channel_id, &mut db_connection.begin().await?).await?;
         let user_role = channel_roles.map(|roles| roles.user);
         channel_id
             .send_message(&discord_api.http, |message_builder| {

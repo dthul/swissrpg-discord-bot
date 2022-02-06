@@ -95,6 +95,13 @@ fn main() {
         .block_on(
             PgPoolOptions::new()
                 .max_connections(5)
+                .after_connect(|conn| {
+                    Box::pin(async move {
+                        conn.execute("SET default_transaction_isolation TO 'serializable'")
+                            .await?;
+                        Ok(())
+                    })
+                })
                 .connect(&database_url),
         )
         .expect("Could not connect to the Postgres database");

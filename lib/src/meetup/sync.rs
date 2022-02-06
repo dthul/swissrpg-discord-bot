@@ -210,6 +210,19 @@ pub async fn sync_event(
         None
     };
 
+    // If a channel was indicated make sure it's not managed already
+    if let Some(indicated_channel_id) = indicated_channel_id {
+        let is_managed_channel = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) > 0 as "is_managed!" FROM managed_channel WHERE discord_id = $1"#,
+            indicated_channel_id as i64
+        )
+        .fetch_one(&mut tx)
+        .await?;
+        if is_managed_channel {
+            eprintln!("Event syncing task: Meetup event {} indicates a channel but that channel is already managed", event.id);
+            return Ok(());
+        }
+    }
     // Is there already a series ID for the possibly indicated channel?
     let indicated_channel_series = if let Some(indicated_channel_id) = indicated_channel_id {
         let indicated_channel_series = sqlx::query_scalar!(

@@ -59,7 +59,8 @@ pub async fn is_host(
     });
     if !is_host {
         // Maybe the user is still on the old host roles
-        let channel_roles = crate::get_channel_roles(channel_id, db_connection).await?;
+        let channel_roles =
+            crate::get_channel_roles(channel_id, &mut db_connection.begin().await?).await?;
         if let Some(crate::ChannelRoles {
             host: Some(host_role),
             ..

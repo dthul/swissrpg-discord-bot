@@ -53,23 +53,23 @@ use serenity::model::id::{ChannelId, UserId};
 // create_wrapped_type!(EventSeriesId, i32);
 // create_wrapped_type!(DiscordUserId, u64);
 
-#[derive(sqlx::Type, Debug, Clone, Copy)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
 #[sqlx(transparent)]
 pub struct EventSeriesId(pub i32);
 
-#[derive(sqlx::Type, Debug, Clone, Copy)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
 #[sqlx(transparent)]
 pub struct EventId(pub i32);
 
-#[derive(sqlx::Type, Debug, Clone, Copy)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
 #[sqlx(transparent)]
 pub struct MeetupEventId(pub i32);
 
-#[derive(sqlx::Type, Debug, Clone, Copy)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
 #[sqlx(transparent)]
 pub struct DiscordChannelId(pub u64);
 
-#[derive(sqlx::Type, Debug, Clone, Copy)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
 #[sqlx(transparent)]
 pub struct MemberId(pub i32);
 

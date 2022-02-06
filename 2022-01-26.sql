@@ -62,7 +62,7 @@ CREATE TABLE event (
     description text NOT NULL,
     is_online boolean NOT NULL DEFAULT FALSE,
     discord_category_id bigint,
-    deleted timestamp (0) with time zone,
+    deleted timestamp (0) with time zone
 );
 ALTER SEQUENCE event_id_seq OWNED BY event.id;
 -- CREATE INDEX event_id_idx ON event USING btree (id);

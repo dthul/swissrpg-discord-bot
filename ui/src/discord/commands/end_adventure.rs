@@ -25,26 +25,15 @@ fn end_adventure<'a>(
             .ok();
         return Ok(());
     };
-    // Figure out whether there is an associated voice channel
-    let voice_channel_id = lib::get_channel_voice_channel(
-        context.msg.channel_id,
-        context.async_redis_connection().await?,
-    )
-    .await?;
+    let pool = context.pool().await?;
+    let mut tx = pool.begin().await?;
     // Check if there is a channel expiration time in the future
-    let redis_channel_expiration_key = format!(
-        "discord_channel:{}:expiration_time",
-        context.msg.channel_id.0
-    );
-    let expiration_time: Option<String> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_channel_expiration_key)
-        .await?;
-    let expiration_time = expiration_time
-        .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
-        .transpose()?
-        .map(|t| t.with_timezone(&chrono::Utc));
+    let expiration_time = sqlx::query_scalar!(
+        r#"SELECT expiration_time FROM event_series_text_channel WHERE discord_id = $1"#,
+        context.msg.channel_id.0 as i64
+    )
+    .fetch_one(&mut tx)
+    .await?;
     let expiration_time = if let Some(expiration_time) = expiration_time {
         expiration_time
     } else {
@@ -67,17 +56,12 @@ fn end_adventure<'a>(
     }
     // Schedule this channel for deletion
     let new_deletion_time = chrono::Utc::now() + chrono::Duration::hours(8);
-    let redis_channel_deletion_key =
-        format!("discord_channel:{}:deletion_time", context.msg.channel_id.0);
-    let current_deletion_time: Option<String> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_channel_deletion_key)
-        .await?;
-    let current_deletion_time = current_deletion_time
-        .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
-        .transpose()?
-        .map(|t| t.with_timezone(&chrono::Utc));
+    let current_deletion_time = sqlx::query_scalar!(
+        r#"SELECT deletion_time FROM event_series_text_channel WHERE discord_id = $1"#,
+        context.msg.channel_id.0 as i64
+    )
+    .fetch_one(&mut tx)
+    .await?;
     if let Some(current_deletion_time) = current_deletion_time {
         if new_deletion_time > current_deletion_time && current_deletion_time > expiration_time {
             context
@@ -92,20 +76,45 @@ fn end_adventure<'a>(
             return Ok(());
         }
     }
-    let mut pipe = redis::pipe();
-    pipe.set(&redis_channel_deletion_key, new_deletion_time.to_rfc3339());
+    // Figure out whether there is an associated voice channel
+    let voice_channel_id = lib::get_channel_voice_channel(context.msg.channel_id, &mut tx).await?;
+    let channel_roles = lib::get_channel_roles(context.msg.channel_id, &mut tx).await?;
+    sqlx::query!(
+        r#"UPDATE event_series_text_channel SET deletion_time = $2 WHERE discord_id = $1"#,
+        context.msg.channel_id.0 as i64,
+        new_deletion_time
+    )
+    .execute(&mut tx)
+    .await?;
     // If there is an associated voice channel, mark it also for deletion
     if let Some(voice_channel_id) = voice_channel_id {
-        let redis_voice_channel_deletion_key =
-            format!("discord_voice_channel:{}:deletion_time", voice_channel_id.0);
-        pipe.set(
-            &redis_voice_channel_deletion_key,
-            new_deletion_time.to_rfc3339(),
-        );
-    }
-    let _: () = pipe
-        .query_async(context.async_redis_connection().await?)
+        sqlx::query!(
+            r#"UPDATE event_series_voice_channel SET deletion_time = $2 WHERE discord_id = $1"#,
+            voice_channel_id.0 as i64,
+            new_deletion_time
+        )
+        .execute(&mut tx)
         .await?;
+    }
+    if let Some(channel_roles) = channel_roles {
+        sqlx::query!(
+            r#"UPDATE event_series_role SET deletion_time = $2 WHERE discord_id = $1"#,
+            channel_roles.user.0 as i64,
+            new_deletion_time
+        )
+        .execute(&mut tx)
+        .await?;
+        if let Some(host_role_id) = channel_roles.host {
+            sqlx::query!(
+                r#"UPDATE event_series_host_role SET deletion_time = $2 WHERE discord_id = $1"#,
+                host_role_id.0 as i64,
+                new_deletion_time
+            )
+            .execute(&mut tx)
+            .await?;
+        }
+    }
+    tx.commit().await?;
     context
         .msg
         .channel_id
