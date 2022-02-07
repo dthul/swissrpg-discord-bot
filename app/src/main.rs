@@ -3,7 +3,7 @@
 
 use futures::future;
 use redis::Commands;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{postgres::PgPoolOptions, Executor};
 use std::{
     env,
     sync::{
@@ -154,6 +154,7 @@ fn main() {
         meetup_oauth2_consumer.clone(),
         ([127, 0, 0, 1], port).into(),
         redis_client.clone(),
+        pool.clone(),
         async_meetup_client.clone(),
         discord_api.clone(),
         bot_name,
@@ -178,7 +179,7 @@ fn main() {
 
     // Schedule the end of game task
     let end_of_game_task = lib::tasks::end_of_game::create_recurring_end_of_game_task(
-        redis_client.clone(),
+        pool.clone(),
         discord_api.clone(),
         bot_id,
     );
@@ -192,6 +193,7 @@ fn main() {
 
     let static_file_prefix = Box::leak(format!("{}/static/", lib::urls::BASE_URL).into_boxed_str());
     let syncing_task = lib::tasks::sync::create_recurring_syncing_task(
+        pool.clone(),
         redis_client.clone(),
         async_meetup_client.clone(),
         discord_api.clone(),

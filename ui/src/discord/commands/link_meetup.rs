@@ -37,7 +37,7 @@ fn link_meetup<'a>(
             .ok();
         return Ok(());
     };
-    let user_id = context.msg.author.id.0;
+    let user_id = context.msg.author.id;
     let url = lib::meetup::oauth2::generate_meetup_linking_link(
         context.async_redis_connection().await?,
         user_id,
@@ -93,7 +93,6 @@ fn link_meetup_bot_admin<'a>(
 ) -> super::CommandResult<'a> {
     let discord_id = captures.name("mention_id").unwrap().as_str();
     let meetup_id = captures.name("meetupid").unwrap().as_str();
-    let bot_id = context.bot_id().await?;
     // Try to convert the specified ID to an integer
     let (discord_id, meetup_id) = match (discord_id.parse::<u64>(), meetup_id.parse::<u64>()) {
         (Ok(id1), Ok(id2)) => (UserId(id1), id2),

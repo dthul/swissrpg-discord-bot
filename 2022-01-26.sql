@@ -120,12 +120,3 @@ CREATE TABLE event_participant (
 );
 CREATE INDEX event_participants_event_id_idx ON event_participant USING btree (event_id);
 CREATE INDEX event_participants_member_id_idx ON event_participant USING btree (member_id);
-
--- use sqlx::postgres::PgPoolOptions;
-
--- let pg_pool = PgPoolOptions::new()
---     .after_connect(|conn| Box::pin(async move {
---         conn.execute("SET default_transaction_isolation TO 'repeatable read'").await?;
---         Ok(())
---     }))
---     .connect(&uri).await?;

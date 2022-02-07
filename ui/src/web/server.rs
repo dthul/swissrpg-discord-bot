@@ -100,6 +100,7 @@ pub fn create_server(
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     addr: std::net::SocketAddr,
     redis_client: redis::Client,
+    pool: sqlx::PgPool,
     async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     discord_cache_http: lib::discord::CacheAndHttp,
     bot_name: String,
@@ -110,12 +111,14 @@ pub fn create_server(
 ) -> impl Future<Output = ()> + Send + 'static {
     let linking_routes = super::linking::create_routes(
         redis_client.clone(),
+        pool.clone(),
         oauth2_consumer.clone(),
         async_meetup_client.clone(),
         bot_name.clone(),
     );
     let schedule_session_routes = super::schedule_session::create_routes(
         redis_client.clone(),
+        pool.clone(),
         async_meetup_client.clone(),
         discord_cache_http.clone(),
     );

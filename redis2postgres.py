@@ -174,6 +174,19 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
             )
     print()
 
+    print("Transferring managed Discord channels")
+    discord_managed_channel_ids = [
+        int(channel_id.decode("utf8"))
+        for channel_id in r.smembers("managed_discord_channels")
+    ]
+    for i, discord_managed_channel_id in enumerate(discord_managed_channel_ids):
+        print(f"\r{i+1} / {len(discord_managed_channel_ids)}", end="", flush=True)
+        with conn.transaction():
+            cur.execute(
+                "INSERT INTO managed_channel (discord_id) VALUES (%s)",
+                (discord_managed_channel_id,),
+            )
+
     print("Transferring event series")
     event_series_ids = [
         series_id.decode("utf8") for series_id in r.smembers("event_series")
@@ -334,3 +347,72 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
                 (sql_event_id, meetup_event_id, link, urlname),
             )
     print()
+
+    def member_for_meetup_id(meetup_id: int):
+        with conn.transaction():
+            result_row = cur.execute(
+                "SELECT id FROM member WHERE meetup_id = %s", (meetup_id,)
+            ).fetchone()
+            if result_row is not None:
+                member_id = result_row[0]
+                return member_id
+            # Create a new member
+            discord_id = r.get(f"meetup_user:{meetup_id}:discord_user")
+            if discord_id is not None:
+                discord_id = int(discord_id.decode("utf8"))
+                result_row = cur.execute(
+                    "INSERT INTO member (meetup_id, discord_id) VALUES (%s, %s) RETURNING id",
+                    meetup_id,
+                    discord_id,
+                ).fetchone()
+                member_id = result_row[0]
+                return member_id
+            else:
+                result_row = cur.execute(
+                    "INSERT INTO member (meetup_id) VALUES (%s) RETURNING id",
+                    meetup_id,
+                ).fetchone()
+                member_id = result_row[0]
+                return member_id
+
+    print("Transferring event hosts")
+    for i, meetup_event_id in enumerate(meetup_event_ids):
+        print(f"\r{i+1} / {len(meetup_event_ids)}", end="", flush=True)
+        result_row = cur.execute(
+            "SELECT event.id FROM event INNER JOIN meetup_event ON event.id = meetup_event.event_id WHERE meetup_event.meetup_id = %s",
+            (meetup_event_id,),
+        ).fetchone()
+        event_id = result_row[0]
+        meetup_host_ids = [
+            int(host_id.decode("utf8"))
+            for host_id in r.smembers(f"meetup_event:{meetup_event_id}:meetup_hosts")
+        ]
+        for meetup_host_id in meetup_host_ids:
+            member_id = member_for_meetup_id(meetup_host_id)
+            with conn.transaction():
+                cur.execute(
+                    "INSERT INTO event_host (event_id, member_id) VALUES (%s, %s)",
+                    (event_id, member_id),
+                )
+
+    print("Transferring event participants")
+    for i, meetup_event_id in enumerate(meetup_event_ids):
+        print(f"\r{i+1} / {len(meetup_event_ids)}", end="", flush=True)
+        result_row = cur.execute(
+            "SELECT event.id FROM event INNER JOIN meetup_event ON event.id = meetup_event.event_id WHERE meetup_event.meetup_id = %s",
+            (meetup_event_id,),
+        ).fetchone()
+        event_id = result_row[0]
+        meetup_participant_ids = [
+            int(participant_id.decode("utf8"))
+            for participant_id in r.smembers(
+                f"meetup_event:{meetup_event_id}:meetup_users"
+            )
+        ]
+        for meetup_participant_id in meetup_participant_ids:
+            member_id = member_for_meetup_id(meetup_participant_id)
+            with conn.transaction():
+                cur.execute(
+                    "INSERT INTO event_participant (event_id, member_id) VALUES (%s, %s)",
+                    (event_id, member_id),
+                )

@@ -72,6 +72,21 @@ pub async fn get_channel_roles(
     }
 }
 
+pub async fn get_series_text_channel(
+    event_series_id: db::EventSeriesId,
+    db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<Option<ChannelId>, crate::meetup::Error> {
+    let discord_text_channel_id = sqlx::query_scalar!(
+        "SELECT discord_text_channel_id FROM event_series WHERE id = $1",
+        event_series_id.0
+    )
+    .fetch_optional(db_connection)
+    .await?;
+    Ok(discord_text_channel_id
+        .flatten()
+        .map(|id| ChannelId(id as u64)))
+}
+
 pub async fn get_series_voice_channel(
     event_series_id: db::EventSeriesId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,

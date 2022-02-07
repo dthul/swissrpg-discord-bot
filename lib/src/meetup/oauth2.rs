@@ -2,18 +2,19 @@ use oauth2::{
     basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenResponse, TokenUrl,
 };
 use redis::AsyncCommands;
+use serenity::model::id::UserId;
 use simple_error::SimpleError;
 use std::sync::Arc;
 
 // TODO: move into flow?
 pub async fn generate_meetup_linking_link(
     redis_connection: &mut redis::aio::Connection,
-    discord_id: u64,
+    discord_id: UserId,
 ) -> Result<String, super::Error> {
     let linking_id = crate::new_random_id(16);
     // TODO: expire after a day or so? linking.rs adds a 10 min expiration after first opening
     let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
-    if let Err::<(), _>(err) = redis_connection.set(&redis_key, discord_id).await {
+    if let Err::<(), _>(err) = redis_connection.set(&redis_key, discord_id.0).await {
         return Err(SimpleError::new(format!(
             "Redis error when trying to generate Meetup linking link:\n{:#?}",
             err
