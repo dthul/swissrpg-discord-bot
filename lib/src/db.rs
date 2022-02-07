@@ -53,23 +53,23 @@ use serenity::model::id::{ChannelId, UserId};
 // create_wrapped_type!(EventSeriesId, i32);
 // create_wrapped_type!(DiscordUserId, u64);
 
-#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[sqlx(transparent)]
 pub struct EventSeriesId(pub i32);
 
-#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[sqlx(transparent)]
 pub struct EventId(pub i32);
 
-#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[sqlx(transparent)]
 pub struct MeetupEventId(pub i32);
 
-#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[sqlx(transparent)]
 pub struct DiscordChannelId(pub u64);
 
-#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[sqlx(transparent)]
 pub struct MemberId(pub i32);
 
@@ -108,6 +108,42 @@ pub struct Member {
     pub meetup_id: Option<u64>,
     pub discord_id: Option<UserId>,
     pub discord_nick: Option<String>,
+}
+
+pub struct MemberWithMeetup {
+    pub id: MemberId,
+    pub meetup_id: u64,
+    pub discord_id: Option<UserId>,
+    pub discord_nick: Option<String>,
+}
+
+pub struct MemberWithDiscord {
+    pub id: MemberId,
+    pub meetup_id: Option<u64>,
+    pub discord_id: UserId,
+    pub discord_nick: Option<String>,
+}
+
+impl From<MemberWithMeetup> for Member {
+    fn from(member: MemberWithMeetup) -> Self {
+        Member {
+            id: member.id,
+            meetup_id: Some(member.meetup_id),
+            discord_id: member.discord_id,
+            discord_nick: member.discord_nick,
+        }
+    }
+}
+
+impl From<MemberWithDiscord> for Member {
+    fn from(member: MemberWithDiscord) -> Self {
+        Member {
+            id: member.id,
+            meetup_id: member.meetup_id,
+            discord_id: Some(member.discord_id),
+            discord_nick: member.discord_nick,
+        }
+    }
 }
 
 struct MemberQueryHelper {
@@ -301,24 +337,58 @@ pub async fn get_events_participants(
 pub async fn meetup_ids_to_members(
     meetup_user_ids: &[u64],
     db_connection: &sqlx::PgPool,
-) -> Result<Vec<(u64, Option<Member>)>, crate::meetup::Error> {
+) -> Result<Vec<(u64, Option<MemberWithMeetup>)>, crate::meetup::Error> {
     let meetup_user_ids: Vec<i64> = meetup_user_ids.into_iter().map(|&id| id as i64).collect();
     let members = sqlx::query!(
-        r#"SELECT query_meetup_id AS "query_meetup_id!", "member".id as "id?", "member".meetup_id, "member".discord_id, "member".discord_nick
+        r#"SELECT query_meetup_id AS "query_meetup_id!", "member".id as "id?", "member".discord_id, "member".discord_nick
         FROM UNNEST($1::bigint[]) AS query_meetup_id
         LEFT OUTER JOIN "member" ON query_meetup_id = "member".meetup_id;"#,
         &meetup_user_ids
     )
     .map(|row| {
         if let Some(id) = row.id {
-            (row.query_meetup_id as u64, Some(Member {
+            (row.query_meetup_id as u64, Some(MemberWithMeetup {
                 id: MemberId(id),
-                meetup_id: row.meetup_id.map(|id| id as u64),
+                meetup_id: row.query_meetup_id as u64,
                 discord_id: row.discord_id.map(|id| UserId(id as u64)),
                 discord_nick: row.discord_nick,
             }))
         } else {
             (row.query_meetup_id as u64, None)
+        }
+    })
+    .fetch_all(db_connection)
+    .await?;
+    Ok(members)
+}
+
+// Try to translate Discord user IDs to Members. Returns mappings from
+// the Discord ID to a Member or None if the user is unknown. The order of
+// the mapping is the same as the input order.
+pub async fn discord_ids_to_members(
+    discord_user_ids: &[UserId],
+    db_connection: &sqlx::PgPool,
+) -> Result<Vec<(UserId, Option<MemberWithDiscord>)>, crate::meetup::Error> {
+    let discord_user_ids: Vec<i64> = discord_user_ids
+        .into_iter()
+        .map(|&id| id.0 as i64)
+        .collect();
+    let members = sqlx::query!(
+        r#"SELECT query_discord_id AS "query_discord_id!", "member".id as "id?", "member".meetup_id, "member".discord_nick
+        FROM UNNEST($1::bigint[]) AS query_discord_id
+        LEFT OUTER JOIN "member" ON query_discord_id = "member".discord_id;"#,
+        &discord_user_ids
+    )
+    .map(|row| {
+        if let Some(id) = row.id {
+            (UserId(row.query_discord_id as u64), Some(MemberWithDiscord {
+                id: MemberId(id),
+                meetup_id: row.meetup_id.map(|id| id as u64),
+                discord_id: UserId(row.query_discord_id as u64),
+                discord_nick: row.discord_nick,
+            }))
+        } else {
+            (UserId(row.query_discord_id as u64), None)
         }
     })
     .fetch_all(db_connection)

@@ -9,11 +9,13 @@ fn sync_discord<'a>(
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     let mut redis_connection = context.redis_client().await?.get_async_connection().await?;
+    let pool = context.pool().await?;
     let mut discord_api = (&context.ctx).into();
     let bot_id = context.bot_id().await?;
     // Spawn the syncing task
     tokio::spawn(async move {
-        lib::discord::sync::sync_discord(&mut redis_connection, &mut discord_api, bot_id.0).await
+        lib::discord::sync::sync_discord(&mut redis_connection, &pool, &mut discord_api, bot_id.0)
+            .await
     });
     context
         .msg

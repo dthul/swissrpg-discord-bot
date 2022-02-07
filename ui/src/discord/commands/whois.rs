@@ -1,5 +1,5 @@
 use command_macro::command;
-use redis::AsyncCommands;
+use lib::db;
 use serenity::model::id::UserId;
 
 #[command]
@@ -72,14 +72,16 @@ async fn whois_by_discord_id(
     context: &mut super::CommandContext,
     user_id: UserId,
 ) -> Result<(), lib::meetup::Error> {
-    let redis_discord_meetup_key = format!("discord_user:{}:meetup_user", user_id.0);
-    let res: Option<String> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_discord_meetup_key)
-        .await?;
-    match res {
-        Some(meetup_id) => {
+    let pool = context.pool().await?;
+    let member = db::discord_ids_to_members(&[user_id], &pool).await?;
+    match member.as_slice() {
+        [(
+            _,
+            Some(db::MemberWithDiscord {
+                meetup_id: Some(meetup_id),
+                ..
+            }),
+        )] => {
             context
                 .msg
                 .channel_id
@@ -93,7 +95,7 @@ async fn whois_by_discord_id(
                 .await
                 .ok();
         }
-        None => {
+        _ => {
             context
                 .msg
                 .channel_id
@@ -149,14 +151,16 @@ async fn whois_by_meetup_id(
     context: &mut super::CommandContext,
     meetup_id: u64,
 ) -> Result<(), lib::meetup::Error> {
-    let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
-    let res: Option<String> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_meetup_discord_key)
-        .await?;
-    match res {
-        Some(discord_id) => {
+    let pool = context.pool().await?;
+    let member = db::meetup_ids_to_members(&[meetup_id], &pool).await?;
+    match member.as_slice() {
+        [(
+            _,
+            Some(db::MemberWithMeetup {
+                discord_id: Some(discord_id),
+                ..
+            }),
+        )] => {
             context
                 .msg
                 .channel_id
@@ -170,7 +174,7 @@ async fn whois_by_meetup_id(
                 .await
                 .ok();
         }
-        None => {
+        _ => {
             context
                 .msg
                 .channel_id

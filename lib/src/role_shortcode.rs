@@ -87,6 +87,7 @@ impl EventCollector {
                 members
                     .into_iter()
                     .filter_map(|(_, member)| member)
+                    .map(Into::into)
                     .collect()
             };
             // Assign each role to each user

@@ -108,6 +108,7 @@ fn link_meetup_bot_admin<'a>(
     let pool = context.pool().await?;
     let mut tx = pool.begin().await?;
     let linking_result = lib::link_discord_meetup(discord_id, meetup_id, &mut tx).await?;
+    tx.commit().await?;
     match linking_result {
         LinkingResult::Success {
             action: LinkingAction::AlreadyLinked,

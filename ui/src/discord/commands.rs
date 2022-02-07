@@ -26,7 +26,6 @@ mod manage_channel;
 mod numcached;
 // mod refresh_meetup_token;
 // mod remind_expiration;
-// mod rsvp_user;
 mod schedule_session;
 mod snooze;
 mod stop;
@@ -66,9 +65,8 @@ static ALL_COMMANDS: &[&Command] = &[
     &count_inactive::COUNT_INACTIVE_COMMAND,
     &count_inactive::COUNT_MEMBERS_COMMAND,
     // &clone_event::CLONE_EVENT_COMMAND,
-    // &rsvp_user::RSVP_USER_COMMAND,
     // &test::TEST_COMMAND,
-    &archive::ARCHIVE_COMMAND,
+    // &archive::ARCHIVE_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
@@ -300,15 +298,23 @@ impl CommandContext {
         lib::discord::is_host(&ctx, channel_id, user_id, &pool).await
     }
 
-    pub async fn is_game_channel(&mut self) -> Result<bool, lib::meetup::Error> {
+    pub async fn is_game_channel(
+        &mut self,
+        tx: Option<&mut sqlx::Transaction<'_, sqlx::Postgres>>,
+    ) -> Result<bool, lib::meetup::Error> {
         let channel_id = self.msg.channel_id.0;
-        let pool = self.pool().await?;
-        Ok(sqlx::query_scalar!(
+        let query = sqlx::query_scalar!(
             r#"SELECT COUNT(*) > 0 AS "is_game_channel!" FROM event_series_text_channel WHERE discord_id = $1"#,
             channel_id as i64
-        )
-        .fetch_one(&pool)
-        .await?)
+        );
+        let res = match tx {
+            Some(tx) => query.fetch_one(tx).await?,
+            None => {
+                let pool = self.pool().await?;
+                query.fetch_one(&pool).await?
+            }
+        };
+        Ok(res)
     }
 
     pub async fn is_managed_channel(&mut self) -> Result<bool, lib::meetup::Error> {

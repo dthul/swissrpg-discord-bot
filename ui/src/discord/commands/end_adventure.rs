@@ -1,5 +1,4 @@
 use command_macro::command;
-use redis::AsyncCommands;
 use serenity::model::channel::Channel;
 
 #[command]
@@ -15,7 +14,7 @@ fn end_adventure<'a>(
 ) -> super::CommandResult<'a> {
     // TODO: make this a macro check
     // Check whether this is a game channel
-    let is_game_channel = context.is_game_channel().await?;
+    let is_game_channel = context.is_game_channel(None).await?;
     if !is_game_channel {
         context
             .msg

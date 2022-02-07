@@ -141,7 +141,7 @@ async fn channel_add_or_remove_user_impl(
     as_host: bool,
 ) -> Result<(), lib::meetup::Error> {
     // Check whether this is a bot controlled channel
-    let is_game_channel = context.is_game_channel().await?;
+    let is_game_channel = context.is_game_channel(None).await?;
     let is_managed_channel = context.is_managed_channel().await?;
     let is_bot_admin = context.is_admin().await?;
     // Only bot admins can add/remove hosts
