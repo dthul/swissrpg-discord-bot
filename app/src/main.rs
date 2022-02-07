@@ -167,14 +167,14 @@ fn main() {
     // Organizer OAuth2 token refresh task
     let organizer_token_refresh_task = lib::tasks::token_refresh::organizer_token_refresh_task(
         (*meetup_oauth2_consumer).clone(),
-        redis_client.clone(),
+        pool.clone(),
         async_meetup_client.clone(),
     );
 
     // Users OAuth2 token refresh task
     let users_token_refresh_task = lib::tasks::token_refresh::users_token_refresh_task(
         (*meetup_oauth2_consumer).clone(),
-        redis_client.clone(),
+        pool.clone(),
     );
 
     // Schedule the end of game task

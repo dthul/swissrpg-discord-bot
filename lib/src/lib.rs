@@ -312,6 +312,35 @@ pub async fn link_discord_meetup(
     }
 }
 
+pub enum UnlinkingResult {
+    Success,
+    NotLinked,
+}
+
+pub async fn unlink_meetup(
+    discord_id: UserId,
+    db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<UnlinkingResult, crate::meetup::Error> {
+    let meetup_id = sqlx::query!(
+        r#"SELECT meetup_id FROM "member" WHERE discord_id = $1"#,
+        discord_id.0 as i64
+    )
+    .map(|row| row.meetup_id.map(|id| id as u64))
+    .fetch_one(&mut *db_connection)
+    .await?;
+    if meetup_id.is_none() {
+        Ok(UnlinkingResult::NotLinked)
+    } else {
+        sqlx::query!(
+            r#"UPDATE "member" SET meetup_id = NULL WHERE discord_id = $1"#,
+            discord_id.0 as i64
+        )
+        .execute(&mut *db_connection)
+        .await?;
+        Ok(UnlinkingResult::Success)
+    }
+}
+
 pub trait DefaultStr {
     fn unwrap_or_str<'s>(&'s self, default: &'s str) -> &'s str;
 }

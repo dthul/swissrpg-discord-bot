@@ -1,6 +1,7 @@
 use command_macro::command;
-use lib::{LinkingAction, LinkingMemberDiscord, LinkingMemberMeetup, LinkingResult};
-use redis::AsyncCommands;
+use lib::{
+    LinkingAction, LinkingMemberDiscord, LinkingMemberMeetup, LinkingResult, UnlinkingResult,
+};
 use serenity::model::id::UserId;
 use std::borrow::Cow;
 
@@ -205,21 +206,12 @@ async fn unlink_meetup_impl(
     is_bot_admin_command: bool,
     user_id: UserId,
 ) -> Result<(), lib::meetup::Error> {
-    let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
-    // Check if there is actually a meetup id linked to this user
-    let linked_meetup_id: Option<u64> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_key_d2m)
-        .await?;
-    match linked_meetup_id {
-        Some(meetup_id) => {
-            let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
-            context
-                .async_redis_connection()
-                .await?
-                .del(&[&redis_key_d2m, &redis_key_m2d])
-                .await?;
+    let pool = context.pool().await?;
+    let mut tx = pool.begin().await?;
+    let result = lib::unlink_meetup(user_id, &mut tx).await?;
+    tx.commit().await?;
+    match result {
+        UnlinkingResult::Success => {
             let message = if is_bot_admin_command {
                 format!("Unlinked <@{}>'s Meetup account", user_id)
             } else {
@@ -227,7 +219,7 @@ async fn unlink_meetup_impl(
             };
             context.msg.channel_id.say(&context.ctx, message).await.ok();
         }
-        None => {
+        UnlinkingResult::NotLinked => {
             let message = if is_bot_admin_command {
                 Cow::Owned(format!(
                     "There was seemingly no meetup account linked to <@{}>",

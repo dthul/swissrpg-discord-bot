@@ -1,30 +1,25 @@
-use crate::meetup::oauth2::TokenType;
+use crate::{db, meetup::oauth2::TokenType};
 use chrono::{Datelike, Timelike};
 use futures_util::lock::Mutex;
-use redis::AsyncCommands;
 use std::sync::Arc;
 
 // Refreshes the authorization token
 pub async fn organizer_token_refresh_task(
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
-    redis_client: redis::Client,
+    pool: sqlx::PgPool,
     async_meetup_client: Arc<Mutex<Option<Arc<crate::meetup::newapi::AsyncClient>>>>,
 ) -> ! {
-    let mut next_refresh_time = chrono::Utc::now();
-    if let Ok(mut redis_connection) = redis_client.get_async_connection().await {
-        // Check Redis for a refresh time. If there is one, use that
-        // if it is in the future. Otherwise schedule the task now
-        let refresh_time: redis::RedisResult<Option<String>> = redis_connection
-            .get("meetup_access_token_refresh_time")
+    // Try to get the next scheduled refresh time from the database, otherwise
+    // schedule a refresh immediately
+    let next_refresh_time =
+        sqlx::query_scalar!(r#"SELECT meetup_access_token_refresh_time FROM organizer_token"#)
+            .fetch_optional(&pool)
             .await;
-        // Try to get the next scheduled refresh time from Redis, otherwise
-        // schedule a refresh immediately
-        if let Ok(Some(refresh_time)) = refresh_time {
-            if let Ok(refresh_time) = chrono::DateTime::parse_from_rfc3339(&refresh_time) {
-                next_refresh_time = refresh_time.into();
-            }
-        }
-    }
+    let mut next_refresh_time = if let Ok(Some(next_refresh_time)) = next_refresh_time {
+        next_refresh_time
+    } else {
+        chrono::Utc::now()
+    };
     loop {
         println!(
             "Next organizer token refresh @ {}",
@@ -43,15 +38,10 @@ pub async fn organizer_token_refresh_task(
         // is aborted, the short-lived refresh task still has a chance to run to completion.
         let join_handle = {
             let oauth2_consumer = oauth2_consumer.clone();
-            let redis_client = redis_client.clone();
+            let pool = pool.clone();
             let async_meetup_client = async_meetup_client.clone();
             tokio::spawn(async move {
-                organizer_token_refresh_task_impl(
-                    oauth2_consumer,
-                    redis_client,
-                    async_meetup_client,
-                )
-                .await
+                organizer_token_refresh_task_impl(oauth2_consumer, pool, async_meetup_client).await
             })
         };
         match join_handle.await {
@@ -72,15 +62,14 @@ pub async fn organizer_token_refresh_task(
                     "Refreshed the organizer's Meetup OAuth token. Next refresh @ {}",
                     next_refresh_time.to_rfc3339()
                 );
-                // Store refresh date in Redis, ignore failures
-                if let Ok(mut redis_connection) = redis_client.get_async_connection().await {
-                    let _: redis::RedisResult<()> = redis_connection
-                        .set(
-                            "meetup_access_token_refresh_time",
-                            next_refresh_time.to_rfc3339(),
-                        )
-                        .await;
-                }
+                // Store refresh date in the database, ignore failures
+                sqlx::query!(
+                    r#"UPDATE organizer_token SET meetup_access_token_refresh_time = $1"#,
+                    next_refresh_time
+                )
+                .execute(&pool)
+                .await
+                .ok();
             }
         }
     }
@@ -88,16 +77,14 @@ pub async fn organizer_token_refresh_task(
 
 async fn organizer_token_refresh_task_impl(
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
-    redis_client: redis::Client,
+    pool: sqlx::PgPool,
     async_meetup_client: Arc<Mutex<Option<Arc<crate::meetup::newapi::AsyncClient>>>>,
 ) -> Result<(), crate::meetup::Error> {
-    // Get an async Redis connection
-    let mut redis_connection = redis_client.get_async_connection().await?;
     // Try to refresh the organizer oauth tokens
     let new_auth_token = crate::meetup::oauth2::refresh_oauth_tokens(
         TokenType::Organizer,
         &oauth2_consumer.authorization_client,
-        &mut redis_connection,
+        &pool,
     )
     .await?;
     let mut async_meetup_guard = async_meetup_client.lock().await;
@@ -110,7 +97,7 @@ async fn organizer_token_refresh_task_impl(
 
 pub async fn users_token_refresh_task(
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
-    redis_client: redis::Client,
+    pool: sqlx::PgPool,
 ) -> ! {
     let mut interval_timer = tokio::time::interval_at(
         tokio::time::Instant::now() + tokio::time::Duration::from_secs(60),
@@ -122,23 +109,25 @@ pub async fn users_token_refresh_task(
         interval_timer.tick().await;
         // Poor man's try block
         let res: Result<_, crate::meetup::Error> = (|| async {
-            let mut redis_connection = redis_client.get_async_connection().await?;
-            let meetup_user_ids: Vec<u64> = redis_connection.smembers("meetup_users").await?;
+            let member_ids = sqlx::query!(r#"SELECT id FROM "member""#)
+                .map(|row| db::MemberId(row.id))
+                .fetch_all(&pool)
+                .await?;
             // For each user, check if there is a refresh token.
             // If so, check whether refresh is due.
             println!(
                 "Users token refresh task: Checking {} users",
-                meetup_user_ids.len()
+                member_ids.len()
             );
-            for user_id in meetup_user_ids {
+            for member_id in member_ids {
                 // Try to refresh the user's oauth tokens.
                 // We spawn this onto a new task, such that when this long-lived refresh task
                 // is aborted, the short-lived refresh task still has a chance to run to completion.
                 let join_handle = {
                     let oauth2_consumer = oauth2_consumer.clone();
-                    let redis_client = redis_client.clone();
+                    let pool = pool.clone();
                     tokio::spawn(async move {
-                        user_token_refresh_task_impl(user_id, oauth2_consumer, redis_client).await
+                        user_token_refresh_task_impl(member_id, oauth2_consumer, pool).await
                     })
                 };
                 match join_handle.await {
@@ -165,30 +154,26 @@ pub async fn users_token_refresh_task(
 }
 
 async fn user_token_refresh_task_impl(
-    meetup_user_id: u64,
+    member_id: db::MemberId,
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
-    redis_client: redis::Client,
+    pool: sqlx::PgPool,
 ) -> Result<(), crate::meetup::Error> {
-    // Get an async Redis connection
-    let mut redis_connection = redis_client.get_async_connection().await?;
-    let redis_user_token_key = format!("meetup_user:{}:oauth2_tokens", meetup_user_id);
-    let has_oauth2_tokens: bool = redis_connection.exists(&redis_user_token_key).await?;
-    if !has_oauth2_tokens {
+    // Check if the user has a refresh token
+    let has_refresh_token =
+        sqlx::query_scalar!(r#"SELECT COUNT(*) > 0 AS "has_refresh_token!" FROM "member" WHERE id = $1 AND meetup_oauth2_refresh_token IS NOT NULL"#, member_id.0)
+            .fetch_one(&pool)
+            .await?;
+    if !has_refresh_token {
         // Nothing to do
         return Ok(());
     }
     // Check whether the user's token is due for refresh
-    let redis_user_token_refresh_key = format!(
-        "meetup_user:{}:oauth2_tokens:last_refresh_time",
-        meetup_user_id
-    );
-    let last_refresh_time: Option<String> =
-        redis_connection.get(&redis_user_token_refresh_key).await?;
-    let last_refresh_time = last_refresh_time
-        .map(|time| chrono::DateTime::parse_from_rfc3339(&time))
-        .transpose()
-        .unwrap_or(None)
-        .map(|time| time.with_timezone(&chrono::Utc));
+    let last_refresh_time = sqlx::query_scalar!(
+        r#"SELECT meetup_oauth2_last_token_refresh_time FROM "member" WHERE id = $1"#,
+        member_id.0 as i64
+    )
+    .fetch_one(&pool)
+    .await?;
     if let Some(last_refresh_time) = last_refresh_time {
         // If the last refresh has been more recently than a month, skip it
         if last_refresh_time + chrono::Duration::days(30) > chrono::Utc::now() {
@@ -201,44 +186,29 @@ async fn user_token_refresh_task_impl(
         let day_number = now.num_days_from_ce();
         let hour_number = now.hour(); // [0, 23]
         let bucket_number = (day_number % 4) as u32 * 24 + hour_number; // [0, 95]
-        if (meetup_user_id % 96) as u32 != bucket_number {
+        if (member_id.0 % 96) as u32 != bucket_number {
             // Now is not a good time
             return Ok(());
         }
     }
     // Try to refresh the user's oauth tokens
-    println!("Refreshing oauth2 token of Meetup user {}", meetup_user_id);
+    println!("Refreshing oauth2 token of member {}", member_id.0);
     let new_auth_token = crate::meetup::oauth2::refresh_oauth_tokens(
-        TokenType::User(meetup_user_id),
+        TokenType::Member(member_id),
         &oauth2_consumer.authorization_client,
-        &mut redis_connection,
+        &pool,
     )
     .await;
     match new_auth_token {
         Ok(_) => {
-            let mut pipe = redis::pipe();
-            pipe.sadd("meetup_users_successful_token_refresh", meetup_user_id);
-            pipe.srem("meetup_users_failed_token_refresh", meetup_user_id);
-            let _: redis::RedisResult<()> = pipe.query_async(&mut redis_connection).await;
             println!(
-                "OAuth2 tokens of Meetup user {} successfully refreshed",
-                meetup_user_id
+                "OAuth2 tokens of member {} successfully refreshed",
+                member_id.0
             );
         }
         Err(err) => {
-            let mut pipe = redis::pipe();
-            pipe.sadd("meetup_users_failed_token_refresh", meetup_user_id);
-            pipe.srem("meetup_users_successful_token_refresh", meetup_user_id);
-            let _: redis::RedisResult<()> = pipe.query_async(&mut redis_connection).await;
             return Err(err);
         }
     }
-    // Store the new refresh time in Redis
-    let _: () = redis_connection
-        .set(
-            &redis_user_token_refresh_key,
-            chrono::Utc::now().to_rfc3339(),
-        )
-        .await?;
     Ok(())
 }

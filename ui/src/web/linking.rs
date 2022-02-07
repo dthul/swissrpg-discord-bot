@@ -1,6 +1,6 @@
 use askama::Template;
 use cookie::Cookie;
-use futures_util::{lock::Mutex, FutureExt, TryFutureExt};
+use futures_util::{lock::Mutex, TryFutureExt};
 use hyper::Response;
 use lib::{DefaultStr, LinkingAction, LinkingMemberDiscord, LinkingMemberMeetup, LinkingResult};
 use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, RedirectUrl, Scope, TokenResponse};
@@ -46,6 +46,7 @@ pub fn create_routes(
     };
     let authorize_redirect_route = {
         let redis_client = redis_client.clone();
+        let pool = pool.clone();
         let oauth2_consumer = oauth2_consumer.clone();
         let async_meetup_client = async_meetup_client.clone();
         warp::get()
@@ -54,6 +55,7 @@ pub fn create_routes(
             .and(warp::header::headers_cloned())
             .and_then(move |query: LinkQuery, headers| {
                 let redis_client = redis_client.clone();
+                let pool = pool.clone();
                 let oauth2_consumer = oauth2_consumer.clone();
                 let async_meetup_client = async_meetup_client.clone();
                 async move {
@@ -63,6 +65,7 @@ pub fn create_routes(
                         .await?;
                     handle_authorize_redirect(
                         &mut redis_connection,
+                        &pool,
                         &oauth2_consumer.authorization_client,
                         &async_meetup_client,
                         query,
@@ -231,6 +234,7 @@ async fn handle_authorize(
 
 async fn handle_authorize_redirect(
     redis_connection: &mut redis::aio::Connection,
+    db_connection: &sqlx::PgPool,
     oauth2_authorization_client: &BasicClient,
     async_meetup_client: &Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     query: LinkQuery,
@@ -280,36 +284,19 @@ async fn handle_authorize_redirect(
     if !is_organizer {
         return Ok(("Only the organizer can log in", "").into());
     }
-    // Store the new access and refresh tokens in Redis
-    let transaction_fn = {
-        // let token_res = &token_res;
-        lib::redis::closure_type_helper(
-            move |con: &mut redis::aio::Connection, mut pipe: redis::Pipeline| {
-                let token_res = token_res.clone();
-                async move {
-                    match token_res.refresh_token() {
-                        Some(refresh_token) => {
-                            pipe.set("meetup_access_token", token_res.access_token().secret())
-                                .set("meetup_refresh_token", refresh_token.secret());
-                            pipe.query_async(con).await
-                        }
-                        None => {
-                            // Don't delete the (possibly existing) old refresh token
-                            pipe.set("meetup_access_token", token_res.access_token().secret());
-                            pipe.query_async(con).await
-                        }
-                    }
-                }
-                .boxed()
-            },
-        )
-    };
-    let _: () = lib::redis::async_redis_transaction(
-        redis_connection,
-        &["meetup_access_token", "meetup_refresh_token"],
-        transaction_fn,
-    )
-    .await?;
+    // Store the new access and refresh tokens
+    let mut tx = db_connection.begin().await?;
+    sqlx::query!(r#"DELETE FROM organizer_token"#)
+        .execute(&mut tx)
+        .await?;
+    sqlx::query!(
+        r#"INSERT INTO organizer_token (meetup_access_token, meetup_refresh_token, meetup_access_token_refresh_time) VALUES ($1, $2, $3)"#,
+        token_res.access_token().secret(),
+        token_res.refresh_token().map(|token| token.secret()),
+        chrono::Utc::now() + chrono::Duration::days(2))
+        .execute(&mut tx)
+        .await?;
+    tx.commit().await?;
     // Replace the meetup client
     *async_meetup_client.lock().await = Some(Arc::new(new_async_meetup_client));
     Ok(("Thanks for logging in :)", "").into())

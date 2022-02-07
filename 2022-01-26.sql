@@ -120,3 +120,12 @@ CREATE TABLE event_participant (
 );
 CREATE INDEX event_participants_event_id_idx ON event_participant USING btree (event_id);
 CREATE INDEX event_participants_member_id_idx ON event_participant USING btree (member_id);
+
+CREATE TABLE organizer_token (
+    id bool PRIMARY KEY DEFAULT TRUE,
+    meetup_access_token text NOT NULL,
+    meetup_refresh_token text,
+    meetup_access_token_refresh_time timestamp (0) with time zone,
+    CONSTRAINT onerow CHECK (id)
+);
+

@@ -45,65 +45,6 @@ pub async fn async_redis_transaction<
     }
 }
 
-// pub async fn delete_event(
-//     con: &mut redis::aio::Connection,
-//     event_id: &str,
-// ) -> Result<(), redis::RedisError> {
-//     // Figure out which series this event belongs to
-//     let redis_event_series_key = format!("meetup_event:{}:event_series", &event_id);
-//     let series_id: Option<String> = con.get(&redis_event_series_key).await?;
-//     let redis_events_key = "meetup_events";
-//     let redis_event_users_key = format!("meetup_event:{}:meetup_users", &event_id);
-//     let redis_event_hosts_key = format!("meetup_event:{}:meetup_hosts", &event_id);
-//     let redis_event_key = format!("meetup_event:{}", event_id);
-//     let redis_series_events_key =
-//         series_id.map(|series_id| format!("event_series:{}:meetup_events", series_id));
-//     let mut keys_to_watch: Vec<&str> = vec![
-//         &redis_event_series_key,
-//         redis_events_key,
-//         &redis_event_users_key,
-//         &redis_event_hosts_key,
-//         &redis_event_key,
-//     ];
-//     if let Some(key) = &redis_series_events_key {
-//         keys_to_watch.push(&key);
-//     }
-//     let () = async_redis_transaction(con, &keys_to_watch, |con, mut pipe: redis::Pipeline| {
-//         pipe.del(&redis_event_series_key)
-//             .del(&redis_event_users_key)
-//             .del(&redis_event_hosts_key)
-//             .del(&redis_event_key)
-//             .srem(redis_events_key, event_id);
-//         if let Some(redis_series_events_key) = &redis_series_events_key {
-//             pipe.srem(redis_series_events_key, event_id);
-//         }
-//         async move { pipe.query_async(con).await }.boxed()
-//     })
-//     .await?;
-//     Ok(())
-// }
-
-// Try to translate Meetup user IDs to Discord user IDs. Returns mappings from
-// the Meetup ID to a Discord ID or None if the user is not linked. The order of
-// the mapping is the same as the input order.
-pub async fn meetup_to_discord_ids(
-    meetup_user_ids: &[u64],
-    redis_connection: &mut redis::aio::Connection,
-) -> Result<Vec<(u64, Option<u64>)>, crate::meetup::Error> {
-    // Try to associate the RSVP'd Meetup users with Discord users
-    let mut discord_user_ids = Vec::with_capacity(meetup_user_ids.len());
-    for meetup_id in meetup_user_ids {
-        let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
-        let discord_id: Option<u64> = redis_connection.get(&redis_meetup_discord_key).await?;
-        discord_user_ids.push(discord_id);
-    }
-    Ok(meetup_user_ids
-        .iter()
-        .cloned()
-        .zip(discord_user_ids.into_iter())
-        .collect())
-}
-
 pub struct Lock<'a> {
     redis_connection: &'a mut redis::Connection,
     lockname: &'a str,

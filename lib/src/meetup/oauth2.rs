@@ -6,6 +6,8 @@ use serenity::model::id::UserId;
 use simple_error::SimpleError;
 use std::sync::Arc;
 
+use crate::db;
+
 // TODO: move into flow?
 pub async fn generate_meetup_linking_link(
     redis_connection: &mut redis::aio::Connection,
@@ -70,64 +72,37 @@ impl OAuth2Consumer {
     pub async fn refresh_oauth_tokens(
         &self,
         token_type: TokenType,
-        redis_connection: &mut redis::aio::Connection,
+        db_connection: &sqlx::PgPool,
     ) -> Result<oauth2::AccessToken, super::Error> {
-        refresh_oauth_tokens(token_type, &self.authorization_client, redis_connection).await
+        refresh_oauth_tokens(token_type, &self.authorization_client, db_connection).await
     }
 }
 
 pub enum TokenType {
-    User(u64),
+    Member(db::MemberId),
     Organizer,
 }
 
-// Wrapper around the actual implementation that takes care of locking.
-// This is necessary since there is no AsyncDrop yet that could release
-// the lock RAII style
 pub async fn refresh_oauth_tokens(
     token_type: TokenType,
     oauth2_client: &BasicClient,
-    redis_connection: &mut redis::aio::Connection,
+    db_connection: &sqlx::PgPool,
 ) -> Result<oauth2::AccessToken, super::Error> {
-    // Lock the oauth2 tokens
-    let lockname = match token_type {
-        TokenType::Organizer => "lock:meetup_refresh_token".to_string(),
-        TokenType::User(meetup_user_id) => {
-            format!("lock:meetup_user:{}:oauth2_tokens", meetup_user_id)
-        }
-    };
-    let token_lock = crate::redis::AsyncLock::acquire_with_timeout(
-        redis_connection,
-        &lockname,
-        std::time::Duration::from_secs(5),
-        std::time::Duration::from_secs(20),
-    )
-    .await?;
-    match token_lock {
-        None => Err(SimpleError::new("Could not acquire token lock").into()),
-        Some(mut token_lock) => {
-            let res = refresh_oauth_tokens_impl(token_type, oauth2_client, token_lock.con()).await;
-            // Release the lock in any case
-            let _ = token_lock.release().await;
-            res
-        }
-    }
-}
-
-async fn refresh_oauth_tokens_impl(
-    token_type: TokenType,
-    oauth2_client: &BasicClient,
-    redis_connection: &mut redis::aio::Connection,
-) -> Result<oauth2::AccessToken, super::Error> {
-    // Try to get the refresh token from Redis
+    // Try to get the refresh token from the database and lock the row
+    let mut tx = db_connection.begin().await?;
     let refresh_token: Option<String> = match token_type {
-        TokenType::Organizer => redis_connection.get("meetup_refresh_token").await?,
-        TokenType::User(meetup_user_id) => {
-            let redis_user_token_key = format!("meetup_user:{}:oauth2_tokens", meetup_user_id);
-            redis_connection
-                .hget(&redis_user_token_key, "refresh_token")
+        TokenType::Organizer => {
+            sqlx::query_scalar!(r#"SELECT meetup_refresh_token FROM organizer_token FOR UPDATE"#)
+                .fetch_optional(&mut tx)
                 .await?
         }
+        TokenType::Member(member_id) => sqlx::query_scalar!(
+            r#"SELECT meetup_oauth2_refresh_token FROM "member" WHERE id = $1 FOR UPDATE"#,
+            member_id.0
+        )
+        .fetch_optional(&mut tx)
+        .await?
+        .flatten(),
     };
     let refresh_token: String = match refresh_token {
         Some(refresh_token) => refresh_token,
@@ -145,34 +120,32 @@ async fn refresh_oauth_tokens_impl(
         .exchange_refresh_token(&refresh_token)
         .request_async(oauth2::reqwest::async_http_client)
         .await?;
-    // Store the new tokens in Redis
-    let mut pipe = redis::pipe();
+    // Store the new tokens
     match token_type {
         TokenType::Organizer => {
-            pipe.set(
-                "meetup_access_token",
+            sqlx::query!(r#"DELETE FROM organizer_token"#)
+                .execute(&mut tx)
+                .await?;
+            sqlx::query!(
+                r#"INSERT INTO organizer_token (meetup_access_token, meetup_refresh_token, meetup_access_token_refresh_time) VALUES ($1, $2, $3)"#,
                 refresh_token_response.access_token().secret(),
-            );
-            if let Some(new_refresh_token) = refresh_token_response.refresh_token() {
-                pipe.set("meetup_refresh_token", new_refresh_token.secret());
-            }
+                refresh_token_response.refresh_token().map(|token| token.secret()),
+                chrono::Utc::now() + chrono::Duration::days(2))
+                .execute(&mut tx)
+                .await?;
         }
-        TokenType::User(meetup_user_id) => {
-            let redis_user_token_key = format!("meetup_user:{}:oauth2_tokens", meetup_user_id);
-            pipe.hset(
-                &redis_user_token_key,
-                "access_token",
+        TokenType::Member(member_id) => {
+            sqlx::query!(
+                r#"UPDATE "member" SET meetup_oauth2_access_token = $2, meetup_oauth2_refresh_token = $3, meetup_oauth2_last_token_refresh_time = $4 WHERE id = $1"#,
+                member_id.0,
                 refresh_token_response.access_token().secret(),
-            );
-            if let Some(new_refresh_token) = refresh_token_response.refresh_token() {
-                pipe.hset(
-                    &redis_user_token_key,
-                    "refresh_token",
-                    new_refresh_token.secret(),
-                );
-            }
+                refresh_token_response
+                    .refresh_token()
+                    .map(|token| token.secret()),
+                chrono::Utc::now()
+            ).execute(&mut tx).await?;
         }
     };
-    let _: () = pipe.query_async(redis_connection).await?;
+    tx.commit().await?;
     Ok(refresh_token_response.access_token().clone())
 }

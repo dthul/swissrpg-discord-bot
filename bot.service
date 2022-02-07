@@ -1,7 +1,7 @@
 [Unit]
 Description=SwissRPG Bot
-Requires=redis.service
-After=network.target redis.service
+Requires=network-online.target redis.service postgresql.service
+After=network.target network-online.target redis.service postgresql.service
 StartLimitIntervalSec=0
 
 [Service]

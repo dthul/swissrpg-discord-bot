@@ -13,7 +13,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 mod add_user;
-// mod archive;
 // mod clone_event;
 mod count_inactive;
 mod end_adventure;
@@ -66,7 +65,6 @@ static ALL_COMMANDS: &[&Command] = &[
     &count_inactive::COUNT_MEMBERS_COMMAND,
     // &clone_event::CLONE_EVENT_COMMAND,
     // &test::TEST_COMMAND,
-    // &archive::ARCHIVE_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
