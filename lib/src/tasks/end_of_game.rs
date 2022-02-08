@@ -173,7 +173,7 @@ async fn update_series_channel_expiration(
     series_id: db::EventSeriesId,
     db_connection: &sqlx::PgPool,
 ) -> Result<(), crate::meetup::Error> {
-    let res = sqlx::query!(r#"SELECT discord_text_channel_id, discord_voice_channel_id, discord_role_id, discord_host_role_id FROM event_series"#).fetch_one(db_connection).await?;
+    let res = sqlx::query!(r#"SELECT discord_text_channel_id, discord_voice_channel_id, discord_role_id, discord_host_role_id FROM event_series WHERE id = $1"#, series_id.0).fetch_one(db_connection).await?;
     let discord_text_channel_id = res.discord_text_channel_id.map(|id| ChannelId(id as u64));
     let discord_voice_channel_id = res.discord_voice_channel_id.map(|id| ChannelId(id as u64));
     let discord_role_id = res.discord_role_id.map(|id| RoleId(id as u64));

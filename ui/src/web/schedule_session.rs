@@ -296,11 +296,11 @@ async fn handle_schedule_session_post(
         Some(ref meetup_client) => meetup_client.clone(),
         None => return Ok(("Meetup API unavailable", "Please try again later").into()),
     };
-    // We go from the event furthest into the future backwards until we find one
+    // We go from the latest event to the oldest event until we find one
     // that has not been deleted to use as a template
     let event_series_id = flow.event_series_id.clone();
     let events = db::get_events_for_series(db_connection, event_series_id).await?;
-    for event in events.into_iter().rev() {
+    for event in events {
         let meetup_event = if let Some(meetup_event) = event.meetup_event {
             meetup_event
         } else {

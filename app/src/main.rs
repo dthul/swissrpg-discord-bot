@@ -2,7 +2,6 @@
 #![warn(rust_2018_idioms)]
 
 use futures::future;
-use redis::Commands;
 use sqlx::{postgres::PgPoolOptions, Executor};
 use std::{
     env,
@@ -54,20 +53,6 @@ fn main() {
         "redis://127.0.0.1/0"
     };
     let redis_client = redis::Client::open(redis_url).expect("Could not create a Redis client");
-    let mut redis_connection = redis_client
-        .get_connection()
-        .expect("Could not connect to Redis");
-
-    // Create a Meetup API client (might not be possible if there is no access token yet)
-    let meetup_access_token: Option<String> = redis_connection
-        .get("meetup_access_token")
-        .expect("Meetup access token could not be loaded from Redis");
-    let async_meetup_client = match meetup_access_token {
-        Some(meetup_access_token) => Arc::new(futures_util::lock::Mutex::new(Some(Arc::new(
-            lib::meetup::newapi::AsyncClient::new(&meetup_access_token),
-        )))),
-        None => Arc::new(futures_util::lock::Mutex::new(None)),
-    };
 
     // Create a Meetup OAuth2 consumer
     let meetup_oauth2_consumer = Arc::new(
@@ -105,6 +90,21 @@ fn main() {
                 .connect(&database_url),
         )
         .expect("Could not connect to the Postgres database");
+
+    // Create a Meetup API client (might not be possible if there is no access token yet)
+    let meetup_access_token = async_runtime
+        .block_on(async {
+            sqlx::query_scalar!(r#"SELECT meetup_access_token FROM organizer_token"#)
+                .fetch_optional(&pool)
+                .await
+        })
+        .expect("Meetup access token could not be loaded from the database");
+    let async_meetup_client = match meetup_access_token {
+        Some(meetup_access_token) => Arc::new(futures_util::lock::Mutex::new(Some(Arc::new(
+            lib::meetup::newapi::AsyncClient::new(&meetup_access_token),
+        )))),
+        None => Arc::new(futures_util::lock::Mutex::new(None)),
+    };
 
     let bot_shutdown_signal = Arc::new(AtomicBool::new(false));
     let mut bot = async_runtime

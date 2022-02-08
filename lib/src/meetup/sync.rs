@@ -64,7 +64,7 @@ pub async fn sync_task(
             }
         }
     }
-    // Sync event series
+    // Sync event series with upcoming Meetup events
     let meetup_active_event_series = sqlx::query!(
         r#"SELECT event_series.id
         FROM event_series
