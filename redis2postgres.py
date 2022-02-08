@@ -14,11 +14,6 @@ r = redis.Redis(host="localhost", port=6380, db=1)
 with psycopg.connect(conninfo, autocommit=True) as conn:
     cur = conn.cursor()
 
-    # - users: meetup / discord linking
-    # - event series: discord channels, events
-    # - event hosts
-    # - event participants
-
     discord_user_ids = [
         int(user_id.decode("utf8")) for user_id in r.smembers("discord_users")
     ]
@@ -186,6 +181,7 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
                 "INSERT INTO managed_channel (discord_id) VALUES (%s)",
                 (discord_managed_channel_id,),
             )
+    print()
 
     print("Transferring event series")
     event_series_ids = [
@@ -362,7 +358,7 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
                 discord_id = int(discord_id.decode("utf8"))
                 result_row = cur.execute(
                     "INSERT INTO member (meetup_id, discord_id) VALUES (%s, %s) RETURNING id",
-                    meetup_id,
+                    (meetup_id,),
                     discord_id,
                 ).fetchone()
                 member_id = result_row[0]
@@ -370,7 +366,7 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
             else:
                 result_row = cur.execute(
                     "INSERT INTO member (meetup_id) VALUES (%s) RETURNING id",
-                    meetup_id,
+                    (meetup_id,),
                 ).fetchone()
                 member_id = result_row[0]
                 return member_id
@@ -394,6 +390,7 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
                     "INSERT INTO event_host (event_id, member_id) VALUES (%s, %s)",
                     (event_id, member_id),
                 )
+    print()
 
     print("Transferring event participants")
     for i, meetup_event_id in enumerate(meetup_event_ids):
@@ -416,6 +413,7 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
                     "INSERT INTO event_participant (event_id, member_id) VALUES (%s, %s)",
                     (event_id, member_id),
                 )
+    print()
 
     meetup_access_token = r.get("meetup_access_token")
     if meetup_access_token is not None:

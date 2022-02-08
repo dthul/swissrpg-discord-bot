@@ -71,6 +71,7 @@ CREATE TABLE meetup_event (
     url text NOT NULL,
     urlname text NOT NULL
 );
+ALTER SEQUENCE meetup_event_id_seq OWNED BY meetup_event.id;
 
 CREATE SEQUENCE member_id_seq START WITH 1000;
 CREATE TABLE "member" (

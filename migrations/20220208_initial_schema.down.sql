@@ -1,0 +1,15 @@
+DROP TABLE organizer_token;
+DROP TABLE event_participant;
+DROP TABLE event_host;
+DROP TABLE event_series_removed_user;
+DROP TABLE event_series_removed_host;
+DROP TABLE "member";
+DROP TABLE meetup_event;
+DROP TABLE event;
+DROP TABLE event_series;
+DROP TABLE event_series_type;
+DROP TABLE event_series_host_role;
+DROP TABLE event_series_role;
+DROP TABLE event_series_voice_channel;
+DROP TABLE event_series_text_channel;
+DROP TABLE managed_channel;

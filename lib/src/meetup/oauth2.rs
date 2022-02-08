@@ -95,6 +95,7 @@ pub async fn refresh_oauth_tokens(
             sqlx::query_scalar!(r#"SELECT meetup_refresh_token FROM organizer_token FOR UPDATE"#)
                 .fetch_optional(&mut tx)
                 .await?
+                .flatten()
         }
         TokenType::Member(member_id) => sqlx::query_scalar!(
             r#"SELECT meetup_oauth2_refresh_token FROM "member" WHERE id = $1 FOR UPDATE"#,

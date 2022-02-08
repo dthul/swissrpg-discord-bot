@@ -17,7 +17,7 @@ impl ScheduleSessionFlow {
         let redis_key = format!("flow:schedule_session:{}", id);
         let mut pipe = redis::pipe();
         let _: () = pipe
-            .hset(&redis_key, "event_series_id", &event_series_id.0)
+            .hset(&redis_key, "event_series_id", event_series_id.0)
             .ignore()
             .expire(&redis_key, 10 * 60)
             .query_async(redis_connection)

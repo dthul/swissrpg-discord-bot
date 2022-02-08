@@ -14,8 +14,11 @@ pub async fn organizer_token_refresh_task(
     let next_refresh_time =
         sqlx::query_scalar!(r#"SELECT meetup_access_token_refresh_time FROM organizer_token"#)
             .fetch_optional(&pool)
-            .await;
-    let mut next_refresh_time = if let Ok(Some(next_refresh_time)) = next_refresh_time {
+            .await
+            .ok()
+            .flatten()
+            .flatten();
+    let mut next_refresh_time = if let Some(next_refresh_time) = next_refresh_time {
         next_refresh_time
     } else {
         chrono::Utc::now()
