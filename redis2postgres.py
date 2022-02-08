@@ -416,3 +416,25 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
                     "INSERT INTO event_participant (event_id, member_id) VALUES (%s, %s)",
                     (event_id, member_id),
                 )
+
+    meetup_access_token = r.get("meetup_access_token")
+    if meetup_access_token is not None:
+        print("Transferring organizer token")
+        meetup_access_token = meetup_access_token.decode("utf8")
+        meetup_refresh_token = r.get("meetup_refresh_token")
+        if meetup_refresh_token is not None:
+            meetup_refresh_token = meetup_refresh_token.decode("utf8")
+        meetup_access_token_refresh_time = r.get("meetup_access_token_refresh_time")
+        if meetup_access_token_refresh_time is not None:
+            meetup_access_token_refresh_time = dateutil.parser.isoparse(
+                meetup_access_token_refresh_time.decode("utf8")
+            )
+        with conn.transaction():
+            cur.execute(
+                "INSERT INTO organizer_token (meetup_access_token, meetup_refresh_token, meetup_access_token_refresh_time) VALUES (%s, %s, %s)",
+                (
+                    meetup_access_token,
+                    meetup_refresh_token,
+                    meetup_access_token_refresh_time,
+                ),
+            )
