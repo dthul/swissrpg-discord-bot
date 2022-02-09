@@ -47,7 +47,7 @@ pub fn create_routes(
                     selectable_years: &[local_time.year() as u16, local_time.year() as u16 + 1],
                     duration: 150,
                     title: "Test event",
-                    link: "https://meetup.com/",
+                    link: Some("https://meetup.com/"),
                 };
                 futures::future::ready(
                     HandlerResponse::from_template(template)

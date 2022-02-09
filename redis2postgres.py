@@ -326,7 +326,11 @@ with psycopg.connect(conninfo, autocommit=True) as conn:
         urlname = r.hget(f"meetup_event:{meetup_event_id}", "urlname").decode("utf8")
         discord_category = r.hget(f"meetup_event:{meetup_event_id}", "discord_category")
         is_online = r.hget(f"meetup_event:{meetup_event_id}", "is_online")
-        description = ""  # TODO: fetch from Meetup
+        description = r.get(f"meetup_event:{meetup_event_id}:description")
+        if description is not None:
+            description = description.decode("utf8")
+        else:
+            description = ""
         if is_online is not None:
             is_online = is_online.decode("utf8")
         is_online = is_online == "true"
