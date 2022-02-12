@@ -435,20 +435,23 @@ async fn channel_add_or_remove_user_impl(
             match series_id {
                 None => eprintln!("Could not remember removed channel role because channel {} has no associated series", context.msg.channel_id),
                 Some(series_id) => {
-                    if as_host {
-                        sqlx::query!(
-                            r#"INSERT INTO event_series_removed_host (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"#,
-                            series_id.0,
-                            discord_id as i64)
-                            .execute(&pool)
-                            .await?;
-                    } else {
-                        sqlx::query!(
-                            r#"INSERT INTO event_series_removed_user (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"#,
-                            series_id.0,
-                            discord_id as i64)
-                            .execute(&pool)
-                            .await?;
+                    let member = lib::db::discord_ids_to_members(&[UserId(discord_id)], &pool).await?;
+                    if let Some((_, Some(member))) = member.first() {
+                        if as_host {
+                            sqlx::query!(
+                                r#"INSERT INTO event_series_removed_host (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"#,
+                                series_id.0,
+                                member.id.0)
+                                .execute(&pool)
+                                .await?;
+                        } else {
+                            sqlx::query!(
+                                r#"INSERT INTO event_series_removed_user (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"#,
+                                series_id.0,
+                                member.id.0)
+                                .execute(&pool)
+                                .await?;
+                        }
                     }
                 }
             }

@@ -462,6 +462,17 @@ async fn sync_role_impl(
         "Discord event sync: created new temporary channel role {} \"{}\"",
         temp_channel_role.id.0, &temp_channel_role.name
     );
+    let insert_query = if is_host_role {
+        sqlx::query!(
+            "INSERT INTO event_series_host_role (discord_id) VALUES ($1)",
+            temp_channel_role.id.0 as i64
+        )
+    } else {
+        sqlx::query!(
+            "INSERT INTO event_series_role (discord_id) VALUES ($1)",
+            temp_channel_role.id.0 as i64
+        )
+    };
     let update_query = if is_host_role {
         sqlx::query!(
             "UPDATE event_series SET discord_host_role_id = $2 WHERE id = $1",
@@ -475,9 +486,13 @@ async fn sync_role_impl(
             temp_channel_role.id.0 as i64
         )
     };
-    let update_result = update_query.execute(&mut tx).await;
-    let commit_result = tx.commit().await;
-    let any_err = update_result.err().or(commit_result.err());
+    let mut any_err = insert_query.execute(&mut tx).await.err();
+    if any_err.is_none() {
+        any_err = update_query.execute(&mut tx).await.err();
+    }
+    if any_err.is_none() {
+        any_err = tx.commit().await.err();
+    }
     // In case the transaction failed delete the temporary role from Discord
     match any_err {
         Some(err) => {
@@ -672,6 +687,20 @@ async fn sync_channel_impl(
         "Discord event sync: created new temporary channel {} \"{}\"",
         temp_channel.id.0, &temp_channel.name
     );
+    let insert_query = match channel_type {
+        ChannelType::Text => {
+            sqlx::query!(
+                "INSERT INTO event_series_text_channel (discord_id) VALUES ($1)",
+                temp_channel.id.0 as i64
+            )
+        }
+        ChannelType::Voice => {
+            sqlx::query!(
+                "INSERT INTO event_series_voice_channel (discord_id) VALUES ($1)",
+                temp_channel.id.0 as i64
+            )
+        }
+    };
     let update_query = match channel_type {
         ChannelType::Text => {
             sqlx::query!(
@@ -688,9 +717,13 @@ async fn sync_channel_impl(
             )
         }
     };
-    let update_result = update_query.execute(&mut tx).await;
-    let commit_result = tx.commit().await;
-    let any_err = update_result.err().or(commit_result.err());
+    let mut any_err = insert_query.execute(&mut tx).await.err();
+    if any_err.is_none() {
+        any_err = update_query.execute(&mut tx).await.err();
+    }
+    if any_err.is_none() {
+        any_err = tx.commit().await.err();
+    }
     // In case the transaction failed delete the temporary channel from Discord
     match any_err {
         Some(err) => {
