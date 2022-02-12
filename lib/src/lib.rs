@@ -272,20 +272,50 @@ pub async fn link_discord_meetup(
             )
             .execute(&mut *db_connection)
             .await?;
+            let hosted_events_old_member = sqlx::query!(
+                r#"SELECT event_id FROM event_host WHERE member_id = $1"#,
+                member_id_with_meetup.0
+            )
+            .map(|row| db::EventId(row.event_id))
+            .fetch_all(&mut *db_connection)
+            .await?;
             sqlx::query!(
-                r#"UPDATE event_host SET member_id = $2 WHERE member_id = $1"#,
-                member_id_with_meetup.0,
-                member_id_with_discord.0
+                r#"DELETE FROM event_host WHERE member_id = $1"#,
+                member_id_with_meetup.0
             )
             .execute(&mut *db_connection)
             .await?;
+            for hosted_event_id in hosted_events_old_member {
+                sqlx::query!(
+                    r#"INSERT INTO event_host (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+                    hosted_event_id.0,
+                    member_id_with_discord.0
+                )
+                .execute(&mut *db_connection)
+                .await?;
+            }
+            let attended_events_old_member = sqlx::query!(
+                r#"SELECT event_id FROM event_participant WHERE member_id = $1"#,
+                member_id_with_meetup.0
+            )
+            .map(|row| db::EventId(row.event_id))
+            .fetch_all(&mut *db_connection)
+            .await?;
             sqlx::query!(
-                r#"UPDATE event_participant SET member_id = $2 WHERE member_id = $1"#,
-                member_id_with_meetup.0,
-                member_id_with_discord.0
+                r#"DELETE FROM event_participant WHERE member_id = $1"#,
+                member_id_with_meetup.0
             )
             .execute(&mut *db_connection)
             .await?;
+            for attended_event_id in attended_events_old_member {
+                sqlx::query!(
+                    r#"INSERT INTO event_participant (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+                    attended_event_id.0,
+                    member_id_with_discord.0
+                )
+                .execute(&mut *db_connection)
+                .await?;
+            }
             sqlx::query!(
                 r#"DELETE FROM "member" WHERE id = $1"#,
                 member_id_with_meetup.0
