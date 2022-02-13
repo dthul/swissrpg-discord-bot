@@ -1,9 +1,9 @@
 [Unit]
-Description=SwissRPG Bot Backup Timer
-After=network.target
+Description=SwissRPG Bot Backup Timer (every four hours)
+After=network.target postgresql.target redis.target
 
 [Timer]
-OnCalendar=daily
+OnCalendar=00/4:00
 RandomizedDelaySec=240
 Persistent=true
 
