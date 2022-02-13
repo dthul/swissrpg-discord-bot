@@ -12,7 +12,7 @@ default = []
 bottest = []
 
 [dependencies]
-askama = "0.10"
+askama = "0.11"
 backtrace = "0.3"
 base64 = "0.13.0"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
