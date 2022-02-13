@@ -1,22 +1,23 @@
+use crate::{db, meetup::newapi::create_event_mutation::CreateEventInput};
 use futures_util::FutureExt;
 use rand::Rng;
 use redis::AsyncCommands;
 
 pub struct ScheduleSessionFlow {
     pub id: u64,
-    pub event_series_id: String,
+    pub event_series_id: db::EventSeriesId,
 }
 
 impl ScheduleSessionFlow {
     pub async fn new(
         redis_connection: &mut redis::aio::Connection,
-        event_series_id: String,
+        event_series_id: db::EventSeriesId,
     ) -> Result<Self, crate::meetup::Error> {
         let id: u64 = rand::thread_rng().gen();
         let redis_key = format!("flow:schedule_session:{}", id);
         let mut pipe = redis::pipe();
         let _: () = pipe
-            .hset(&redis_key, "event_series_id", &event_series_id)
+            .hset(&redis_key, "event_series_id", event_series_id.0)
             .ignore()
             .expire(&redis_key, 10 * 60)
             .query_async(redis_connection)
@@ -32,48 +33,63 @@ impl ScheduleSessionFlow {
         id: u64,
     ) -> Result<Option<Self>, crate::meetup::Error> {
         let redis_key = format!("flow:schedule_session:{}", id);
-        let event_series_id: Option<String> =
+        let event_series_id: Option<i32> =
             redis_connection.hget(&redis_key, "event_series_id").await?;
         let flow = event_series_id.map(|event_series_id| ScheduleSessionFlow {
             id: id,
-            event_series_id: event_series_id,
+            event_series_id: db::EventSeriesId(event_series_id),
         });
         Ok(flow)
     }
 
     pub async fn schedule<'a>(
         self,
+        db_connection: sqlx::PgPool,
         mut redis_connection: redis::aio::Connection,
         meetup_client: &'a crate::meetup::newapi::AsyncClient,
         // oauth2_consumer: &'a crate::meetup::oauth2::OAuth2Consumer,
         date_time: chrono::DateTime<chrono::Utc>,
         is_open_event: bool,
     ) -> Result<crate::meetup::newapi::NewEventResponse, crate::meetup::Error> {
-        // Query the latest event in the series
-        let mut events = crate::meetup::util::get_events_for_series(
-            &mut redis_connection,
-            &self.event_series_id,
-        )
-        .await?;
-        // Sort by time
-        events.sort_unstable_by_key(|event| event.time);
-        // Take the latest event as a template to copy from
-        let latest_event = match events.last() {
-            Some(event) => event,
-            None => {
-                return Err(simple_error::SimpleError::new(
-                    "There is no event to use as a template",
-                )
-                .into())
-            }
+        let events = db::get_events_for_series(&db_connection, self.event_series_id).await?;
+        let latest_event = if let Some(event) = events.first() {
+            event
+        } else {
+            return Err(simple_error::SimpleError::new(
+                "Could not find an existing event to schedule a follow up session for",
+            )
+            .into());
         };
-        // Clone the event
-        let new_event_hook = Box::new(|new_event| {
-            Self::new_event_hook(new_event, date_time, &latest_event.id, is_open_event)
+        // Find the latest event in the series which was published on Meetup
+        let latest_meetup_event = events.iter().find_map(|event| {
+            if let Some(meetup_event) = &event.meetup_event {
+                Some(meetup_event)
+            } else {
+                None
+            }
+        });
+        let latest_meetup_event = if let Some(event) = latest_meetup_event {
+            event
+        } else {
+            return Err(
+                simple_error::SimpleError::new("Could not find a Meetup event to clone").into(),
+            );
+        };
+        // Clone the Meetup event
+        let new_event_hook = Box::new(|mut new_event: CreateEventInput| {
+            new_event.title = latest_event.title.clone();
+            new_event.description = latest_event.description.clone();
+            // TODO: hosts from latest session?
+            Self::new_event_hook(
+                new_event,
+                date_time,
+                &latest_meetup_event.meetup_id,
+                is_open_event,
+            )
         }) as _;
         let new_event = crate::meetup::util::clone_event(
-            &latest_event.urlname,
-            &latest_event.id,
+            &latest_meetup_event.urlname,
+            &latest_meetup_event.meetup_id,
             meetup_client,
             Some(new_event_hook),
         )
@@ -101,8 +117,7 @@ impl ScheduleSessionFlow {
             let new_event = new_event.clone();
             // let rsvps = rsvp_result.as_ref().map(|res| res.cloned_rsvps.clone());
             async move {
-                // let event_id = new_event.id.clone();
-                crate::meetup::sync::sync_event(new_event.into(), &mut redis_connection).await?;
+                crate::meetup::sync::sync_event(new_event.into(), &db_connection).await?;
                 // if let Some(rsvps) = rsvps {
                 //     crate::meetup::sync::sync_rsvps(&event_id, rsvps, &mut redis_connection)
                 //         .await?;

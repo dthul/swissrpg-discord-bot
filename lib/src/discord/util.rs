@@ -1,41 +1,44 @@
 // use itertools::Itertools;
-use redis::AsyncCommands;
+use crate::db;
 use serenity::model::id::ChannelId;
 // use unicode_segmentation::UnicodeSegmentation;
 
-// TODO: introduce newtyoes for series id, event id, ...
 pub async fn say_in_event_series_channel(
-    series_id: &str,
+    series_id: db::EventSeriesId,
     message: &str,
-    redis_connection: &mut redis::aio::Connection,
+    db_connection: &sqlx::PgPool,
     discord_cache_http: &super::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
     // Find the channel for this series id
-    let redis_series_channel_key = format!("event_series:{}:discord_channel", series_id);
-    let channel_id: u64 = redis_connection.get(&redis_series_channel_key).await?;
-    // TODO: blocking
-    ChannelId(channel_id)
-        .say(&discord_cache_http.http, message)
-        .await?;
+    let channel_id = sqlx::query!(
+        r#"SELECT discord_text_channel_id as "discord_text_channel_id!" FROM event_series WHERE id = $1"#,
+        series_id.0
+    )
+    .map(|row| ChannelId(row.discord_text_channel_id as u64))
+    .fetch_one(db_connection)
+    .await?;
+    channel_id.say(&discord_cache_http.http, message).await?;
     Ok(())
 }
 
 pub async fn say_in_event_channel(
-    event_id: &str,
+    event_id: db::EventId,
     message: &str,
-    redis_connection: &mut redis::aio::Connection,
+    db_connection: &sqlx::PgPool,
     discord_cache_http: &super::CacheAndHttp,
 ) -> Result<(), crate::BoxedError> {
-    // First, find the series id for this event
-    let redis_event_series_key = format!("meetup_event:{}:event_series", &event_id);
-    let series_id: String = redis_connection.get(&redis_event_series_key).await?;
-    // Then, find the channel for this series id
-    let redis_series_channel_key = format!("event_series:{}:discord_channel", &series_id);
-    let channel_id: u64 = redis_connection.get(&redis_series_channel_key).await?;
-    // TODO: blocking
-    ChannelId(channel_id)
-        .say(&discord_cache_http.http, message)
-        .await?;
+    // Find the channel for this event id
+    let channel_id = sqlx::query!(
+        r#"SELECT event_series.discord_text_channel_id as "discord_text_channel_id!"
+        FROM event
+        INNER JOIN event_series ON event.event_series_id = event_series.id
+        WHERE event.id = $1"#,
+        event_id.0
+    )
+    .map(|row| ChannelId(row.discord_text_channel_id as u64))
+    .fetch_one(db_connection)
+    .await?;
+    channel_id.say(&discord_cache_http.http, message).await?;
     Ok(())
 }
 

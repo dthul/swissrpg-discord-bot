@@ -1,5 +1,3 @@
-//pub mod vacuum;
-pub mod archive;
 pub mod end_of_game;
 pub mod subscription_roles;
 pub mod sync;

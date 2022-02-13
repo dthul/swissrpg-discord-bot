@@ -1,7 +1,6 @@
 use command_macro::command;
-use redis::AsyncCommands;
+use lib::db;
 use serenity::futures::StreamExt;
-use serenity::model::id::{RoleId, UserId};
 use std::collections::HashMap;
 
 #[command]
@@ -15,15 +14,14 @@ fn list_players<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
+    let pool = context.pool().await?;
+    let mut tx = pool.begin().await?;
     // Check whether this is a bot controlled channel
-    let channel_roles = lib::get_channel_roles(
-        context.msg.channel_id.0,
-        context.async_redis_connection().await?,
-    )
-    .await?;
-    let channel_roles = match channel_roles {
-        Some(roles) => roles,
-        None => {
+    let event_series = lib::get_channel_series(context.msg.channel_id, &mut tx).await?;
+    let channel_roles = lib::get_channel_roles(context.msg.channel_id, &mut tx).await?;
+    let (event_series, channel_roles) = match (event_series, channel_roles) {
+        (Some(series), Some(roles)) => (series, roles),
+        _ => {
             context
                 .msg
                 .channel_id
@@ -33,47 +31,15 @@ fn list_players<'a>(
             return Ok(());
         }
     };
-    // Get all Meetup users that RSVPd "yes" to this event
-    // As a first step, get all upcoming events
-    let redis_channel_series_key =
-        format!("discord_channel:{}:event_series", &context.msg.channel_id.0);
-    let series_id: String = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_channel_series_key)
-        .await?;
-    let redis_series_events_key = format!("event_series:{}:meetup_events", &series_id);
-    let event_ids: Vec<String> = context
-        .async_redis_connection()
-        .await?
-        .smembers(&redis_series_events_key)
-        .await?;
-    let mut event_ids_and_time = {
-        let redis_connection = context.async_redis_connection().await?;
-        let mut event_ids_and_time = vec![];
-        for id in event_ids {
-            let redis_event_key = format!("meetup_event:{}", id);
-            let time: redis::RedisResult<String> =
-                redis_connection.hget(&redis_event_key, "time").await;
-            if let Ok(time) = time {
-                if let Ok(time) = chrono::DateTime::parse_from_rfc3339(time.as_ref()) {
-                    event_ids_and_time.push((id, time.with_timezone(&chrono::Utc)));
-                }
-            }
-        }
-        event_ids_and_time
-    };
-    // Sort by date
-    event_ids_and_time.sort_unstable_by_key(|(_id, time)| time.clone());
-    // Only look at future events (or the last one, if there is none in the future)
-    let now = chrono::Utc::now();
-    let future_event_idx = event_ids_and_time
-        .iter()
-        .position(|(_id, time)| time > &now);
-    let latest_event_ids_and_time = match future_event_idx {
-        Some(idx) => &event_ids_and_time[idx..],
-        None => {
-            if event_ids_and_time.is_empty() {
+    // Get all members that RSVPd "yes" to the upcoming events (or the last event if there are no upcoming events)
+    let upcoming_events = db::get_upcoming_events_for_series(&pool, event_series).await?;
+    let events = if upcoming_events.len() > 0 {
+        upcoming_events
+    } else {
+        let last_event = db::get_last_event_in_series(&pool, event_series).await?;
+        match last_event {
+            Some(event) => vec![event],
+            None => {
                 context
                     .msg
                     .channel_id
@@ -81,22 +47,12 @@ fn list_players<'a>(
                     .await
                     .ok();
                 return Ok(());
-            } else {
-                &event_ids_and_time[event_ids_and_time.len() - 1..]
             }
         }
     };
-    let latest_event_id_refs: Vec<_> = latest_event_ids_and_time
-        .iter()
-        .map(|(id, _time)| id.as_ref())
-        .collect();
+    let event_ids: Vec<_> = events.iter().map(|event| event.id).collect();
     // Now, look up all participants of those events
-    let meetup_player_ids = lib::redis::get_events_participants(
-        &latest_event_id_refs,
-        /*hosts*/ false,
-        context.async_redis_connection().await?,
-    )
-    .await?;
+    let rsvpd_members = db::get_events_participants(&event_ids, /*hosts*/ false, &pool).await?;
 
     // Look up all Discord users that have the player role
     // TODO: check whether this returns offline members
@@ -105,7 +61,7 @@ fn list_players<'a>(
         let mut members = guild_id.members_iter(&context.ctx).boxed();
         while let Some(member_result) = members.next().await {
             if let Ok(member) = member_result {
-                if member.roles.contains(&RoleId(channel_roles.user)) {
+                if member.roles.contains(&channel_roles.user) {
                     discord_player_ids.push(member.user.id);
                 }
             }
@@ -114,60 +70,69 @@ fn list_players<'a>(
     } else {
         return Ok(());
     };
+    let channel_members = db::discord_ids_to_members(&discord_player_ids, &pool).await?;
 
     // Four categories of users:
-    // - Meetup ID (with Discord ID) [The following Discord users signed up for this event on Meetup (in channel? yes / no)]
-    // - Only Meetup ID [The following people are signed up for this event on Meetup but are not linked to a Discord user]
-    // - Discord ID (with Meetup ID) (except for the ones that already fall into the first category)
-    //   [The following Discord users are in this channel but did not sign up for this event on Meetup]
-    // - Only Discord ID
-    //   If there is no Meetup ID without mapping, use text from third category, otherwise use:
+    // - RSVPd member (with Discord ID) [The following Discord users signed up for this event (in channel? yes / no)]
+    // - RSVPd member (without Discord ID) [The following people are signed up for this event but are not linked to a Discord user]
+    // - Channel member (with Meetup ID) (except for the ones that already fall into the first category)
+    //   [The following Discord users are in this channel but did not sign up for this event]
+    // - Channel member (without Meetup ID) (except for the ones that already fall into the first category)
+    //   If there is no RSVPd member without Discord ID, use text from third category, otherwise use:
     //   [The following Discord users are in this channel but are not linked to a Meetup account. I cannot
     //   tell whether they signed up for this event on Meetup or not]
 
     // Create lists for all four categories
-    let mut meetup_id_with_discord_id = HashMap::with_capacity(meetup_player_ids.len());
-    let mut meetup_id_only = Vec::with_capacity(meetup_player_ids.len());
-    let mut discord_id_with_meetup_id = HashMap::with_capacity(discord_player_ids.len());
-    let mut discord_id_only = Vec::with_capacity(discord_player_ids.len());
+    let mut rsvpd_member_with_discord_id = HashMap::new();
+    let mut rsvpd_member_without_discord_id = Vec::new();
+    let mut channel_member_with_meetup_id = HashMap::new();
+    let mut channel_member_without_meetup_id = Vec::new();
 
-    for &meetup_id in &meetup_player_ids {
-        let redis_meetup_discord_key = format!("meetup_user:{}:discord_user", meetup_id);
-        let discord_id: Option<u64> = context
-            .async_redis_connection()
-            .await?
-            .get(&redis_meetup_discord_key)
-            .await?;
-        match discord_id {
-            Some(discord_id) => {
-                // Falls into the first category
-                meetup_id_with_discord_id.insert(meetup_id, UserId(discord_id));
+    for member in rsvpd_members {
+        match member {
+            db::Member {
+                id,
+                discord_id: Some(discord_id),
+                meetup_id,
+                ..
+            } => {
+                rsvpd_member_with_discord_id.insert(id, (discord_id, meetup_id));
             }
-            None => {
-                // Falls into the second category
-                meetup_id_only.push(meetup_id);
-            }
+            db::Member {
+                discord_id: None,
+                meetup_id: Some(meetup_id),
+                ..
+            } => rsvpd_member_without_discord_id.push(meetup_id),
+            _ => {}
         }
     }
-    for &discord_id in &discord_player_ids {
-        let redis_discord_meetup_key = format!("discord_user:{}:meetup_user", discord_id);
-        let meetup_id: Option<u64> = context
-            .async_redis_connection()
-            .await?
-            .get(&redis_discord_meetup_key)
-            .await?;
-        match meetup_id {
-            Some(meetup_id) => {
-                // Check whether this meetup ID is already in the first category
-                if meetup_id_with_discord_id.contains_key(&meetup_id) {
+
+    for (discord_id, member) in channel_members {
+        match member {
+            None => {
+                channel_member_without_meetup_id.push(discord_id);
+            }
+            Some(db::MemberWithDiscord {
+                id,
+                meetup_id: Some(meetup_id),
+                discord_id,
+                ..
+            }) => {
+                if rsvpd_member_with_discord_id.contains_key(&id) {
                     continue;
                 }
-                // Falls into the third category
-                discord_id_with_meetup_id.insert(discord_id, meetup_id);
+                channel_member_with_meetup_id.insert(id, (discord_id, meetup_id));
             }
-            None => {
-                // Falls into the fourth category
-                discord_id_only.push(discord_id);
+            Some(db::MemberWithDiscord {
+                id,
+                meetup_id: None,
+                discord_id,
+                ..
+            }) => {
+                if rsvpd_member_with_discord_id.contains_key(&id) {
+                    continue;
+                }
+                channel_member_without_meetup_id.push(discord_id);
             }
         }
     }
@@ -177,9 +142,9 @@ fn list_players<'a>(
                      several times per hour.*\n\n"
         .to_string();
 
-    if !meetup_id_with_discord_id.is_empty() {
-        reply += "Discord users signed up for an upcoming event on Meetup:\n";
-        for (&meetup_id, &discord_id) in &meetup_id_with_discord_id {
+    if !rsvpd_member_with_discord_id.is_empty() {
+        reply += "Discord users signed up for an upcoming event:\n";
+        for &(discord_id, meetup_id) in rsvpd_member_with_discord_id.values() {
             let is_in_channel = discord_player_ids.contains(&discord_id);
             // If the user is in the channel try to not use the <@...> syntax
             // in order not to unnecessarily ping them
@@ -197,11 +162,12 @@ fn list_players<'a>(
             } else {
                 format!("<@{discord_id}>", discord_id = discord_id.0)
             };
-            reply += &format!(
-                "• {user_mention} (<https://www.meetup.com/members/{meetup_id}/>)\n",
-                user_mention = user_mention,
-                meetup_id = meetup_id
-            );
+            if let Some(meetup_id) = meetup_id {
+                reply +=
+                    &format!("• {user_mention} (<https://www.meetup.com/members/{meetup_id}/>)\n");
+            } else {
+                reply += &format!("• {user_mention}\n");
+            }
             if is_in_channel {
                 reply += " (in this channel ✅)\n";
             } else {
@@ -211,10 +177,10 @@ fn list_players<'a>(
         reply += "\n\n";
     }
 
-    if !meetup_id_only.is_empty() {
-        reply += ":warning: People signed up for an upcoming event on Meetup but not \
-                  linked to a Discord user:\n";
-        for &meetup_id in &meetup_id_only {
+    if !rsvpd_member_without_discord_id.is_empty() {
+        reply += ":warning: People signed up for an upcoming event but not linked \
+            to a Discord user:\n";
+        for &meetup_id in &rsvpd_member_without_discord_id {
             reply += &format!(
                 "• :x: <https://www.meetup.com/members/{meetup_id}/>\n",
                 meetup_id = meetup_id
@@ -223,31 +189,32 @@ fn list_players<'a>(
         reply += "\n\n";
     }
 
-    if !discord_id_with_meetup_id.is_empty()
-        || (!discord_id_only.is_empty() && meetup_id_only.is_empty())
+    if !channel_member_with_meetup_id.is_empty()
+        || (!channel_member_without_meetup_id.is_empty()
+            && rsvpd_member_without_discord_id.is_empty())
     {
         reply += "Discord users in this channel but not signed up for an \
-                  upcoming event on Meetup:\n";
-        for (&discord_id, &meetup_id) in &discord_id_with_meetup_id {
+                  upcoming event:\n";
+        for &(discord_id, meetup_id) in channel_member_with_meetup_id.values() {
             reply += &format!(
                 "• <@{discord_id}> (<https://www.meetup.com/members/{meetup_id}/>)\n",
                 discord_id = discord_id.0,
                 meetup_id = meetup_id
             );
         }
-        if meetup_id_only.is_empty() {
-            for &discord_id in &discord_id_only {
+        if rsvpd_member_without_discord_id.is_empty() {
+            for &discord_id in &channel_member_without_meetup_id {
                 reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
             }
         }
         reply += "\n\n";
     }
 
-    if !discord_id_only.is_empty() && !meetup_id_only.is_empty() {
+    if !channel_member_without_meetup_id.is_empty() && !rsvpd_member_without_discord_id.is_empty() {
         reply += "Discord users in this channel but not linked to a Meetup \
-                  account. I cannot tell whether they signed up for an upcoming event on Meetup \
+                  account. I cannot tell whether they signed up for an upcoming event \
                   or not:\n";
-        for &discord_id in &discord_id_only {
+        for &discord_id in &channel_member_without_meetup_id {
             reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
         }
     }

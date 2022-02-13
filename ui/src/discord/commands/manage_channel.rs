@@ -1,8 +1,4 @@
-use std::sync::Arc;
-
 use command_macro::command;
-use futures::FutureExt;
-use redis::AsyncCommands;
 use serenity::model::{
     channel::{Channel, PermissionOverwrite, PermissionOverwriteType},
     permissions::Permissions,
@@ -21,32 +17,10 @@ fn manage_channel<'a>(
 ) -> super::CommandResult<'a> {
     let channel_id = context.msg.channel_id;
     // Step 1: Try to mark this channel as managed
-    let is_game_channel = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    lib::redis::async_redis_transaction(
-        context.async_redis_connection().await?,
-        &["discord_channels"],
-        |con, mut pipe| {
-            let is_game_channel = Arc::clone(&is_game_channel);
-            async move {
-                // Make sure that this is not a game channel
-                let is_game_channel_: bool =
-                    con.sismember("discord_channels", channel_id.0).await?;
-                is_game_channel.store(is_game_channel_, std::sync::atomic::Ordering::Release);
-                if is_game_channel_ {
-                    // Do nothing
-                    pipe.query_async(con).await
-                } else {
-                    // Mark as managed channel
-                    pipe.sadd("managed_discord_channels", channel_id.0)
-                        .query_async(con)
-                        .await
-                }
-            }
-            .boxed()
-        },
-    )
-    .await?;
-    if is_game_channel.load(std::sync::atomic::Ordering::Acquire) {
+    let pool = context.pool().await?;
+    let mut tx = pool.begin().await?;
+    let is_game_channel = context.is_game_channel(Some(&mut tx)).await?;
+    if is_game_channel {
         context
             .msg
             .channel_id
@@ -55,6 +29,12 @@ fn manage_channel<'a>(
             .ok();
         return Ok(());
     }
+    sqlx::query!(
+        r#"INSERT INTO managed_channel (discord_id) VALUES ($1) ON CONFLICT DO NOTHING"#,
+        channel_id.0 as i64
+    )
+    .execute(&mut tx)
+    .await?;
     let channel = if let Some(Channel::Guild(channel)) = context.msg.channel(&context.ctx).await {
         channel.clone()
     } else {
@@ -103,6 +83,7 @@ fn manage_channel<'a>(
             )
             .await?;
     }
+    tx.commit().await?;
     context.msg.react(&context.ctx, '\u{2705}').await.ok();
     Ok(())
 }

@@ -1,6 +1,5 @@
 use command_macro::command;
 use lib::discord::CacheAndHttp;
-use redis::AsyncCommands;
 use serenity::model::{channel::PermissionOverwriteType, id::UserId, permissions::Permissions};
 
 #[command]
@@ -142,7 +141,7 @@ async fn channel_add_or_remove_user_impl(
     as_host: bool,
 ) -> Result<(), lib::meetup::Error> {
     // Check whether this is a bot controlled channel
-    let is_game_channel = context.is_game_channel().await?;
+    let is_game_channel = context.is_game_channel(None).await?;
     let is_managed_channel = context.is_managed_channel().await?;
     let is_bot_admin = context.is_admin().await?;
     // Only bot admins can add/remove hosts
@@ -157,12 +156,10 @@ async fn channel_add_or_remove_user_impl(
     }
     // Managed channels and hosts don't use roles but user-specific permission overwrites
     let discord_api: CacheAndHttp = Into::into(&context.ctx);
+    let pool = context.pool().await?;
+    let mut tx = pool.begin().await?;
     if is_game_channel && !is_managed_channel {
-        let channel_roles = lib::get_channel_roles(
-            context.msg.channel_id.0,
-            context.async_redis_connection().await?,
-        )
-        .await?;
+        let channel_roles = lib::get_channel_roles(context.msg.channel_id, &mut tx).await?;
         let channel_roles = match channel_roles {
             Some(roles) => roles,
             None => {
@@ -186,21 +183,17 @@ async fn channel_add_or_remove_user_impl(
             return Ok(());
         }
         // Figure out whether there is a voice channel
-        let voice_channel_id = match lib::get_channel_voice_channel(
-            context.msg.channel_id,
-            context.async_redis_connection().await?,
-        )
-        .await
-        {
-            Ok(id) => id,
-            Err(err) => {
-                eprintln!(
-                    "Could not figure out whether this channel has a voice channel:\n{:#?}",
-                    err
-                );
-                None
-            }
-        };
+        let voice_channel_id =
+            match lib::get_channel_voice_channel(context.msg.channel_id, &mut tx).await {
+                Ok(id) => id,
+                Err(err) => {
+                    eprintln!(
+                        "Could not figure out whether this channel has a voice channel:\n{:#?}",
+                        err
+                    );
+                    None
+                }
+            };
         if add {
             // Try to add the user to the channel
             match context
@@ -209,7 +202,7 @@ async fn channel_add_or_remove_user_impl(
                 .add_member_role(
                     lib::discord::sync::ids::GUILD_ID.0,
                     discord_id,
-                    channel_roles.user,
+                    channel_roles.user.0,
                 )
                 .await
             {
@@ -305,7 +298,11 @@ async fn channel_add_or_remove_user_impl(
                 if let Err(err) = context
                     .ctx
                     .http
-                    .remove_member_role(lib::discord::sync::ids::GUILD_ID.0, discord_id, host_role)
+                    .remove_member_role(
+                        lib::discord::sync::ids::GUILD_ID.0,
+                        discord_id,
+                        host_role.0,
+                    )
                     .await
                 {
                     eprintln!("Could not remove host channel role:\n{:#?}", err);
@@ -416,7 +413,7 @@ async fn channel_add_or_remove_user_impl(
                     .remove_member_role(
                         lib::discord::sync::ids::GUILD_ID.0,
                         discord_id,
-                        channel_roles.user,
+                        channel_roles.user.0,
                     )
                     .await
                 {
@@ -434,22 +431,29 @@ async fn channel_add_or_remove_user_impl(
             }
             context.msg.react(&context.ctx, '\u{2705}').await.ok();
             // Remember which users were removed manually
-            if as_host {
-                let redis_channel_removed_hosts_key =
-                    format!("discord_channel:{}:removed_hosts", context.msg.channel_id.0);
-                context
-                    .async_redis_connection()
-                    .await?
-                    .sadd(redis_channel_removed_hosts_key, discord_id)
-                    .await?;
-            } else {
-                let redis_channel_removed_users_key =
-                    format!("discord_channel:{}:removed_users", context.msg.channel_id.0);
-                context
-                    .async_redis_connection()
-                    .await?
-                    .sadd(redis_channel_removed_users_key, discord_id)
-                    .await?;
+            let series_id = lib::get_channel_series(context.msg.channel_id, &mut tx).await?;
+            match series_id {
+                None => eprintln!("Could not remember removed channel role because channel {} has no associated series", context.msg.channel_id),
+                Some(series_id) => {
+                    let member = lib::db::discord_ids_to_members(&[UserId(discord_id)], &pool).await?;
+                    if let Some((_, Some(member))) = member.first() {
+                        if as_host {
+                            sqlx::query!(
+                                r#"INSERT INTO event_series_removed_host (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"#,
+                                series_id.0,
+                                member.id.0)
+                                .execute(&pool)
+                                .await?;
+                        } else {
+                            sqlx::query!(
+                                r#"INSERT INTO event_series_removed_user (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"#,
+                                series_id.0,
+                                member.id.0)
+                                .execute(&pool)
+                                .await?;
+                        }
+                    }
+                }
             }
         }
     } else if is_managed_channel && !is_game_channel {
@@ -486,7 +490,7 @@ async fn channel_add_or_remove_user_impl(
                 &discord_api,
                 context.msg.channel_id,
                 UserId(discord_id),
-                context.async_redis_connection().await?,
+                &pool,
             )
             .await?;
             if target_is_host && !is_bot_admin {

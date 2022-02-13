@@ -7,7 +7,12 @@
     <h2>Schedule your next Game Session</h2>
     <p>
         Previous Session:<br>
-        <a href="{{ link }}">{{ title }}</a>
+        {% match link %}
+        {% when Some with (url) %}
+        <a href="{{ url }}">{{ title }}</a>
+        {% when None %}
+        {{ title }}
+        {% endmatch %}
     </p>
     <h3>Details of the next session</h3>
     <p>

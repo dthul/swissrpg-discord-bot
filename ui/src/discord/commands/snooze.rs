@@ -1,5 +1,4 @@
 use command_macro::command;
-use redis::AsyncCommands;
 
 #[command]
 #[regex(r"snooze\s+(?P<num_days>[0-9]+)\s*d(ay)?s?")]
@@ -21,7 +20,7 @@ fn snooze<'a>(
         .map_err(|_err| simple_error::SimpleError::new("Invalid number of days specified"))?;
     // Check whether this is a game channel
     // TODO: make this a macro
-    let is_game_channel: bool = context.is_game_channel().await?;
+    let is_game_channel: bool = context.is_game_channel(None).await?;
     if !is_game_channel {
         context
             .msg
@@ -31,15 +30,15 @@ fn snooze<'a>(
             .ok();
         return Ok(());
     };
-    let redis_channel_snooze_key =
-        format!("discord_channel:{}:snooze_until", context.msg.channel_id.0);
+    let pool = context.pool().await?;
     if num_days == 0 {
         // Remove the snooze
-        let _: () = context
-            .async_redis_connection()
-            .await?
-            .del(&redis_channel_snooze_key)
-            .await?;
+        sqlx::query!(
+            r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#,
+            context.msg.channel_id.0 as i64
+        )
+        .execute(&pool)
+        .await?;
         context
             .msg
             .channel_id
@@ -49,11 +48,13 @@ fn snooze<'a>(
     } else {
         let snooze_until = chrono::Utc::now() + chrono::Duration::days(num_days as i64);
         // Set a new snooze date
-        let _: () = context
-            .async_redis_connection()
-            .await?
-            .set(&redis_channel_snooze_key, snooze_until.to_rfc3339())
-            .await?;
+        sqlx::query!(
+            r#"UPDATE event_series_text_channel SET snooze_until = $2 WHERE discord_id = $1"#,
+            context.msg.channel_id.0 as i64,
+            snooze_until
+        )
+        .execute(&pool)
+        .await?;
         context
             .msg
             .channel_id

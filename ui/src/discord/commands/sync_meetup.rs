@@ -14,12 +14,11 @@ fn sync_meetup<'a>(
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     // Send the syncing future to the executor
-    let redis_client = context.redis_client().await?;
+    let pool = context.pool().await?;
     let async_meetup_client = context.meetup_client().await?;
     let sync_task = {
         let task = async move {
-            let mut redis_connection = redis_client.get_async_connection().await?;
-            lib::meetup::sync::sync_task(async_meetup_client, &mut redis_connection)
+            lib::meetup::sync::sync_task(async_meetup_client, &pool)
                 .await
                 .map(|_| ())
         };

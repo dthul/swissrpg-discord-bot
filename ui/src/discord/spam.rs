@@ -1,11 +1,11 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use redis::AsyncCommands;
-use serenity::prelude::*;
+use serenity::{model::id::ChannelId, prelude::*};
 use std::sync::Arc;
 
 type SpamList = Arc<(Vec<String>, AhoCorasick)>;
 struct GameChannelsList {
-    channel_ids: Vec<u64>,
+    channel_ids: Vec<ChannelId>,
     last_updated: std::time::Instant,
 }
 
@@ -30,7 +30,7 @@ pub async fn message_hook(
     };
     // Ignore messages from game channels
     let game_channels = get_game_channels_list(cmdctx).await?;
-    if game_channels.channel_ids.contains(&cmdctx.msg.channel_id.0) {
+    if game_channels.channel_ids.contains(&cmdctx.msg.channel_id) {
         return Ok(());
     }
     let spam_list = get_spam_list(cmdctx).await?;
@@ -97,9 +97,12 @@ async fn get_game_channels_list(
         }
     }
     // There is no games list in the data map yet or it is outdated -> query it and store it in the data map
-    // Query the channel list from Redis
-    let redis_connection = cmdctx.async_redis_connection().await?;
-    let channel_ids: Vec<u64> = redis_connection.smembers("discord_channels").await?;
+    // Query the channel list from the database
+    let pool = cmdctx.pool().await?;
+    let channel_ids = sqlx::query!(r#"SELECT discord_id FROM event_series_text_channel"#)
+        .map(|row| ChannelId(row.discord_id as u64))
+        .fetch_all(&pool)
+        .await?;
     let channels_list = Arc::new(GameChannelsList {
         channel_ids,
         last_updated: std::time::Instant::now(),

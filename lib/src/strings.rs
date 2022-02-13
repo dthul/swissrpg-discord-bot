@@ -52,7 +52,7 @@ Let's get you started. Just type **link meetup** below and we'll take it from th
 // ** End of one-shot **
 
 #[allow(non_snake_case)]
-pub fn END_OF_ADVENTURE_MESSAGE(bot_id: u64, channel_role_id: Option<u64>) -> String {
+pub fn END_OF_ADVENTURE_MESSAGE(bot_id: UserId, channel_role_id: Option<RoleId>) -> String {
     if let Some(channel_role_id) = channel_role_id {
         format!(
             "I hope everyone had fun on this adventure of <@&{channel_role_id}>.
@@ -63,8 +63,8 @@ This will set the channel for closure in the next 24 hours, which should be just
              say thanks and goodbye.
 If the adventure is not done, you can schedule a new session by typing here:
 ***<@{bot_id}> schedule session***",
-            bot_id = bot_id,
-            channel_role_id = channel_role_id
+            bot_id = bot_id.0,
+            channel_role_id = channel_role_id.0
         )
     } else {
         format!(
@@ -76,7 +76,7 @@ This will set the channel for closure in the next 24 hours, which should be just
              say thanks and goodbye.
 If the adventure is not done, you can schedule a new session by typing here:
 ***<@{bot_id}> schedule session***",
-            bot_id = bot_id
+            bot_id = bot_id.0
         )
     }
 }
@@ -84,7 +84,7 @@ If the adventure is not done, you can schedule a new session by typing here:
 // ** End of campaign **
 
 #[allow(non_snake_case)]
-pub fn END_OF_CAMPAIGN_MESSAGE(bot_id: u64, channel_role_id: Option<u64>) -> String {
+pub fn END_OF_CAMPAIGN_MESSAGE(bot_id: UserId, channel_role_id: Option<RoleId>) -> String {
     if let Some(channel_role_id) = channel_role_id {
         format!(
             "I hope everyone had fun at the last session of <@&{channel_role_id}>!
@@ -94,8 +94,8 @@ Whenever you are ready, schedule your next session by typing:
 If your adventure is over, the Game Master can inform me of this by typing here:
 ***<@{bot_id}> end adventure***
 This will set the channel for closure in the next 24 hours, just enough to say thanks and goodbye.",
-            bot_id = bot_id,
-            channel_role_id = channel_role_id
+            bot_id = bot_id.0,
+            channel_role_id = channel_role_id.0
         )
     } else {
         format!(
@@ -106,7 +106,7 @@ Whenever you are ready, schedule your next session by typing:
 If your adventure is over, the Game Master can inform me of this by typing here:
 ***<@{bot_id}> end adventure***
 This will set the channel for closure in the next 24 hours, just enough to say thanks and goodbye.",
-            bot_id = bot_id
+            bot_id = bot_id.0
         )
     }
 }
@@ -187,7 +187,7 @@ pub const CHANNEL_ROLE_REMOVE_ERROR: &'static str =
     "Something went wrong removing the channel role";
 
 #[allow(non_snake_case)]
-pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[u64]) -> String {
+pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[UserId]) -> String {
     let mentions = itertools::join(
         discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
         ", ",
@@ -200,7 +200,7 @@ pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[u64]) -> String {
 }
 
 #[allow(non_snake_case)]
-pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[u64]) -> String {
+pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[UserId]) -> String {
     let mentions = itertools::join(
         discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
         ", ",

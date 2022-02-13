@@ -1,8 +1,9 @@
 use command_macro::command;
-use futures_util::FutureExt;
-use redis::AsyncCommands;
+use lib::{
+    LinkingAction, LinkingMemberDiscord, LinkingMemberMeetup, LinkingResult, UnlinkingResult,
+};
 use serenity::model::id::UserId;
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 #[command]
 #[regex(r"link[ -]?meetup")]
@@ -11,14 +12,17 @@ fn link_meetup<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let redis_key_d2m = format!("discord_user:{}:meetup_user", context.msg.author.id.0);
+    let pool = context.pool().await?;
     // Check if there is already a meetup id linked to this user
     // and issue a warning
-    let linked_meetup_id: Option<u64> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_key_d2m)
-        .await?;
+    let linked_meetup_id = sqlx::query!(
+        r#"SELECT meetup_id FROM "member" WHERE discord_id = $1"#,
+        context.msg.author.id.0 as i64
+    )
+    .map(|row| row.meetup_id.map(|id| id as u64))
+    .fetch_optional(&pool)
+    .await?
+    .flatten();
     if let Some(linked_meetup_id) = linked_meetup_id {
         let bot_id = context.bot_id().await?;
         context
@@ -34,7 +38,7 @@ fn link_meetup<'a>(
             .ok();
         return Ok(());
     };
-    let user_id = context.msg.author.id.0;
+    let user_id = context.msg.author.id;
     let url = lib::meetup::oauth2::generate_meetup_linking_link(
         context.async_redis_connection().await?,
         user_id,
@@ -90,10 +94,9 @@ fn link_meetup_bot_admin<'a>(
 ) -> super::CommandResult<'a> {
     let discord_id = captures.name("mention_id").unwrap().as_str();
     let meetup_id = captures.name("meetupid").unwrap().as_str();
-    let bot_id = context.bot_id().await?;
     // Try to convert the specified ID to an integer
     let (discord_id, meetup_id) = match (discord_id.parse::<u64>(), meetup_id.parse::<u64>()) {
-        (Ok(id1), Ok(id2)) => (id1, id2),
+        (Ok(id1), Ok(id2)) => (UserId(id1), id2),
         _ => {
             let _ = context.msg.channel_id.say(
                 &context.ctx,
@@ -102,18 +105,15 @@ fn link_meetup_bot_admin<'a>(
             return Ok(());
         }
     };
-    let redis_key_d2m = format!("discord_user:{}:meetup_user", discord_id);
-    let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
-    // let redis_connection = redis_client.get_connection()?;
-    // Check if there is already a meetup id linked to this user
-    // and issue a warning
-    let linked_meetup_id: Option<u64> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_key_d2m)
-        .await?;
-    if let Some(linked_meetup_id) = linked_meetup_id {
-        if linked_meetup_id == meetup_id {
+    let pool = context.pool().await?;
+    let mut tx = pool.begin().await?;
+    let linking_result = lib::link_discord_meetup(discord_id, meetup_id, &mut tx).await?;
+    tx.commit().await?;
+    match linking_result {
+        LinkingResult::Success {
+            action: LinkingAction::AlreadyLinked,
+            ..
+        } => {
             context
                 .msg
                 .channel_id
@@ -126,83 +126,12 @@ fn link_meetup_bot_admin<'a>(
                 )
                 .await
                 .ok();
-            return Ok(());
-        } else {
-            // TODO: answer in DM?
-            context
-                .msg
-                .channel_id
-                .say(
-                    &context.ctx,
-                    format!(
-                    "<@{discord_id}> is already linked to a different Meetup account. If you want \
-                     to change this, unlink the currently linked Meetup account first by \
-                     writing:\n<@{bot_id}> unlink meetup <@{discord_id}>",
-                    discord_id = discord_id,
-                    bot_id = bot_id
-                ),
-                )
-                .await
-                .ok();
-            return Ok(());
         }
-    }
-    // Check if this meetup id is already linked
-    // and issue a warning
-    let linked_discord_id: Option<u64> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_key_m2d)
-        .await?;
-    if let Some(linked_discord_id) = linked_discord_id {
-        let _ = context
-            .msg
-            .author
-            .direct_message(&context.ctx, |message_builder| {
-                message_builder.content(format!(
-                    "This Meetup account is alread linked to <@{linked_discord_id}>. If you want \
-                     to change this, unlink the Meetup account first by writing\n<@{bot_id}> \
-                     unlink meetup <@{linked_discord_id}>",
-                    linked_discord_id = linked_discord_id,
-                    bot_id = bot_id
-                ))
-            });
-        return Ok(());
-    }
-    // The user has not yet linked their meetup account.
-    let successful = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    // Try to atomically set the meetup id
-    let redis_connection = context.async_redis_connection().await?;
-    lib::redis::async_redis_transaction(
-        redis_connection,
-        &[&redis_key_d2m, &redis_key_m2d],
-        |con, mut pipe| {
-            let redis_key_d2m = redis_key_d2m.clone();
-            let redis_key_m2d = redis_key_m2d.clone();
-            let successful = Arc::clone(&successful);
-            async move {
-                let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m).await?;
-                let linked_discord_id: Option<u64> = con.get(&redis_key_m2d).await?;
-                if linked_meetup_id.is_some() || linked_discord_id.is_some() {
-                    // The meetup id was linked in the meantime, abort
-                    successful.store(false, std::sync::atomic::Ordering::Release);
-                    // Execute empty transaction just to get out of the closure
-                    pipe.query_async(con).await
-                } else {
-                    pipe.sadd("meetup_users", meetup_id)
-                        .sadd("discord_users", discord_id)
-                        .set(&redis_key_d2m, meetup_id)
-                        .set(&redis_key_m2d, discord_id);
-                    successful.store(true, std::sync::atomic::Ordering::Release);
-                    pipe.query_async(con).await
-                }
-            }
-            .boxed()
-        },
-    )
-    .await?;
-    if successful.load(std::sync::atomic::Ordering::Acquire) {
-        let _ = context
+        LinkingResult::Success {
+            action: LinkingAction::Linked | LinkingAction::NewMember | LinkingAction::MergedMember,
+            ..
+        } => {
+            let _ = context
             .msg
             .channel_id
             .send_message(&context.ctx, |message| {
@@ -215,14 +144,35 @@ fn link_meetup_bot_admin<'a>(
                     embed
                 })
             });
-        return Ok(());
-    } else {
-        let _ = context
-            .msg
-            .channel_id
-            .say(&context.ctx, "Could not assign meetup id (timing error)");
-        return Ok(());
-    }
+        }
+        LinkingResult::Conflict {
+            member_with_meetup:
+                LinkingMemberMeetup {
+                    meetup_id: meetup_id1,
+                    discord_id: discord_id1,
+                    ..
+                },
+            member_with_discord:
+                LinkingMemberDiscord {
+                    meetup_id: meetup_id2,
+                    discord_id: discord_id2,
+                    ..
+                },
+        } => {
+            let message = format!("The specified Meetup and Discord IDs are attached to different user profiles \
+            but those profiles can't be merged because at least one of the profiles already has a conflicting \
+            linking:\n\n\
+            **User profile 1**\n\
+            Meetup ID: {meetup_id1}\n\
+            Discord ID: {discord_id1:?}\n\n\
+            **User profile 2**\n\
+            Meetup ID: {meetup_id2:?}\n\
+            Discord ID: {discord_id2:?}");
+            // TODO: answer in DM?
+            context.msg.channel_id.say(&context.ctx, message).await.ok();
+        }
+    };
+    Ok(())
 }
 
 #[command]
@@ -256,21 +206,12 @@ async fn unlink_meetup_impl(
     is_bot_admin_command: bool,
     user_id: UserId,
 ) -> Result<(), lib::meetup::Error> {
-    let redis_key_d2m = format!("discord_user:{}:meetup_user", user_id);
-    // Check if there is actually a meetup id linked to this user
-    let linked_meetup_id: Option<u64> = context
-        .async_redis_connection()
-        .await?
-        .get(&redis_key_d2m)
-        .await?;
-    match linked_meetup_id {
-        Some(meetup_id) => {
-            let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_id);
-            context
-                .async_redis_connection()
-                .await?
-                .del(&[&redis_key_d2m, &redis_key_m2d])
-                .await?;
+    let pool = context.pool().await?;
+    let mut tx = pool.begin().await?;
+    let result = lib::unlink_meetup(user_id, &mut tx).await?;
+    tx.commit().await?;
+    match result {
+        UnlinkingResult::Success => {
             let message = if is_bot_admin_command {
                 format!("Unlinked <@{}>'s Meetup account", user_id)
             } else {
@@ -278,7 +219,7 @@ async fn unlink_meetup_impl(
             };
             context.msg.channel_id.say(&context.ctx, message).await.ok();
         }
-        None => {
+        UnlinkingResult::NotLinked => {
             let message = if is_bot_admin_command {
                 Cow::Owned(format!(
                     "There was seemingly no meetup account linked to <@{}>",

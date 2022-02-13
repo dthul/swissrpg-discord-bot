@@ -2,8 +2,7 @@
 #![warn(rust_2018_idioms)]
 
 use futures::future;
-use redis::Commands;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{postgres::PgPoolOptions, Executor};
 use std::{
     env,
     sync::{
@@ -54,20 +53,6 @@ fn main() {
         "redis://127.0.0.1/0"
     };
     let redis_client = redis::Client::open(redis_url).expect("Could not create a Redis client");
-    let mut redis_connection = redis_client
-        .get_connection()
-        .expect("Could not connect to Redis");
-
-    // Create a Meetup API client (might not be possible if there is no access token yet)
-    let meetup_access_token: Option<String> = redis_connection
-        .get("meetup_access_token")
-        .expect("Meetup access token could not be loaded from Redis");
-    let async_meetup_client = match meetup_access_token {
-        Some(meetup_access_token) => Arc::new(futures_util::lock::Mutex::new(Some(Arc::new(
-            lib::meetup::newapi::AsyncClient::new(&meetup_access_token),
-        )))),
-        None => Arc::new(futures_util::lock::Mutex::new(None)),
-    };
 
     // Create a Meetup OAuth2 consumer
     let meetup_oauth2_consumer = Arc::new(
@@ -95,9 +80,31 @@ fn main() {
         .block_on(
             PgPoolOptions::new()
                 .max_connections(5)
+                .after_connect(|conn| {
+                    Box::pin(async move {
+                        conn.execute("SET default_transaction_isolation TO 'serializable'")
+                            .await?;
+                        Ok(())
+                    })
+                })
                 .connect(&database_url),
         )
         .expect("Could not connect to the Postgres database");
+
+    // Create a Meetup API client (might not be possible if there is no access token yet)
+    let meetup_access_token = async_runtime
+        .block_on(async {
+            sqlx::query_scalar!(r#"SELECT meetup_access_token FROM organizer_token"#)
+                .fetch_optional(&pool)
+                .await
+        })
+        .expect("Meetup access token could not be loaded from the database");
+    let async_meetup_client = match meetup_access_token {
+        Some(meetup_access_token) => Arc::new(futures_util::lock::Mutex::new(Some(Arc::new(
+            lib::meetup::newapi::AsyncClient::new(&meetup_access_token),
+        )))),
+        None => Arc::new(futures_util::lock::Mutex::new(None)),
+    };
 
     let bot_shutdown_signal = Arc::new(AtomicBool::new(false));
     let mut bot = async_runtime
@@ -147,6 +154,7 @@ fn main() {
         meetup_oauth2_consumer.clone(),
         ([127, 0, 0, 1], port).into(),
         redis_client.clone(),
+        pool.clone(),
         async_meetup_client.clone(),
         discord_api.clone(),
         bot_name,
@@ -159,19 +167,19 @@ fn main() {
     // Organizer OAuth2 token refresh task
     let organizer_token_refresh_task = lib::tasks::token_refresh::organizer_token_refresh_task(
         (*meetup_oauth2_consumer).clone(),
-        redis_client.clone(),
+        pool.clone(),
         async_meetup_client.clone(),
     );
 
     // Users OAuth2 token refresh task
     let users_token_refresh_task = lib::tasks::token_refresh::users_token_refresh_task(
         (*meetup_oauth2_consumer).clone(),
-        redis_client.clone(),
+        pool.clone(),
     );
 
     // Schedule the end of game task
     let end_of_game_task = lib::tasks::end_of_game::create_recurring_end_of_game_task(
-        redis_client.clone(),
+        pool.clone(),
         discord_api.clone(),
         bot_id,
     );
@@ -185,6 +193,7 @@ fn main() {
 
     let static_file_prefix = Box::leak(format!("{}/static/", lib::urls::BASE_URL).into_boxed_str());
     let syncing_task = lib::tasks::sync::create_recurring_syncing_task(
+        pool.clone(),
         redis_client.clone(),
         async_meetup_client.clone(),
         discord_api.clone(),

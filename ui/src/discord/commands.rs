@@ -1,6 +1,5 @@
 use futures_util::lock::Mutex as AsyncMutex;
 use once_cell::sync::OnceCell;
-use redis::AsyncCommands;
 use regex::{Regex, RegexSet};
 use serenity::{
     model::{
@@ -14,7 +13,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 mod add_user;
-mod archive;
 // mod clone_event;
 mod count_inactive;
 mod end_adventure;
@@ -26,8 +24,7 @@ mod manage_channel;
 // mod mention_channel;
 mod numcached;
 // mod refresh_meetup_token;
-// mod remind_expiration;
-// mod rsvp_user;
+mod remind_expiration;
 mod schedule_session;
 mod snooze;
 mod stop;
@@ -47,7 +44,7 @@ static ALL_COMMANDS: &[&Command] = &[
     &topic::SET_VOICE_TOPIC_COMMAND,
     &sync_meetup::SYNC_MEETUP_COMMAND,
     &sync_discord::SYNC_DISCORD_COMMAND,
-    // &remind_expiration::REMIND_EXPIRATION_COMMAND,
+    &remind_expiration::REMIND_EXPIRATION_COMMAND,
     &add_user::ADD_USER_COMMAND,
     &add_user::ADD_HOST_COMMAND,
     &add_user::REMOVE_USER_COMMAND,
@@ -67,9 +64,7 @@ static ALL_COMMANDS: &[&Command] = &[
     &count_inactive::COUNT_INACTIVE_COMMAND,
     &count_inactive::COUNT_MEMBERS_COMMAND,
     // &clone_event::CLONE_EVENT_COMMAND,
-    // &rsvp_user::RSVP_USER_COMMAND,
     // &test::TEST_COMMAND,
-    &archive::ARCHIVE_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
@@ -117,15 +112,6 @@ pub struct CommandContext {
     channel: OnceCell<Channel>,
     pool: OnceCell<sqlx::PgPool>,
 }
-
-// Send + Sync: redis::Client
-// Send: redis::aio::Connection, Context
-
-// fn test(context: CommandContext) {
-//     assert_impl::assert_impl!(Sync: CommandContext);
-// }
-
-// unsafe impl Sync for CommandContext {}
 
 impl CommandContext {
     pub fn new(ctx: Context, msg: Message) -> Self {
@@ -306,26 +292,38 @@ impl CommandContext {
         let ctx = (&self.ctx).into();
         let channel_id = self.msg.channel_id;
         let user_id = self.msg.author.id;
-        let redis_connection = self.async_redis_connection().await?;
-        lib::discord::is_host(&ctx, channel_id, user_id, redis_connection).await
+        let pool = self.pool().await?;
+        lib::discord::is_host(&ctx, channel_id, user_id, &pool).await
     }
 
-    pub async fn is_game_channel(&mut self) -> Result<bool, lib::meetup::Error> {
+    pub async fn is_game_channel(
+        &mut self,
+        tx: Option<&mut sqlx::Transaction<'_, sqlx::Postgres>>,
+    ) -> Result<bool, lib::meetup::Error> {
         let channel_id = self.msg.channel_id.0;
-        Ok(self
-            .async_redis_connection()
-            .await?
-            .sismember("discord_channels", channel_id)
-            .await?)
+        let query = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) > 0 AS "is_game_channel!" FROM event_series_text_channel WHERE discord_id = $1"#,
+            channel_id as i64
+        );
+        let res = match tx {
+            Some(tx) => query.fetch_one(tx).await?,
+            None => {
+                let pool = self.pool().await?;
+                query.fetch_one(&pool).await?
+            }
+        };
+        Ok(res)
     }
 
     pub async fn is_managed_channel(&mut self) -> Result<bool, lib::meetup::Error> {
         let channel_id = self.msg.channel_id.0;
-        Ok(self
-            .async_redis_connection()
-            .await?
-            .sismember("managed_discord_channels", channel_id)
-            .await?)
+        let pool = self.pool().await?;
+        Ok(sqlx::query_scalar!(
+            r#"SELECT COUNT(*) > 0 AS "is_managed_channel!" FROM managed_channel WHERE discord_id = $1"#,
+            channel_id as i64
+        )
+        .fetch_one(&pool)
+        .await?)
     }
 }
 

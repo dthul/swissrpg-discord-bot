@@ -1,11 +1,12 @@
 use askama::Template;
 use cookie::Cookie;
-use futures_util::{lock::Mutex, FutureExt, TryFutureExt};
+use futures_util::{lock::Mutex, TryFutureExt};
 use hyper::Response;
-use lib::DefaultStr;
+use lib::{DefaultStr, LinkingAction, LinkingMemberDiscord, LinkingMemberMeetup, LinkingResult};
 use oauth2::{basic::BasicClient, AuthorizationCode, CsrfToken, RedirectUrl, Scope, TokenResponse};
 use redis::AsyncCommands;
 use serde::Deserialize;
+use serenity::model::id::UserId;
 use std::{borrow::Cow, sync::Arc};
 use warp::Filter;
 
@@ -18,6 +19,7 @@ struct LinkQuery {
 
 pub fn create_routes(
     redis_client: redis::Client,
+    pool: sqlx::PgPool,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     bot_name: String,
@@ -44,6 +46,7 @@ pub fn create_routes(
     };
     let authorize_redirect_route = {
         let redis_client = redis_client.clone();
+        let pool = pool.clone();
         let oauth2_consumer = oauth2_consumer.clone();
         let async_meetup_client = async_meetup_client.clone();
         warp::get()
@@ -52,6 +55,7 @@ pub fn create_routes(
             .and(warp::header::headers_cloned())
             .and_then(move |query: LinkQuery, headers| {
                 let redis_client = redis_client.clone();
+                let pool = pool.clone();
                 let oauth2_consumer = oauth2_consumer.clone();
                 let async_meetup_client = async_meetup_client.clone();
                 async move {
@@ -61,6 +65,7 @@ pub fn create_routes(
                         .await?;
                     handle_authorize_redirect(
                         &mut redis_connection,
+                        &pool,
                         &oauth2_consumer.authorization_client,
                         &async_meetup_client,
                         query,
@@ -96,6 +101,7 @@ pub fn create_routes(
     };
     let link_redirect_route = {
         let redis_client = redis_client.clone();
+        let pool = pool.clone();
         let oauth2_consumer = oauth2_consumer.clone();
         let bot_name = bot_name.clone();
         warp::get()
@@ -118,6 +124,7 @@ pub fn create_routes(
                       query: LinkQuery,
                       headers| {
                     let redis_client = redis_client.clone();
+                    let pool = pool.clone();
                     let oauth2_consumer = oauth2_consumer.clone();
                     let bot_name = bot_name.clone();
                     async move {
@@ -127,6 +134,7 @@ pub fn create_routes(
                             .await?;
                         handle_link_redirect(
                             &mut redis_connection,
+                            &pool,
                             &oauth2_consumer.link_client,
                             &bot_name,
                             path.as_str(),
@@ -226,6 +234,7 @@ async fn handle_authorize(
 
 async fn handle_authorize_redirect(
     redis_connection: &mut redis::aio::Connection,
+    db_connection: &sqlx::PgPool,
     oauth2_authorization_client: &BasicClient,
     async_meetup_client: &Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     query: LinkQuery,
@@ -275,36 +284,19 @@ async fn handle_authorize_redirect(
     if !is_organizer {
         return Ok(("Only the organizer can log in", "").into());
     }
-    // Store the new access and refresh tokens in Redis
-    let transaction_fn = {
-        // let token_res = &token_res;
-        lib::redis::closure_type_helper(
-            move |con: &mut redis::aio::Connection, mut pipe: redis::Pipeline| {
-                let token_res = token_res.clone();
-                async move {
-                    match token_res.refresh_token() {
-                        Some(refresh_token) => {
-                            pipe.set("meetup_access_token", token_res.access_token().secret())
-                                .set("meetup_refresh_token", refresh_token.secret());
-                            pipe.query_async(con).await
-                        }
-                        None => {
-                            // Don't delete the (possibly existing) old refresh token
-                            pipe.set("meetup_access_token", token_res.access_token().secret());
-                            pipe.query_async(con).await
-                        }
-                    }
-                }
-                .boxed()
-            },
-        )
-    };
-    let _: () = lib::redis::async_redis_transaction(
-        redis_connection,
-        &["meetup_access_token", "meetup_refresh_token"],
-        transaction_fn,
-    )
-    .await?;
+    // Store the new access and refresh tokens
+    let mut tx = db_connection.begin().await?;
+    sqlx::query!(r#"DELETE FROM organizer_token"#)
+        .execute(&mut tx)
+        .await?;
+    sqlx::query!(
+        r#"INSERT INTO organizer_token (meetup_access_token, meetup_refresh_token, meetup_access_token_refresh_time) VALUES ($1, $2, $3)"#,
+        token_res.access_token().secret(),
+        token_res.refresh_token().map(|token| token.secret()),
+        chrono::Utc::now() + chrono::Duration::days(2))
+        .execute(&mut tx)
+        .await?;
+    tx.commit().await?;
     // Replace the meetup client
     *async_meetup_client.lock().await = Some(Arc::new(new_async_meetup_client));
     Ok(("Thanks for logging in :)", "").into())
@@ -369,6 +361,7 @@ async fn handle_link(
 
 async fn handle_link_redirect(
     redis_connection: &mut redis::aio::Connection,
+    db_connection: &sqlx::PgPool,
     oauth2_link_client: &BasicClient,
     bot_name: &str,
     path: &str,
@@ -385,7 +378,7 @@ async fn handle_link_redirect(
     pipe.get(&redis_key).del(&redis_key);
     let (discord_id, _): (Option<u64>, u32) = pipe.query_async(redis_connection).await?;
     let discord_id = match discord_id {
-        Some(id) => id,
+        Some(id) => UserId(id),
         None => {
             return Ok((
                 lib::strings::OAUTH2_LINK_EXPIRED_TITLE,
@@ -438,121 +431,91 @@ async fn handle_link_redirect(
     let async_user_meetup_client =
         lib::meetup::newapi::AsyncClient::new(token_res.access_token().secret());
     let meetup_user = async_user_meetup_client.get_self().await?;
-    let redis_key_d2m = format!("discord_user:{}:meetup_user", discord_id);
-    let redis_key_m2d = format!("meetup_user:{}:discord_user", meetup_user.id);
-    // Check that the Discord ID has not been linked yet
-    let existing_meetup_id: Option<u64> = redis_connection.get(&redis_key_d2m).await?;
-    match existing_meetup_id {
-        Some(existing_meetup_id) => {
-            if existing_meetup_id == meetup_user.id.0 {
-                return Ok((
-                    lib::strings::OAUTH2_ALREADY_LINKED_SUCCESS_TITLE,
-                    lib::strings::OAUTH2_ALREADY_LINKED_SUCCESS_CONTENT,
-                )
-                    .into());
+    // Link the Discord and Meetup profiles
+    let mut tx = db_connection.begin().await?;
+    let linking_result = lib::link_discord_meetup(discord_id, meetup_user.id.0, &mut tx).await?;
+    tx.commit().await?;
+
+    match linking_result {
+        LinkingResult::Success {
+            action: LinkingAction::AlreadyLinked,
+            ..
+        } => Ok((
+            lib::strings::OAUTH2_ALREADY_LINKED_SUCCESS_TITLE,
+            lib::strings::OAUTH2_ALREADY_LINKED_SUCCESS_CONTENT,
+        )
+            .into()),
+        LinkingResult::Success {
+            action: LinkingAction::Linked | LinkingAction::NewMember | LinkingAction::MergedMember,
+            member_id,
+        } => {
+            // If the "rsvp" scope is part of the token result, store the tokens as well
+            if with_rsvp_scope {
+                if let Some(refresh_token) = token_res.refresh_token() {
+                    sqlx::query!(
+                        r#"UPDATE "member" SET meetup_oauth2_access_token = $2, meetup_oauth2_refresh_token = $3 WHERE id = $1"#,
+                        member_id.0,
+                        token_res.access_token().secret(),
+                        refresh_token.secret()
+                    ).execute(db_connection).await.ok();
+                }
+            }
+            if let Some(photo_url) = meetup_user
+                .member_photo
+                .and_then(|photo| photo.url_for_size(380, 380))
+            {
+                Ok(super::server::HandlerResponse::Message {
+                    title: Cow::Borrowed(lib::strings::OAUTH2_LINKING_SUCCESS_TITLE),
+                    content: Some(Cow::Owned(lib::strings::OAUTH2_LINKING_SUCCESS_CONTENT(
+                        meetup_user.name.unwrap_or_str("Unknown"),
+                    ))),
+                    safe_content: None,
+                    img_url: Some(Cow::Owned(photo_url)),
+                }
+                .into())
             } else {
-                return Ok((
+                Ok((
+                    lib::strings::OAUTH2_LINKING_SUCCESS_TITLE,
+                    lib::strings::OAUTH2_LINKING_SUCCESS_CONTENT(
+                        meetup_user.name.unwrap_or_str("Unknown"),
+                    ),
+                )
+                    .into())
+            }
+        }
+        LinkingResult::Conflict {
+            member_with_meetup:
+                LinkingMemberMeetup {
+                    meetup_id: _meetup_id1,
+                    discord_id: discord_id1,
+                    ..
+                },
+            member_with_discord:
+                LinkingMemberDiscord {
+                    meetup_id: meetup_id2,
+                    discord_id: _discord_id2,
+                    ..
+                },
+        } => {
+            if let Some(_discord_id1) = discord_id1 {
+                Ok((
                     lib::strings::OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_TITLE,
                     lib::strings::OAUTH2_DISCORD_ALREADY_LINKED_FAILURE_CONTENT(&bot_name),
                 )
-                    .into());
+                    .into())
+            } else if let Some(_meetup_id2) = meetup_id2 {
+                Ok((
+                    lib::strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_TITLE,
+                    lib::strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_CONTENT(&bot_name),
+                )
+                    .into())
+            } else {
+                Ok((
+                    "Linking Failure",
+                    "Could not assign meetup id (timing error)",
+                )
+                    .into())
             }
         }
-        _ => (),
-    }
-    // Check that the Meetup ID has not been linked to some other Discord ID yet
-    let existing_discord_id: Option<u64> = redis_connection.get(&redis_key_m2d).await?;
-    match existing_discord_id {
-        Some(_) => {
-            return Ok((
-                lib::strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_TITLE,
-                lib::strings::OAUTH2_MEETUP_ALREADY_LINKED_FAILURE_CONTENT(&bot_name),
-            )
-                .into());
-        }
-        _ => (),
-    }
-    // Create the link between the Discord and the Meetup ID
-    let successful = Arc::new(Mutex::new(false));
-    let _: () = {
-        // If the "rsvp" scope is part of the token result, store the tokens as well
-        if with_rsvp_scope {
-            if let Some(refresh_token) = token_res.refresh_token() {
-                let redis_user_tokens_key = format!("meetup_user:{}:oauth2_tokens", meetup_user.id);
-                let mut pipe = redis::pipe();
-                pipe.hset(
-                    &redis_user_tokens_key,
-                    "access_token",
-                    token_res.access_token().secret(),
-                );
-                pipe.hset(
-                    &redis_user_tokens_key,
-                    "refresh_token",
-                    refresh_token.secret(),
-                );
-                let _: () = pipe.query_async(redis_connection).await?;
-            }
-        }
-        let transaction_fn = {
-            let redis_key_d2m = redis_key_d2m.clone();
-            let redis_key_m2d = redis_key_m2d.clone();
-            let meetup_user_id = meetup_user.id.0;
-            let successful = successful.clone();
-            lib::redis::closure_type_helper(
-                move |con: &mut redis::aio::Connection, mut pipe: redis::Pipeline| {
-                    let redis_key_d2m = redis_key_d2m.clone();
-                    let redis_key_m2d = redis_key_m2d.clone();
-                    let successful = successful.clone();
-                    async move {
-                        let linked_meetup_id: Option<u64> = con.get(&redis_key_d2m).await?;
-                        let linked_discord_id: Option<u64> = con.get(&redis_key_m2d).await?;
-                        if linked_meetup_id.is_some() || linked_discord_id.is_some() {
-                            // The meetup id was linked in the meantime, abort
-                            *successful.lock().await = false;
-                            // Execute empty transaction just to get out of the closure
-                            pipe.query_async(con).await
-                        } else {
-                            pipe.sadd("meetup_users", meetup_user_id)
-                                .sadd("discord_users", discord_id)
-                                .set(&redis_key_d2m, meetup_user_id)
-                                .set(&redis_key_m2d, discord_id);
-                            *successful.lock().await = true;
-                            pipe.query_async(con).await
-                        }
-                    }
-                    .boxed()
-                },
-            )
-        };
-        let transaction_keys = &[&redis_key_d2m, &redis_key_m2d];
-        lib::redis::async_redis_transaction(redis_connection, transaction_keys, transaction_fn)
-            .await?
-    };
-    if !*successful.lock().await {
-        return Ok((
-            "Linking Failure",
-            "Could not assign meetup id (timing error)",
-        )
-            .into());
-    }
-    if let Some(photo_url) = meetup_user
-        .member_photo
-        .and_then(|photo| photo.url_for_size(380, 380))
-    {
-        Ok(super::server::HandlerResponse::Message {
-            title: Cow::Borrowed(lib::strings::OAUTH2_LINKING_SUCCESS_TITLE),
-            content: Some(Cow::Owned(lib::strings::OAUTH2_LINKING_SUCCESS_CONTENT(
-                meetup_user.name.unwrap_or_str("Unknown"),
-            ))),
-            safe_content: None,
-            img_url: Some(Cow::Owned(photo_url)),
-        }
-        .into())
-    } else {
-        Ok((
-            lib::strings::OAUTH2_LINKING_SUCCESS_TITLE,
-            lib::strings::OAUTH2_LINKING_SUCCESS_CONTENT(meetup_user.name.unwrap_or_str("Unknown")),
-        )
-            .into())
     }
 }
