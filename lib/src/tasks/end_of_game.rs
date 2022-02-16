@@ -262,7 +262,7 @@ async fn send_channel_expiration_reminder(
     discord_api: &mut crate::discord::CacheAndHttp,
     bot_id: UserId,
 ) -> Result<(), crate::meetup::Error> {
-    let (expiration_time, snooze_until, last_reminder_time, deletion_time) = sqlx::query!(
+    let (expiration_time, last_reminder_time, snooze_until, deletion_time) = sqlx::query!(
         r#"SELECT expiration_time, last_expiration_reminder_time, snooze_until, deletion_time
         FROM event_series_text_channel
         WHERE discord_id = $1"#,
@@ -334,7 +334,7 @@ async fn send_channel_expiration_reminder(
                 }
             })
             .await?;
-        sqlx::query!("UPDATE event_series_text_channel SET last_expiration_reminder_time = $2 WHERE discord_id = $1", channel_id.0 as i64, chrono::Utc::now()).execute(db_connection).await?;
+        sqlx::query!("UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1", channel_id.0 as i64).execute(db_connection).await?;
         println!(
             "Updated channel's {} latest expiration reminder time",
             channel_id

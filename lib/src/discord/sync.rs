@@ -147,7 +147,7 @@ async fn sync_event_series(
     // Update this series' Discord category to match the next upcoming event's (if any)
     if let Some(discord_category) = next_event.discord_category {
         sqlx::query!(
-            r#"UPDATE event_series SET discord_category_id = $2 WHERE id = $1 AND discord_category_id <> $2"#,
+            r#"UPDATE event_series SET discord_category_id = $2 WHERE id = $1 AND discord_category_id IS DISTINCT FROM $2"#,
             series_id.0,
             discord_category.0 as i64
         )
