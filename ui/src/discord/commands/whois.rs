@@ -79,21 +79,22 @@ async fn whois_by_discord_id(
             _,
             Some(db::MemberWithDiscord {
                 meetup_id: Some(meetup_id),
+                discord_nick,
                 ..
             }),
         )] => {
-            context
-                .msg
-                .channel_id
-                .say(
-                    &context.ctx,
-                    format!(
-                        "<@{}> is linked to https://www.meetup.com/members/{}/",
-                        user_id.0, meetup_id
-                    ),
+            let message = if let Some(discord_nick) = discord_nick {
+                format!(
+                    "<@{}> ({}) is linked to https://www.meetup.com/members/{}/",
+                    user_id.0, discord_nick, meetup_id
                 )
-                .await
-                .ok();
+            } else {
+                format!(
+                    "<@{}> is linked to https://www.meetup.com/members/{}/",
+                    user_id.0, meetup_id
+                )
+            };
+            context.msg.channel_id.say(&context.ctx, message).await.ok();
         }
         _ => {
             context
@@ -158,21 +159,22 @@ async fn whois_by_meetup_id(
             _,
             Some(db::MemberWithMeetup {
                 discord_id: Some(discord_id),
+                discord_nick,
                 ..
             }),
         )] => {
-            context
-                .msg
-                .channel_id
-                .say(
-                    &context.ctx,
-                    format!(
-                        "https://www.meetup.com/members/{}/ is linked to <@{}>",
-                        meetup_id, discord_id
-                    ),
+            let message = if let Some(discord_nick) = discord_nick {
+                format!(
+                    "https://www.meetup.com/members/{}/ is linked to <@{}> ({})",
+                    meetup_id, discord_id, discord_nick
                 )
-                .await
-                .ok();
+            } else {
+                format!(
+                    "https://www.meetup.com/members/{}/ is linked to <@{}>",
+                    meetup_id, discord_id
+                )
+            };
+            context.msg.channel_id.say(&context.ctx, message).await.ok();
         }
         _ => {
             context
