@@ -479,8 +479,24 @@ pub async fn sync_rsvps(
     //     })
     //     .collect();
     let mut tx = db_connection.begin().await?;
+    // Convert the Meetup users IDs into member IDs
+    let mut rsvp_yes_member_ids = Vec::with_capacity(rsvp_yes_user_ids.len());
     for user_id in rsvp_yes_user_ids {
         let member_id = db::get_or_create_member_for_meetup_id(&mut tx, user_id).await?;
+        rsvp_yes_member_ids.push(member_id);
+    }
+    // Remove all users which are not attending
+    sqlx::query!(
+        r#"DELETE FROM event_participant WHERE event_id = $1 AND NOT (member_id = ANY($2))"#,
+        event_id.0,
+        &rsvp_yes_member_ids
+            .iter()
+            .map(|id| id.0)
+            .collect::<Vec<_>>()
+    )
+    .execute(&mut tx)
+    .await?;
+    for member_id in rsvp_yes_member_ids {
         // Mark this member as attending
         sqlx::query!(
             r#"INSERT INTO event_participant (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
