@@ -171,11 +171,11 @@ fn main() {
         async_meetup_client.clone(),
     );
 
-    // Users OAuth2 token refresh task
-    let users_token_refresh_task = lib::tasks::token_refresh::users_token_refresh_task(
-        (*meetup_oauth2_consumer).clone(),
-        pool.clone(),
-    );
+    // // Users OAuth2 token refresh task
+    // let users_token_refresh_task = lib::tasks::token_refresh::users_token_refresh_task(
+    //     (*meetup_oauth2_consumer).clone(),
+    //     pool.clone(),
+    // );
 
     // Schedule the end of game task
     let end_of_game_task = lib::tasks::end_of_game::create_recurring_end_of_game_task(
@@ -210,8 +210,8 @@ fn main() {
     // Wrap the long-running tasks in abortable Futures
     let (organizer_token_refresh_task, abort_handle_organizer_token_refresh_task) =
         future::abortable(organizer_token_refresh_task);
-    let (users_token_refresh_task, abort_handle_users_token_refresh_task) =
-        future::abortable(users_token_refresh_task);
+    // let (users_token_refresh_task, abort_handle_users_token_refresh_task) =
+    //     future::abortable(users_token_refresh_task);
     let (end_of_game_task, abort_handle_end_of_game_task) = future::abortable(end_of_game_task);
     let (user_topic_voice_channel_reset_task, abort_handle_user_topic_voice_channel_reset_task) =
         future::abortable(user_topic_voice_channel_reset_task);
@@ -255,10 +255,10 @@ fn main() {
             let _ = organizer_token_refresh_task.await;
             println!("Organizer token refresh task shut down.");
         });
-        tokio::spawn(async {
-            let _ = users_token_refresh_task.await;
-            println!("User token refresh task shut down.");
-        });
+        // tokio::spawn(async {
+        //     let _ = users_token_refresh_task.await;
+        //     println!("User token refresh task shut down.");
+        // });
         tokio::spawn(async {
             let _ = end_of_game_task.await;
             println!("End of game task shut down.");
@@ -296,7 +296,7 @@ fn main() {
     // Abort all long running futures
     bot_shutdown_signal.store(true, Ordering::Release);
     abort_handle_organizer_token_refresh_task.abort();
-    abort_handle_users_token_refresh_task.abort();
+    // abort_handle_users_token_refresh_task.abort();
     abort_handle_end_of_game_task.abort();
     abort_handle_user_topic_voice_channel_reset_task.abort();
     abort_handle_syncing_task.abort();
