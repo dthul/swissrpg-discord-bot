@@ -296,6 +296,32 @@ pub async fn get_or_create_member_for_meetup_id(
     }
 }
 
+pub async fn get_or_create_member_for_discord_id(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    discord_id: UserId,
+) -> Result<MemberId, crate::meetup::Error> {
+    let member_id = sqlx::query!(
+        r#"SELECT id FROM "member" WHERE discord_id = $1"#,
+        discord_id.0 as i64
+    )
+    .map(|row| MemberId(row.id))
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(member_id) = member_id {
+        Ok(member_id)
+    } else {
+        // Create a new member entry for this (so far unknown) Meetup user
+        let member_id = sqlx::query!(
+            r#"INSERT INTO "member" (discord_id) VALUES ($1) RETURNING id"#,
+            discord_id.0 as i64
+        )
+        .map(|row| MemberId(row.id))
+        .fetch_one(&mut *tx)
+        .await?;
+        Ok(member_id)
+    }
+}
+
 // Return a list of members attending the specified events.
 // If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
 pub async fn get_events_participants(

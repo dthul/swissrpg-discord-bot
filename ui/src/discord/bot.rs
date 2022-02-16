@@ -314,7 +314,47 @@ impl EventHandler for Handler {
         if guild_id != lib::discord::sync::ids::GUILD_ID {
             return;
         }
-        Self::send_welcome_message(&ctx, &new_member.user);
+        Self::send_welcome_message(&ctx, &new_member.user).await;
+        let nick = new_member
+            .nick
+            .as_deref()
+            .unwrap_or(new_member.user.name.as_str());
+        Self::update_member_nick(&ctx, new_member.user.id, nick)
+            .await
+            .ok();
+    }
+
+    async fn guild_member_update(
+        &self,
+        ctx: Context,
+        _old_if_available: Option<Member>,
+        new: Member,
+    ) {
+        let nick = new.nick.as_deref().unwrap_or(new.user.name.as_str());
+        Self::update_member_nick(&ctx, new.user.id, nick).await.ok();
+    }
+
+    async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
+        let guild_id = match guilds.as_slice() {
+            [guild] => guild,
+            _ => {
+                eprintln!("cache_ready event received not exactly one guild");
+                return;
+            }
+        };
+        let members = match ctx
+            .cache
+            .guild_field(guild_id, |guild| guild.members.clone())
+            .await
+        {
+            Some(members) => members,
+            None => return,
+        };
+        println!("Updating {} cached member nicks", members.len());
+        for (user_id, member) in members {
+            let nick = member.nick.as_deref().unwrap_or(member.user.name.as_str());
+            Self::update_member_nick(&ctx, user_id, nick).await.ok();
+        }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
@@ -366,9 +406,35 @@ impl EventHandler for Handler {
 }
 
 impl Handler {
-    fn send_welcome_message(ctx: &Context, user: &User) {
-        let _ = user.direct_message(ctx, |message_builder| {
+    async fn send_welcome_message(ctx: &Context, user: &User) {
+        user.direct_message(ctx, |message_builder| {
             message_builder.content(strings::WELCOME_MESSAGE)
-        });
+        })
+        .await
+        .ok();
+    }
+
+    async fn update_member_nick(
+        ctx: &Context,
+        discord_id: UserId,
+        nick: &str,
+    ) -> Result<(), lib::meetup::Error> {
+        let pool = {
+            let data = ctx.data.read().await;
+            data.get::<super::bot::PoolKey>()
+                .cloned()
+                .ok_or_else(|| simple_error::SimpleError::new("Postgres pool was not set"))?
+        };
+        let mut tx = pool.begin().await?;
+        let member_id = lib::db::get_or_create_member_for_discord_id(&mut tx, discord_id).await?;
+        sqlx::query!(
+            r#"UPDATE member SET discord_nick = $2 WHERE id = $1 AND discord_nick IS DISTINCT FROM $2"#,
+            member_id.0,
+            nick
+        )
+        .execute(&mut tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
     }
 }
