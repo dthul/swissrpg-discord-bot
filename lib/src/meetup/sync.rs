@@ -5,15 +5,16 @@ use std::sync::Arc;
 
 use crate::{db, DefaultStr};
 
-pub const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)\[\s*new\s*adventure\s*\]";
-pub const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)\[\s*new\s*campaign\s*\]";
+pub const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)\\?\[\s*new\s*adventure\s*\\?\]";
+pub const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)\\?\[\s*new\s*campaign\s*\\?\]";
 pub const EVENT_SERIES_PATTERN: &'static str =
-    r"(?i)\[\s*campaign\s*(?P<event_id>[a-zA-Z0-9]+)\s*\]";
-pub const CHANNEL_PATTERN: &'static str = r"(?i)\[\s*channel\s*(?P<channel_id>[0-9]+)\s*\]";
+    r"(?i)\\?\[\s*campaign\s*(?P<event_id>[a-zA-Z0-9]+)\s*\\?\]";
+pub const CHANNEL_PATTERN: &'static str = r"(?i)\\?\[\s*channel\s*(?P<channel_id>[0-9]+)\s*\\?\]";
 pub const SESSION_PATTERN: &'static str = r"(?i)\s*session\s*(?P<number>[0-9]+)";
-pub const ONLINE_PATTERN: &'static str = r"(?i)\[\s*online\s*\]";
-pub const ROLE_PATTERN: &'static str = r"(?i)\[\s*role\s*(?P<role_id>[0-9]+)\s*\]";
-pub const CATEGORY_PATTERN: &'static str = r"(?i)\[\s*category\s*(?P<category_id>[0-9]+)\s*\]";
+pub const ONLINE_PATTERN: &'static str = r"(?i)\\?\[\s*online\s*\\?\]";
+pub const ROLE_PATTERN: &'static str = r"(?i)\\?\[\s*role\s*(?P<role_id>[0-9]+)\s*\\?\]";
+pub const CATEGORY_PATTERN: &'static str =
+    r"(?i)\\?\[\s*category\s*(?P<category_id>[0-9]+)\s*\\?\]";
 
 lazy_static! {
     pub static ref NEW_ADVENTURE_REGEX: regex::Regex =
