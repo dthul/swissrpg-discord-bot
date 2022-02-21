@@ -40,4 +40,3 @@ async-stripe = { version = "0.13", default-features = false, features = ["runtim
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
 unicode-segmentation = "1.7"
 url = "2.1"
-warp = "0.3"

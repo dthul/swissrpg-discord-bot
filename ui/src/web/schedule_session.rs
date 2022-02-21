@@ -1,42 +1,30 @@
-use super::server::HandlerResponse;
+use std::{collections::HashMap, sync::Arc};
+
 use askama::Template;
+use axum::{
+    extract::{ContentLengthLimit, Extension, Form, Path},
+    response::{IntoResponse, Response},
+    routing::get,
+    Router,
+};
 use chrono::{offset::TimeZone, Datelike, Timelike};
 use chrono_tz::Europe;
-use futures_util::{lock::Mutex, TryFutureExt};
 use lib::{db, DefaultStr};
-use std::{collections::HashMap, sync::Arc};
-use warp::Filter;
 
-pub fn create_routes(
-    redis_client: redis::Client,
-    pool: sqlx::PgPool,
-    meetup_client: Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
-    discord_cache_http: lib::discord::CacheAndHttp,
-) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-    let get_route = {
-        let redis_client = redis_client.clone();
-        let pool = pool.clone();
-        warp::get()
-            .and(warp::path!("schedule_session" / u64))
-            .and_then(move |flow_id| {
-                let redis_client = redis_client.clone();
-                let pool = pool.clone();
-                async move {
-                    let mut redis_connection = redis_client
-                        .get_async_connection()
-                        .err_into::<lib::meetup::Error>()
-                        .await?;
-                    handle_schedule_session(&mut redis_connection, &pool, flow_id)
-                        .err_into::<warp::Rejection>()
-                        .await
-                }
-            })
-    };
+use super::{server::State, MessageTemplate, WebError};
+
+pub fn create_routes() -> Router {
+    let routes = Router::new().route(
+        "/schedule_session/:flow_id",
+        get(schedule_session_handler).post(schedule_session_post_handler),
+    );
+    // The following routes are just to be able to take a look at the scheduling
+    // and success templates without using an actual flow
     #[cfg(feature = "bottest")]
-    let get_route = {
-        let get_test_route = warp::get()
-            .and(warp::path!("schedule_session" / "test"))
-            .and_then(|| {
+    let routes = routes
+        .route(
+            "/schedule_session/test",
+            get(|| {
                 let local_time = chrono::Utc::now().with_timezone(&Europe::Zurich);
                 let template = ScheduleSessionTemplate {
                     day: local_time.day() as u8,
@@ -49,61 +37,22 @@ pub fn create_routes(
                     title: "Test event",
                     link: Some("https://meetup.com/"),
                 };
-                futures::future::ready(
-                    HandlerResponse::from_template(template)
-                        .map_err(|err| warp::Rejection::from(err)),
-                )
-            });
-        let get_test_success_route = warp::get()
-            .and(warp::path!("schedule_session" / "test" / "success"))
-            .and_then(|| {
+                futures::future::ready(template.into_response())
+            }),
+        )
+        .route(
+            "/schedule_session/test/success",
+            get(|| {
                 let template = ScheduleSessionSuccessTemplate {
                     title: "Test event",
                     link: "https://meetup.com/",
                     transferred_all_rsvps: Some(true),
                     closed_rsvps: true,
                 };
-                futures::future::ready(
-                    HandlerResponse::from_template(template)
-                        .map_err(|err| warp::Rejection::from(err)),
-                )
-            });
-        get_test_route.or(get_test_success_route).or(get_route)
-    };
-    let post_route = {
-        let redis_client = redis_client.clone();
-        let pool = pool.clone();
-        let meetup_client = meetup_client.clone();
-        let discord_cache_http = discord_cache_http.clone();
-        warp::post()
-            .and(warp::path!("schedule_session" / u64))
-            .and(warp::body::content_length_limit(32 * 1024))
-            .and(warp::body::form())
-            .and_then(move |flow_id, form_data: HashMap<String, String>| {
-                let redis_client = redis_client.clone();
-                let pool = pool.clone();
-                let meetup_client = meetup_client.clone();
-                let discord_cache_http = discord_cache_http.clone();
-                async move {
-                    let mut redis_connection = redis_client
-                        .get_async_connection()
-                        .err_into::<lib::meetup::Error>()
-                        .await?;
-                    handle_schedule_session_post(
-                        &mut redis_connection,
-                        &pool,
-                        &meetup_client,
-                        // oauth2_consumer,
-                        &discord_cache_http,
-                        flow_id,
-                        form_data,
-                    )
-                    .err_into::<warp::Rejection>()
-                    .await
-                }
-            })
-    };
-    get_route.or(post_route)
+                futures::future::ready(template.into_response())
+            }),
+        );
+    routes
 }
 
 #[derive(Template)]
@@ -139,26 +88,32 @@ pub mod filters {
     }
 }
 
-async fn handle_schedule_session(
-    redis_connection: &mut redis::aio::Connection,
-    db_connection: &sqlx::PgPool,
-    flow_id: u64,
-) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
+async fn schedule_session_handler(
+    Extension(state): Extension<Arc<State>>,
+    Path(flow_id): Path<u64>,
+) -> Result<Response, WebError> {
+    let mut redis_connection = state.redis_client.get_async_connection().await?;
     eprintln!("Retrieving flow...");
-    let flow = lib::flow::ScheduleSessionFlow::retrieve(redis_connection, flow_id).await?;
+    let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
         Some(flow) => flow,
-        None => return Ok(("Link expired", "Please request a new link").into()),
+        None => {
+            let template: MessageTemplate = ("Link expired", "Please request a new link").into();
+            return Ok(template.into_response());
+        }
     };
     eprintln!("... got it!\nRetrieving last event...");
-    let event = db::get_last_event_in_series(&db_connection, flow.event_series_id).await?;
+    let event = db::get_last_event_in_series(&state.pool, flow.event_series_id).await?;
     eprintln!("... got it!");
     match event {
-        None => Ok((
-            "No prior event found",
-            "Cannot schedule a continuation session without an initial event",
-        )
-            .into()),
+        None => {
+            let template: MessageTemplate = (
+                "No prior event found",
+                "Cannot schedule a continuation session without an initial event",
+            )
+                .into();
+            Ok(template.into_response())
+        }
         Some(event) => {
             // Assume Swiss time
             let local_time = event.time.with_timezone(&Europe::Zurich);
@@ -197,24 +152,25 @@ async fn handle_schedule_session(
                     .as_ref()
                     .map(|meetup_event| meetup_event.url.as_str()),
             };
-            Ok(HandlerResponse::from_template(template)?)
+            Ok(template.into_response())
         }
     }
 }
 
-async fn handle_schedule_session_post(
-    redis_connection: &mut redis::aio::Connection,
-    db_connection: &sqlx::PgPool,
-    meetup_client: &Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>,
-    // oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
-    discord_cache_http: &lib::discord::CacheAndHttp,
-    flow_id: u64,
-    form_data: HashMap<String, String>,
-) -> Result<super::server::HandlerResponse, lib::meetup::Error> {
-    let flow = lib::flow::ScheduleSessionFlow::retrieve(redis_connection, flow_id).await?;
+async fn schedule_session_post_handler(
+    _: ContentLengthLimit<(), 32768>,
+    Extension(state): Extension<Arc<State>>,
+    Path(flow_id): Path<u64>,
+    Form(form_data): Form<HashMap<String, String>>,
+) -> Result<Response, WebError> {
+    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
         Some(flow) => flow,
-        None => return Ok(("Link expired", "Please request a new link").into()),
+        None => {
+            let template: MessageTemplate = ("Link expired", "Please request a new link").into();
+            return Ok(template.into_response());
+        }
     };
     // Check that the form contains all necessary data
     let transfer_rsvps = form_data
@@ -236,11 +192,12 @@ async fn handle_schedule_session_post(
             (year, month, day, hour, minute)
         }
         _ => {
-            return Ok((
+            let template: MessageTemplate = (
                 "Invalid data",
                 "Seems like the submitted data is incomplete",
             )
-                .into())
+                .into();
+            return Ok(template.into_response());
         }
     };
     let duration = match form_data.get("duration") {
@@ -260,46 +217,56 @@ async fn handle_schedule_session_post(
     ) {
         (Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute)) => {
             match chrono::NaiveDate::from_ymd_opt(year, month, day) {
-                Some(date) => {
-                    match date.and_hms_opt(hour, minute, 0) {
-                        Some(naive_date_time) => {
-                            match Europe::Zurich.from_local_datetime(&naive_date_time) {
-                                chrono::LocalResult::Single(date_time) => date_time,
-                                _ => return Ok((
+                Some(date) => match date.and_hms_opt(hour, minute, 0) {
+                    Some(naive_date_time) => {
+                        match Europe::Zurich.from_local_datetime(&naive_date_time) {
+                            chrono::LocalResult::Single(date_time) => date_time,
+                            _ => {
+                                let template: MessageTemplate = (
                                     "Invalid data",
                                     "Seems like the specified time is ambiguous or non-existent",
                                 )
-                                    .into()),
+                                    .into();
+                                return Ok(template.into_response());
                             }
                         }
-                        _ => {
-                            return Ok(
-                                ("Invalid data", "Seems like the specified time is invalid").into()
-                            )
-                        }
                     }
+                    _ => {
+                        let template: MessageTemplate =
+                            ("Invalid data", "Seems like the specified time is invalid").into();
+                        return Ok(template.into_response());
+                    }
+                },
+                _ => {
+                    let template: MessageTemplate =
+                        ("Invalid data", "Seems like the specified date is invalid").into();
+                    return Ok(template.into_response());
                 }
-                _ => return Ok(("Invalid data", "Seems like the specified date is invalid").into()),
             }
         }
         _ => {
-            return Ok((
+            let template: MessageTemplate = (
                 "Invalid data",
                 "Seems like the submitted data has an invalid format",
             )
-                .into())
+                .into();
+            return Ok(template.into_response());
         }
     };
     // Convert time to UTC
     let date_time = date_time.with_timezone(&chrono::Utc);
-    let meetup_client = match *meetup_client.lock().await {
+    let meetup_client = match *(state.async_meetup_client).lock().await {
         Some(ref meetup_client) => meetup_client.clone(),
-        None => return Ok(("Meetup API unavailable", "Please try again later").into()),
+        None => {
+            let template: MessageTemplate =
+                ("Meetup API unavailable", "Please try again later").into();
+            return Ok(template.into_response());
+        }
     };
     // We go from the latest event to the oldest event until we find one
     // that has not been deleted to use as a template
     let event_series_id = flow.event_series_id.clone();
-    let events = db::get_events_for_series(db_connection, event_series_id).await?;
+    let events = db::get_events_for_series(&state.pool, event_series_id).await?;
     for event in events {
         let meetup_event = if let Some(meetup_event) = event.meetup_event {
             meetup_event
@@ -336,11 +303,11 @@ async fn handle_schedule_session_post(
                 // Event was deleted, try the next one
                 continue;
             }
-            Err(err) => return Err(err),
+            Err(err) => return Err(err.into()),
             Ok(new_event) => new_event,
         };
         // Delete the flow, ignoring errors
-        if let Err(err) = flow.delete(redis_connection).await {
+        if let Err(err) = flow.delete(&mut redis_connection).await {
             eprintln!(
                 "Encountered an error when trying to delete a schedule session flow:\n{:#?}",
                 err
@@ -379,7 +346,7 @@ async fn handle_schedule_session_post(
             };
         // Remove any possibly existing channel snoozes
         {
-            let mut tx = db_connection.begin().await?;
+            let mut tx = state.pool.begin().await?;
             if let Ok(Some(channel_id)) =
                 lib::get_series_text_channel(event_series_id, &mut tx).await
             {
@@ -389,7 +356,7 @@ async fn handle_schedule_session_post(
         }
         // Announce the new session in the Discord channel
         let channel_roles =
-            lib::get_event_series_roles(event_series_id, &mut db_connection.begin().await?).await?;
+            lib::get_event_series_roles(event_series_id, &mut state.pool.begin().await?).await?;
         let message = if let Some(channel_roles) = channel_roles {
             format!(
                 "Your adventure continues here, heroes of <@&{channel_role_id}>: {link}. Slay the \
@@ -408,8 +375,8 @@ async fn handle_schedule_session_post(
         if let Err(err) = lib::discord::util::say_in_event_channel(
             event.id,
             &message,
-            db_connection,
-            discord_cache_http,
+            &state.pool,
+            &state.discord_cache_http,
         )
         .await
         {
@@ -429,7 +396,8 @@ async fn handle_schedule_session_post(
                 link = &new_event.event_url,
             );
             if let Err(err) =
-                lib::discord::util::say_in_bot_alerts_channel(&message, discord_cache_http).await
+                lib::discord::util::say_in_bot_alerts_channel(&message, &state.discord_cache_http)
+                    .await
             {
                 eprintln!(
                     "Encountered an error when trying to announce a new session in the bot alerts \
@@ -444,11 +412,12 @@ async fn handle_schedule_session_post(
             transferred_all_rsvps: transferred_all_rsvps,
             closed_rsvps: rsvps_are_closed,
         };
-        return Ok(HandlerResponse::from_template(template)?);
+        return Ok(template.into_response());
     }
-    Ok((
+    let template: MessageTemplate = (
         "No prior event found",
         "Cannot schedule a continuation session without an initial event",
     )
-        .into())
+        .into();
+    Ok(template.into_response())
 }

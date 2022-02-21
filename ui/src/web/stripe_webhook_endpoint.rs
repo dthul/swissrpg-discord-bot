@@ -1,67 +1,112 @@
-use std::sync::Arc;
-use warp::Filter;
+use std::{ops::Deref, sync::Arc};
 
-pub fn create_routes(
-    discord_cache_http: lib::discord::CacheAndHttp,
-    stripe_client: Arc<stripe::Client>,
-    stripe_webhook_secret: String,
-) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-    let get_route = {
-        warp::post()
-            .and(warp::path!("webhooks" / "stripe"))
-            .and(warp::header::<String>("Stripe-Signature"))
-            .and(warp::body::content_length_limit(1024 * 32))
-            .and(warp::body::bytes())
-            .and_then(move |signature: String, payload: bytes::Bytes| {
-                println!("Webhook!");
-                let stripe_webhook_secret = stripe_webhook_secret.clone();
-                let discord_cache_http = discord_cache_http.clone();
-                let stripe_client = stripe_client.clone();
-                let webhook_handler_future = async move {
-                    if let Ok(payload) = std::str::from_utf8(&payload) {
-                        if let Ok(event) = stripe::Webhook::construct_event(
-                            &payload,
-                            &signature,
-                            &stripe_webhook_secret,
-                        ) {
-                            eprintln!("Webhook success! Event:\n{:#?}", event);
-                            if event.event_type == stripe::EventType::CustomerSubscriptionCreated {
-                                if let stripe::EventObject::Subscription(subscription) =
-                                    event.data.object
-                                {
-                                    if let Err(err) = handle_new_subscription(
-                                        &discord_cache_http,
-                                        &stripe_client,
-                                        &subscription,
-                                    )
-                                    .await
-                                    {
-                                        eprintln!(
-                                            "Could not handle new subscription event:\n{:#?}",
-                                            err
-                                        );
-                                    }
-                                }
-                            }
-                        } else {
-                            eprintln!("Event construction failed");
-                        }
-                    } else {
-                        eprintln!("Payload to UTF8 conversion failed");
-                    }
-                };
-                tokio::spawn(webhook_handler_future);
-                async { Ok::<_, warp::Rejection>("Webhook!") }
-            })
+use axum::{
+    body::Bytes,
+    extract::{ContentLengthLimit, Extension, TypedHeader},
+    headers::Header,
+    http::StatusCode,
+    routing::post,
+    Router,
+};
+use lazy_static::lazy_static;
+
+use super::server::State;
+
+pub fn create_routes() -> Router {
+    Router::new().route("/webhooks/stripe", post(stripe_webhook_handler))
+}
+
+struct StripeSignatureHeader(String);
+
+lazy_static! {
+    static ref STRIPE_SIGNATURE_HEADER: axum::headers::HeaderName =
+        axum::headers::HeaderName::from_lowercase(b"stripe-signature").unwrap();
+}
+
+impl Deref for StripeSignatureHeader {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Header for StripeSignatureHeader {
+    fn name() -> &'static axum::headers::HeaderName {
+        &STRIPE_SIGNATURE_HEADER
+    }
+
+    fn decode<'i, I>(values: &mut I) -> Result<Self, axum::headers::Error>
+    where
+        Self: Sized,
+        I: Iterator<Item = &'i axum::headers::HeaderValue>,
+    {
+        let value = values.next().ok_or_else(axum::headers::Error::invalid)?;
+        let value = value
+            .to_str()
+            .map_err(|_| axum::headers::Error::invalid())?;
+        Ok(StripeSignatureHeader(value.into()))
+    }
+
+    fn encode<E: Extend<axum::headers::HeaderValue>>(&self, values: &mut E) {
+        match axum::headers::HeaderValue::from_str(&self.0) {
+            Ok(header_value) => values.extend(Some(header_value)),
+            Err(err) => eprintln!("Failed to encode Stripe-Signature HTTP header: {:#?}", err),
+        }
+    }
+}
+
+async fn stripe_webhook_handler(
+    payload: ContentLengthLimit<Bytes, 32768>,
+    TypedHeader(signature): TypedHeader<StripeSignatureHeader>,
+    Extension(state): Extension<Arc<State>>,
+) -> StatusCode {
+    println!("Stripe webhook!");
+    let stripe_webhook_secret =
+        if let Some(stripe_webhook_secret) = state.stripe_webhook_secret.clone() {
+            stripe_webhook_secret
+        } else {
+            eprintln!("Stripe webhook secret not set");
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        };
+    let event = if let Ok(payload) = std::str::from_utf8(&payload) {
+        if let Ok(event) =
+            stripe::Webhook::construct_event(&payload, &signature, &stripe_webhook_secret)
+        {
+            println!("Webhook event:\n{:#?}", event);
+            event
+        } else {
+            eprintln!("Event construction failed");
+            return StatusCode::BAD_REQUEST;
+        }
+    } else {
+        eprintln!("Payload to UTF8 conversion failed");
+        return StatusCode::BAD_REQUEST;
     };
-    get_route
+    let webhook_handler_future = async move {
+        if event.event_type == stripe::EventType::CustomerSubscriptionCreated {
+            if let stripe::EventObject::Subscription(subscription) = event.data.object {
+                if let Err(err) = handle_new_subscription(
+                    &state.discord_cache_http,
+                    &state.stripe_client,
+                    &subscription,
+                )
+                .await
+                {
+                    eprintln!("Could not handle new subscription event:\n{:#?}", err);
+                }
+            }
+        }
+    };
+    tokio::spawn(webhook_handler_future);
+    return StatusCode::OK;
 }
 
 async fn handle_new_subscription(
     discord_api: &lib::discord::CacheAndHttp,
     stripe_client: &stripe::Client,
     subscription: &stripe::Subscription,
-) -> Result<&'static str, lib::meetup::Error> {
+) -> Result<(), lib::meetup::Error> {
     // let customer = match &subscription.customer {
     //     stripe::Expandable::Object(customer) => *customer.clone(),
     //     stripe::Expandable::Id(customer_id) => {
@@ -137,5 +182,5 @@ async fn handle_new_subscription(
     } else {
         eprintln!("Found no 'Discord' field on the customer metadata object");
     }
-    Ok("")
+    Ok(())
 }

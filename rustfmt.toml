@@ -1,4 +1,7 @@
 unstable_features = true
 max_width = 100
 merge_imports = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+imports_layout = "HorizontalVertical"
 format_strings = true
