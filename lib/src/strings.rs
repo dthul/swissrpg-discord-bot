@@ -45,7 +45,9 @@ pub const HELP_MESSAGE_PLAYER_EMBED_TITLE: &'static str = "**Player commands**";
 pub const WELCOME_MESSAGE: &'static str =
     "Hi there. I'm **Hyperion**, the **SwissRPG bot**. Welcome to our community.
 
-If you have signed up for one of our games, or plan to play a game soon, you'll need to link your Meetup and Discord accounts with me. This will allow me to add you to your game's private channels where you can talk with your Game Master and other players.
+If you have signed up for one of our games, or plan to play a game soon, you'll need to link your \
+     Meetup and Discord accounts with me. This will allow me to add you to your game's private \
+     channels where you can talk with your Game Master and other players.
 
 Let's get you started. Just type **link meetup** below and we'll take it from there.";
 
@@ -128,9 +130,9 @@ pub fn MEETUP_LINKING_MESSAGE(linking_url: &str) -> String {
 #[allow(non_snake_case)]
 pub fn DISCORD_ALREADY_LINKED_MESSAGE(meetup_profile_url: &str, bot_id: u64) -> String {
     format!(
-        "It seems you are already linked to the following Meetup profile: {}. If you would like to change \
-         this, please unlink your profile first by typing:\n<@{}> unlink meetup",
-         meetup_profile_url, bot_id
+        "It seems you are already linked to the following Meetup profile: {}. If you would like \
+         to change this, please unlink your profile first by typing:\n<@{}> unlink meetup",
+        meetup_profile_url, bot_id
     )
 }
 
@@ -291,5 +293,20 @@ pub const INTERNAL_SERVER_ERROR: &'static str =
 
 #[allow(non_snake_case)]
 pub fn NEW_ROLE_ASSIGNED_DM(role_text: &str) -> String {
-    format!("Hey there adventurer! You have just been given the role {} on the **SwissRPG** server. Have fun!", role_text)
+    format!(
+        "Hey there adventurer! You have just been given the role {} on the **SwissRPG** server. \
+         Have fun!",
+        role_text
+    )
+}
+
+#[allow(non_snake_case)]
+pub fn LOGIN_LINK_MESSAGE(linking_url: &str) -> String {
+    format!(
+        "This is you web login link:\n{}\n***Important note:*** If you are on mobile, please copy \
+         and paste the link into your browser rather than clicking it here.\n***This is a \
+         private, ephemeral, one-time use link and meant just for you.***\nDon't share it with \
+         anyone or they will be able to log in as you.",
+        linking_url
+    )
 }

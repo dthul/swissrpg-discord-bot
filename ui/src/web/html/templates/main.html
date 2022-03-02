@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}SwissRPG — Main{% endblock %}
+
+{% block content %}
+<div id="main">
+    <h2>Main</h2>
+    <p>
+    <form action="/logout" method="post">
+        <input type="submit" value="Logout">
+    </form>
+    </p>
+</div>
+{% endblock %}

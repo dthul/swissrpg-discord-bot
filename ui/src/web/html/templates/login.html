@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}SwissRPG — Login{% endblock %}
+
+{% block content %}
+<div id="main">
+    <h2>Login</h2>
+    <p>
+    <form action="/login" method="post">
+        <input type="hidden" name="auth_id" value="{{auth_id}}">
+        <input type="submit" value="Login">
+    </form>
+    </p>
+</div>
+{% endblock %}

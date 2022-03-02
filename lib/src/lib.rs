@@ -20,10 +20,14 @@ use serenity::model::id::{ChannelId, RoleId, UserId};
 
 pub type BoxedFuture<T> = Box<dyn std::future::Future<Output = T> + Send>;
 
-pub fn new_random_id(num_bytes: u32) -> String {
-    let random_bytes: Vec<u8> = (0..num_bytes)
+pub fn new_random_id_raw(num_bytes: u32) -> Vec<u8> {
+    (0..num_bytes)
         .map(|_| rand::thread_rng().gen::<u8>())
-        .collect();
+        .collect()
+}
+
+pub fn new_random_id(num_bytes: u32) -> String {
+    let random_bytes = new_random_id_raw(num_bytes);
     base64::encode_config(&random_bytes, base64::URL_SAFE_NO_PAD)
 }
 

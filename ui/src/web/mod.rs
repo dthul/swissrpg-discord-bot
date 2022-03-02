@@ -1,4 +1,5 @@
 pub mod api;
+pub mod auth;
 pub mod linking;
 pub mod schedule_session;
 pub mod server;
@@ -9,7 +10,7 @@ use std::borrow::Cow;
 use askama::Template;
 use axum::{
     body,
-    http::status::StatusCode,
+    http::{status::StatusCode, uri::InvalidUri},
     response::{IntoResponse, Response},
 };
 use backtrace::Backtrace;
@@ -50,10 +51,13 @@ impl From<(&'static str, String)> for MessageTemplate {
 
 // We can't implement IntoResponse for lib::meetup::Error in this crate so we create a new error type
 #[derive(Debug)]
-enum WebError {
+pub enum WebError {
+    // The variants below map to an internal server error
     Lib(lib::meetup::Error),
     OAuthError(RequestTokenError),
     Other(BoxedError),
+    // The variants below map to an unauthorized HTTP status
+    Unauthorized(Option<Cow<'static, str>>),
 }
 
 impl IntoResponse for WebError {
@@ -71,6 +75,17 @@ impl IntoResponse for WebError {
                 "Internal Server Error (Other):\n{:#?}",
                 err
             ))),
+            WebError::Unauthorized(message) => {
+                let template = MessageTemplate {
+                    title: Cow::Borrowed("Unauthorized"),
+                    content: message,
+                    safe_content: None,
+                    img_url: None,
+                };
+                let mut response = template.into_response();
+                *response.status_mut() = StatusCode::UNAUTHORIZED;
+                return response;
+            }
         };
         Response::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -149,6 +164,24 @@ impl From<askama::Error> for WebError {
 
 impl From<axum::http::Error> for WebError {
     fn from(err: axum::http::Error) -> Self {
+        WebError::Other(BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        })
+    }
+}
+
+impl From<simple_error::SimpleError> for WebError {
+    fn from(err: simple_error::SimpleError) -> Self {
+        WebError::Other(BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        })
+    }
+}
+
+impl From<InvalidUri> for WebError {
+    fn from(err: InvalidUri) -> Self {
         WebError::Other(BoxedError {
             inner: Box::new(err),
             backtrace: Backtrace::new(),

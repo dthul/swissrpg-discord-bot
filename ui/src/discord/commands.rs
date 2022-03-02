@@ -1,3 +1,5 @@
+use std::{future::Future, pin::Pin, sync::Arc};
+
 use futures_util::lock::Mutex as AsyncMutex;
 use once_cell::sync::OnceCell;
 use regex::{Regex, RegexSet};
@@ -8,9 +10,6 @@ use serenity::{
     },
     prelude::*,
 };
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
 
 mod add_user;
 // mod clone_event;
@@ -20,6 +19,7 @@ mod help;
 mod link_meetup;
 mod list_players;
 mod list_subscriptions;
+mod login;
 mod manage_channel;
 // mod mention_channel;
 mod numcached;
@@ -65,6 +65,7 @@ static ALL_COMMANDS: &[&Command] = &[
     &count_inactive::COUNT_MEMBERS_COMMAND,
     // &clone_event::CLONE_EVENT_COMMAND,
     // &test::TEST_COMMAND,
+    &login::LOGIN_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";

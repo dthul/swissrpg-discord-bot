@@ -1,10 +1,17 @@
 use std::{future::Future, sync::Arc};
 
-use axum::{http::StatusCode, routing::get_service, AddExtensionLayer, Router};
+use askama::Template;
+use askama_axum::IntoResponse;
+use axum::{
+    http::StatusCode,
+    routing::{get, get_service},
+    AddExtensionLayer,
+    Router,
+};
 use futures_util::lock::Mutex;
 use tower_http::services::ServeDir;
 
-use super::{api, linking, schedule_session, stripe_webhook_endpoint};
+use super::{api, auth, linking, schedule_session, stripe_webhook_endpoint};
 
 pub struct State {
     pub oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
@@ -16,6 +23,14 @@ pub struct State {
     pub stripe_webhook_secret: Option<String>,
     pub stripe_client: Arc<stripe::Client>,
     pub api_key: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "main.html")]
+struct MainTemplate;
+
+async fn main_handler() -> impl IntoResponse {
+    MainTemplate
 }
 
 pub fn create_server(
@@ -45,6 +60,7 @@ pub fn create_server(
     let linking_routes = linking::create_routes();
     let schedule_session_routes = schedule_session::create_routes();
     let stripe_webhook_routes = stripe_webhook_endpoint::create_routes();
+    let auth_routes = auth::create_routes();
     let api_routes = api::create_routes();
     let static_route: Router = Router::new().nest(
         "/static",
@@ -61,6 +77,11 @@ pub fn create_server(
     let router = linking_routes
         .merge(schedule_session_routes)
         .merge(stripe_webhook_routes)
+        .merge(auth_routes)
+        .route(
+            "/",
+            get(main_handler).layer(axum::middleware::from_fn(auth::auth)),
+        )
         .nest("api", api_routes)
         .merge(static_route)
         .layer(AddExtensionLayer::new(state));

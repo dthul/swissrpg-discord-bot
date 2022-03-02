@@ -1,3 +1,5 @@
+use std::num::ParseIntError;
+
 use askama::Error as AskamaError;
 use chrono::format::ParseError as ChronoParseError;
 use hyper::http::Error as HttpError;
@@ -6,10 +8,8 @@ use regex::Error as RegexError;
 use reqwest::Error as ReqwestError;
 use serenity::Error as SerenityError;
 use simple_error::SimpleError;
-use std::num::ParseIntError;
 use stripe::StripeError;
-use tokio::task::JoinError;
-use tokio::time::error::Elapsed;
+use tokio::{task::JoinError, time::error::Elapsed};
 use url::ParseError as UrlParseError;
 
 type RequestTokenError = oauth2::RequestTokenError<
@@ -149,7 +149,3 @@ impl From<sqlx::Error> for Error {
         Error::CommonError(err.into())
     }
 }
-
-// TODO: define a custom Error type for the ui module
-// so that we don't need these implementations here
-impl warp::reject::Reject for Error {}
