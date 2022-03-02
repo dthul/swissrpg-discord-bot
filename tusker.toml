@@ -1,0 +1,12 @@
+[schema]
+filename = "schema.sql"
+
+[migrations]
+filename = "migrations/*.up.sql"
+
+[database]
+host = "localhost"
+port = 5432
+user = "tusker"
+password = ""
+dbname = "bottest"
