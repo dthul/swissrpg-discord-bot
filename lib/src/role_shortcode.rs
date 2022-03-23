@@ -1,10 +1,11 @@
-use crate::{db, DefaultStr};
+use std::sync::Arc;
 
-use super::free_spots::EventCollector;
 use futures_util::lock::Mutex;
 use serenity::model::id::RoleId;
 use simple_error::SimpleError;
-use std::sync::Arc;
+
+use super::free_spots::EventCollector;
+use crate::{db, DefaultStr};
 
 impl EventCollector {
     pub async fn assign_roles(
@@ -73,7 +74,7 @@ impl EventCollector {
                     title
                 );
                 let meetup_participant_ids: Vec<_> =
-                    match meetup_client.get_tickets_vec(event.id.0.clone()).await {
+                    match meetup_client.get_tickets_vec(event.id.clone()).await {
                         Err(err) => {
                             eprintln!("Error in assign_roles::get_rsvps:\n{:#?}", err);
                             continue;

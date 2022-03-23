@@ -9,7 +9,7 @@ if conninfo is None:
     print("Missing database connection information")
     sys.exit(-1)
 
-r = redis.Redis(host="localhost", port=6380, db=1)
+r = redis.Redis(host="localhost", port=6380, db=0)
 
 with psycopg.connect(conninfo, autocommit=True) as conn:
     cur = conn.cursor()

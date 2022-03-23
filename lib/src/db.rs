@@ -1,5 +1,7 @@
 use serenity::model::id::{ChannelId, UserId};
 
+use crate::meetup::newapi::AlphaNumericId;
+
 // macro_rules! create_wrapped_type {
 //     ($Wrapper:ident, $T:ident) => {
 //         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -75,7 +77,7 @@ pub struct MemberId(pub i32);
 
 pub struct MeetupEvent {
     pub id: MeetupEventId,
-    pub meetup_id: String,
+    pub meetup_id: AlphaNumericId,
     pub url: String,
     pub urlname: String,
 }
@@ -163,7 +165,7 @@ impl From<EventQueryHelper> for Event {
         ) {
             (Some(id), Some(meetup_id), Some(url), Some(urlname)) => Some(MeetupEvent {
                 id: MeetupEventId(id),
-                meetup_id: meetup_id,
+                meetup_id: AlphaNumericId(meetup_id),
                 url: url,
                 urlname: urlname,
             }),
@@ -248,6 +250,24 @@ pub async fn get_events_for_series(
     .fetch_all(db_connection)
     .await?;
     Ok(events)
+}
+
+pub async fn get_event(
+    db_connection: &sqlx::PgPool,
+    event_id: EventId,
+) -> Result<Event, crate::meetup::Error> {
+    let event = sqlx::query_as!(
+        EventQueryHelper,
+        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
+        FROM event
+        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
+        WHERE event.id = $1 AND event.deleted IS NULL"#,
+        event_id.0
+    )
+    .map(Into::into)
+    .fetch_one(db_connection)
+    .await?;
+    Ok(event)
 }
 
 // Queries upcoming events belonging to the specified series from closest in time to furthest in the future

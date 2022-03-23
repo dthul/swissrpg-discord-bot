@@ -4,7 +4,8 @@ application_id = 643523617702936596
 guild_id = 601070848446824509
 bot_token = "..."
 url = "https://discord.com/api/v8/applications/{}/guilds/{}/commands".format(
-    application_id, guild_id)
+    application_id, guild_id
+)
 
 # json = {
 #     "name": "link-meetup",
@@ -16,9 +17,7 @@ json = {
 }
 
 # For authorization, you can use either your bot token
-headers = {
-    "Authorization": "Bot {}".format(bot_token)
-}
+headers = {"Authorization": "Bot {}".format(bot_token)}
 
 # or a client credentials token for your app with the applications.commands.update scope
 # headers = {

@@ -58,6 +58,7 @@ CREATE TABLE event (
     description text NOT NULL,
     is_online boolean NOT NULL DEFAULT FALSE,
     discord_category_id bigint,
+    discord_message_id bigint, -- Announcement message for this event
     deleted timestamp (0) with time zone
 );
 ALTER SEQUENCE event_id_seq OWNED BY event.id;

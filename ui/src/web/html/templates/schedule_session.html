@@ -65,14 +65,16 @@
             {% endfor %}
         </select>
         <br>
-        <input type="checkbox" name="transfer_rsvps" id="transfer_rsvps_checkbox" value="yes" autocomplete="off"
-            checked>
-        <label for="transfer_rsvps_checkbox">Add players from previous session to the new one. <em>Note: Due to an
-                ongoing Meetup API change RSVPs can not be transfered automatically and this checkbox does not have any
-                effect.</em></label>
+        <label for="participant_limit">Maximum number of (new) participants:</label>
         <br>
-        <input type="checkbox" name="open_game" id="open_game_checkbox" value="yes" autocomplete="off">
-        <label for="open_game_checkbox">Announce this session on Discord for new players</label>
+        <input type="number" name="participant_limit" id="participant_limit" value="0" min="0" max="100"
+            autocomplete="off"><br>
+        When you specify a number larger than 0 the new session will be published on Meetup for new people to sign up.
+        <br>
+        <input type="checkbox" name="with_session_number" id="with_session_number" value="yes" autocomplete="off" {% if
+            with_session_number %}checked{% endif %}>
+        <label for="with_session_number">Include session number in title</label>
+        <br>
         <button type="submit">Schedule</button>
     </form>
     </p>

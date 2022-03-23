@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms)]
 
-use futures::future;
-use sqlx::{postgres::PgPoolOptions, Executor};
 use std::{
     env,
     sync::{
@@ -10,6 +8,9 @@ use std::{
         Arc,
     },
 };
+
+use futures::future;
+use sqlx::{postgres::PgPoolOptions, Executor};
 
 fn main() {
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
@@ -92,7 +93,7 @@ fn main() {
         .expect("Could not connect to the Postgres database");
 
     // Create a Meetup API client (might not be possible if there is no access token yet)
-    let meetup_access_token = async_runtime
+    let meetup_access_token: Option<String> = async_runtime
         .block_on(async {
             sqlx::query_scalar!(r#"SELECT meetup_access_token FROM organizer_token"#)
                 .fetch_optional(&pool)
@@ -158,6 +159,7 @@ fn main() {
         async_meetup_client.clone(),
         discord_api.clone(),
         bot_name,
+        bot_id,
         stripe_webhook_signing_secret,
         stripe_client.clone(),
         api_key,

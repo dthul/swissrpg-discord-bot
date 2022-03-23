@@ -23,6 +23,8 @@ See `event_series:{}:meetup_events` for the inverse relationship.
 * `is_online`: string, optional. "true" or "false"
 * `discord_category`: u64, optional. The Discord category channels associated with this event should be assigned to
 
+`meetup_event:{}:description`: string
+
 ## Meetup Users
 
 `meetup_users`: set of u64\

@@ -1,14 +1,19 @@
+use std::sync::Arc;
+
 use futures_util::{lock::Mutex, stream::StreamExt};
 use lazy_static::lazy_static;
 use simple_error::SimpleError;
-use std::sync::Arc;
 
-use crate::{db, DefaultStr};
+use crate::{
+    db::{self, EventId, EventSeriesId, MeetupEventId},
+    DefaultStr,
+};
 
 pub const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)\\?\[\s*new\s*adventure\s*\\?\]";
 pub const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)\\?\[\s*new\s*campaign\s*\\?\]";
 pub const EVENT_SERIES_PATTERN: &'static str =
     r"(?i)\\?\[\s*campaign\s*(?P<event_id>[a-zA-Z0-9]+)\s*\\?\]";
+pub const EVENT_PATTERN: &'static str = r"(?i)\\?\[\s*event\s*(?P<db_event_id>[0-9]+)\s*\\?\]";
 pub const CHANNEL_PATTERN: &'static str = r"(?i)\\?\[\s*channel\s*(?P<channel_id>[0-9]+)\s*\\?\]";
 pub const SESSION_PATTERN: &'static str = r"(?i)\s*session\s*(?P<number>[0-9]+)";
 pub const ONLINE_PATTERN: &'static str = r"(?i)\\?\[\s*online\s*\\?\]";
@@ -23,6 +28,7 @@ lazy_static! {
         regex::Regex::new(NEW_CAMPAIGN_PATTERN).unwrap();
     pub static ref EVENT_SERIES_REGEX: regex::Regex =
         regex::Regex::new(EVENT_SERIES_PATTERN).unwrap();
+    pub static ref EVENT_REGEX: regex::Regex = regex::Regex::new(EVENT_PATTERN).unwrap();
     pub static ref CHANNEL_REGEX: regex::Regex = regex::Regex::new(CHANNEL_PATTERN).unwrap();
     pub static ref SESSION_REGEX: regex::Regex = regex::Regex::new(SESSION_PATTERN).unwrap();
     pub static ref ONLINE_REGEX: regex::Regex = regex::Regex::new(ONLINE_PATTERN).unwrap();
@@ -88,18 +94,24 @@ pub async fn sync_task(
     Ok(event_collector)
 }
 
+pub enum EventSyncResult {
+    Synced(EventId, MeetupEventId),
+    CouldNotSync,
+}
+
 // This function is supposed to be idempotent, so calling it with the same
 // event is fine.
 pub async fn sync_event(
     event: super::newapi::UpcomingEventDetails,
     db_connection: &sqlx::PgPool,
-) -> Result<(), super::Error> {
+) -> Result<EventSyncResult, super::Error> {
     let description = event.description.unwrap_or_str("");
     let title = event.title.unwrap_or_str("No title");
     let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(description);
     let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(description);
     let is_online = event.is_online || ONLINE_REGEX.is_match(description);
     let event_series_captures = EVENT_SERIES_REGEX.captures(description);
+    let event_captures = EVENT_REGEX.captures(description);
     let channel_captures = CHANNEL_REGEX.captures(description);
     let category_captures = CATEGORY_REGEX.captures(description);
     let indicated_channel_id = match channel_captures {
@@ -140,7 +152,7 @@ pub async fn sync_event(
         urlname
     } else {
         eprintln!("Event {} is missing a group urlname", title,);
-        return Ok(());
+        return Ok(EventSyncResult::CouldNotSync);
     };
     if indicated_channel_id.is_some() && !(is_new_adventure || is_new_campaign) {
         return Err(SimpleError::new(format!(
@@ -150,13 +162,6 @@ pub async fn sync_event(
         ))
         .into());
     }
-    // Either: new adventure, new campaign, or continuation (event series)
-    if !(is_new_adventure || is_new_campaign || event_series_captures.is_some()) {
-        println!("Syncing task: Ignoring event \"{}\"", title);
-        return Ok(());
-    } else {
-        println!("Syncing task: found event \"{}\"", title);
-    }
     if event_series_captures.is_some()
         && (is_new_adventure || is_new_campaign || indicated_channel_id.is_some())
     {
@@ -165,22 +170,77 @@ pub async fn sync_event(
              tag, ignoring",
             title
         );
-        return Ok(());
+        return Ok(EventSyncResult::CouldNotSync);
+    }
+    if event_series_captures.is_some() && event_captures.is_some() {
+        eprintln!(
+            "Syncing task: Event \"{}\" specifies a series as well as an event tag, ignoring",
+            title
+        );
+        return Ok(EventSyncResult::CouldNotSync);
     }
 
     let mut tx = db_connection.begin().await?;
 
-    // Check if this event already exists in the database
+    // Check if this Meetup event already exists in the database
     let row = sqlx::query!(
-        r#"SELECT meetup_event.id as "meetup_event_id", event.id as "event_id", event.event_series_id
+        r#"SELECT meetup_event.id as "meetup_event_id!", event.id as "event_id!", event.event_series_id
         FROM meetup_event
         INNER JOIN event ON meetup_event.event_id = event.id
         WHERE meetup_event.meetup_id = $1
         FOR UPDATE"#,
         event.id.0).fetch_optional(&mut tx).await?;
-    let db_meetup_event_id = row.as_ref().map(|row| row.meetup_event_id);
-    let db_event_id = row.as_ref().map(|row| row.event_id);
-    let existing_series_id = row.as_ref().map(|row| row.event_series_id);
+    let (db_meetup_event_id, db_event_id, existing_series_id) = if let Some(row) = row {
+        (
+            Some(MeetupEventId(row.meetup_event_id)),
+            Some(EventId(row.event_id)),
+            Some(EventSeriesId(row.event_series_id)),
+        )
+    } else {
+        // Check if this Meetup event points to a database event
+        if let Some(event_captures) = event_captures {
+            let db_event_id = event_captures
+                .name("db_event_id")
+                .and_then(|id| id.as_str().parse::<i32>().ok())
+                .ok_or_else(|| simple_error::SimpleError::new("Could not parse db_event_id"))?;
+            let row = sqlx::query!(
+                r#"SELECT event.id, event.event_series_id
+                FROM event
+                WHERE event.id = $1
+                FOR UPDATE"#,
+                db_event_id
+            )
+            .fetch_optional(&mut tx)
+            .await?;
+            if let Some(row) = row {
+                (
+                    None,
+                    Some(EventId(row.id)),
+                    Some(EventSeriesId(row.event_series_id)),
+                )
+            } else {
+                return Err(simple_error::SimpleError::new(
+                    "Event indicates that it belongs to a database event, but the database event \
+                     doesn't exist",
+                )
+                .into());
+            }
+        } else {
+            (None, None, None)
+        }
+    };
+
+    // Either: new adventure, new campaign, event series, or existing event
+    if !(is_new_adventure
+        || is_new_campaign
+        || event_series_captures.is_some()
+        || db_event_id.is_some())
+    {
+        println!("Syncing task: Ignoring event \"{}\"", title);
+        return Ok(EventSyncResult::CouldNotSync);
+    } else {
+        println!("Syncing task: found event \"{}\"", title);
+    }
 
     // If this is part of an event series, figure out which
     let indicated_event_series_id = if let Some(event_series_captures) = event_series_captures {
@@ -189,7 +249,7 @@ pub async fn sync_event(
             Some(id) => id.as_str(),
             None => {
                 eprintln!("Syncing task: error capturing event_id");
-                return Ok(());
+                return Ok(EventSyncResult::CouldNotSync);
             }
         };
         // Look up that event's series ID
@@ -201,10 +261,15 @@ pub async fn sync_event(
             series_event_id
         )
         .fetch_optional(&mut tx)
-        .await?;
+        .await?
+        .map(|id| EventSeriesId(id));
         if event_series_id.is_none() {
-            eprintln!("Event syncing task: Meetup event {} indicates that it is part of the same event series as Meetup event {} but the latter is not in the database", event.id, series_event_id);
-            return Ok(());
+            eprintln!(
+                "Event syncing task: Meetup event {} indicates that it is part of the same event \
+                 series as Meetup event {} but the latter is not in the database",
+                event.id, series_event_id
+            );
+            return Ok(EventSyncResult::CouldNotSync);
         }
         event_series_id
     } else {
@@ -220,8 +285,12 @@ pub async fn sync_event(
         .fetch_one(&mut tx)
         .await?;
         if is_managed_channel {
-            eprintln!("Event syncing task: Meetup event {} indicates a channel but that channel is already managed", event.id);
-            return Ok(());
+            eprintln!(
+                "Event syncing task: Meetup event {} indicates a channel but that channel is \
+                 already managed",
+                event.id
+            );
+            return Ok(EventSyncResult::CouldNotSync);
         }
     }
     // Is there already a series ID for the possibly indicated channel?
@@ -233,7 +302,8 @@ pub async fn sync_event(
             indicated_channel_id as i64
         )
         .fetch_optional(&mut tx)
-        .await?;
+        .await?
+        .map(|id| EventSeriesId(id));
         indicated_channel_series
     } else {
         None
@@ -244,17 +314,17 @@ pub async fn sync_event(
         // new series or belongs to an existing series, do nothing
         if !(is_new_adventure || is_new_campaign || indicated_event_series_id.is_some()) {
             println!("Syncing task: Ignoring event \"{}\"", title);
-            return Ok(());
+            return Ok(EventSyncResult::CouldNotSync);
         }
         // If this event has no series ID yet, but the channel
         // it wants to be associated with does, then something is fishy
         if indicated_channel_series.is_some() {
             println!(
-                "Event \"{}\" wants to be associated with a certain channel but that \
-                             channel already belongs to an event series",
+                "Event \"{}\" wants to be associated with a certain channel but that channel \
+                 already belongs to an event series",
                 title
             );
-            return Ok(());
+            return Ok(EventSyncResult::CouldNotSync);
         }
     }
     // Use the existing series ID or create a new one
@@ -266,22 +336,22 @@ pub async fn sync_event(
             if let Some(channel_series) = indicated_channel_series {
                 if channel_series != existing_series_id {
                     eprintln!(
-                        "Event \"{}\" wants to be associated with a certain channel \
-                         but that channel already belongs to a different event series",
+                        "Event \"{}\" wants to be associated with a certain channel but that \
+                         channel already belongs to a different event series",
                         title
                     );
-                    return Ok(());
+                    return Ok(EventSyncResult::CouldNotSync);
                 }
             }
             // If this event's series ID does not match the indicated event series ID, issue a warning
             if let Some(indicated_event_series_id) = indicated_event_series_id {
-                if &existing_series_id != &indicated_event_series_id {
+                if existing_series_id != indicated_event_series_id {
                     eprintln!(
-                        "Warning: Event \"{}\" indicates event series {} but is \
-                         already associated with event series {}.",
-                        title, indicated_event_series_id, existing_series_id
+                        "Warning: Event \"{}\" indicates event series {} but is already \
+                         associated with event series {}.",
+                        title, indicated_event_series_id.0, existing_series_id.0
                     );
-                    return Ok(());
+                    return Ok(EventSyncResult::CouldNotSync);
                 }
             }
             existing_series_id
@@ -300,12 +370,11 @@ pub async fn sync_event(
                     // has an event series ID, something is fishy
                     if indicated_channel_series.is_some() {
                         eprintln!(
-                            "Event \"{}\" wants to be associated with a certain \
-                             channel but that channel already belongs to a different \
-                             event series",
+                            "Event \"{}\" wants to be associated with a certain channel but that \
+                             channel already belongs to a different event series",
                             title
                         );
-                        return Ok(());
+                        return Ok(EventSyncResult::CouldNotSync);
                     } else {
                         // The event wants to be associated with a channel and that channel is not
                         // associated to anything else yet, looking good!
@@ -318,7 +387,7 @@ pub async fn sync_event(
                             channel_id as i64,
                             new_series_type
                         ).fetch_one(&mut tx).await?;
-                        new_series_id
+                        EventSeriesId(new_series_id)
                     }
                 } else {
                     // The event does not indicate a channel to be associated
@@ -329,7 +398,7 @@ pub async fn sync_event(
                     )
                     .fetch_one(&mut tx)
                     .await?;
-                    new_series_id
+                    EventSeriesId(new_series_id)
                 };
                 new_series_id
             } else if let Some(indicated_event_series_id) = indicated_event_series_id {
@@ -337,83 +406,87 @@ pub async fn sync_event(
             } else {
                 // Something went wrong
                 eprintln!(
-                    "Syncing task: internal error (event has no series id yet, but is \
-                     neither a new adventure/campaign nor does it belong to a session"
+                    "Syncing task: internal error (event has no series id yet, but is neither a \
+                     new adventure/campaign nor does it belong to a session"
                 );
-                return Ok(());
+                return Ok(EventSyncResult::CouldNotSync);
             }
         }
     };
 
     // Create or update the event and corresponding Meetup event in the database
     let db_event_id = if let Some(db_event_id) = db_event_id {
-        sqlx::query_scalar!(
+        EventId(sqlx::query_scalar!(
             r#"UPDATE event
             SET event_series_id = $1, start_time = $2, title = $3, description = $4, is_online = $5, discord_category_id = $6
             WHERE id = $7
             RETURNING id"#,
-            series_id,
+            series_id.0,
             event.date_time.0,
             title,
             description,
             is_online,
             category_id.map(|id| id as i64),
-            db_event_id
-        ).fetch_one(&mut tx).await?
+            db_event_id.0
+        ).fetch_one(&mut tx).await?)
     } else {
-        sqlx::query_scalar!(
+        EventId(sqlx::query_scalar!(
             r#"INSERT INTO event (event_series_id, start_time, title, description, is_online, discord_category_id)
             VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id"#,
-            series_id,
+            series_id.0,
             event.date_time.0,
             title,
             description,
             is_online,
             category_id.map(|id| id as i64)
-        ).fetch_one(&mut tx).await?
+        ).fetch_one(&mut tx).await?)
     };
-    let _db_meetup_event_id = if let Some(db_meetup_event_id) = db_meetup_event_id {
-        sqlx::query_scalar!(
-            r#"UPDATE meetup_event
-            SET url = $2, urlname = $3
-            WHERE id = $1
-            RETURNING id"#,
-            db_meetup_event_id,
-            event.event_url,
-            urlname
+    let db_meetup_event_id = if let Some(db_meetup_event_id) = db_meetup_event_id {
+        MeetupEventId(
+            sqlx::query_scalar!(
+                r#"UPDATE meetup_event
+                SET url = $2, urlname = $3
+                WHERE id = $1
+                RETURNING id"#,
+                db_meetup_event_id.0,
+                event.event_url,
+                urlname
+            )
+            .fetch_one(&mut tx)
+            .await?,
         )
-        .fetch_one(&mut tx)
-        .await?
     } else {
-        sqlx::query_scalar!(
+        MeetupEventId(sqlx::query_scalar!(
             r#"INSERT INTO meetup_event (event_id, meetup_id, url, urlname) VALUES ($1, $2, $3, $4)
             RETURNING id"#,
-            db_event_id,
+            db_event_id.0,
             event.id.0,
             event.event_url,
             urlname
         )
         .fetch_one(&mut tx)
-        .await?
+        .await?)
     };
 
     // Mark event hosts
     if let Some(hosts) = event.hosts {
         for host in hosts {
             let member_id = db::get_or_create_member_for_meetup_id(&mut tx, host.id.0).await?;
-            sqlx::query!(
+            if let Err(err) = sqlx::query!(
                 r#"INSERT INTO event_host (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
-                db_event_id,
+                db_event_id.0,
                 member_id.0
-            ).execute(&mut tx).await?;
+            ).execute(&mut tx).await {
+                eprintln!("Could not mark {} as host of event {}:\n{:#?}", member_id.0, db_event_id.0, err);
+            }
         }
     }
 
     tx.commit().await?;
 
     println!("Event syncing task: Synced event \"{}\"", title);
-    Ok(())
+    Ok(EventSyncResult::Synced(db_event_id, db_meetup_event_id))
 }
 
 async fn sync_event_series(

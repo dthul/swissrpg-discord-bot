@@ -64,6 +64,10 @@ NOTE: call `systemctl daemon-reload` after modifying service files
 
 `$ journalctl -e -u bot`
 
+# Certbot (Let's Encrypt)
+
+Instructions missing
+
 # Nginx
 
 Copy/symlink `bot.conf` to `/etc/nginx/conf.d/` and remember to disable the default configuration that some distributions have in `/etc/nginx/sites-enabled/default`. Then restart nginx: `$ systemctl restart nginx`
@@ -139,6 +143,13 @@ Set a password
 `# CREATE USER sqlx WITH PASSWORD '...';`
 `# GRANT CONNECT ON DATABASE bottest TO sqlx;`
 `# GRANT USAGE ON SCHEMA public TO sqlx;` (requires to be connected to the right database)
+`# GRANT SELECT ON ALL TABLES IN SCHEMA public TO sqlx;`
+`# ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO sqlx;`
+
+## Optional: create a user for tusker
+
+`$ sudo -u postgres psql`
+`# CREATE USER tusker WITH PASSWORD '...' CREATEDB;`
 
 # Sudo
 
@@ -159,7 +170,7 @@ bot ALL=(ALL) NOPASSWD: BOT_SYSTEMD
 `$ sudo -i -u metabase`
 `$ wget https://downloads.metabase.com/v0.37.8/metabase.jar` (or later version)
 
-## Optional: create a read-only Postgres user for sqlx
+## Optional: create a read-only Postgres user for metabase
 
 `$ sudo -u postgres psql bottest`
 `# CREATE USER metabase WITH PASSWORD '...';`
@@ -206,3 +217,18 @@ NOTE: call `systemctl daemon-reload` after modifying service files
 To check the scheduled timers, use:
 
 `$ systemctl list-timers`
+
+# Running the bot on a development machine
+
+Set up tunnels to the databases:
+
+`$ ssh -N -L 5432:localhost:5432 daniel@bot.swissrpg.ch`
+`$ ssh -N -L 6379:localhost:6379 daniel@bot.swissrpg.ch`
+
+Set up a reverse tunnel to bind to the server's port (stop the server's bot first):
+
+`$ ssh -N -R 3001:localhost:3001 daniel@bot.swissrpg.ch`
+
+Start the test bot (check that `secrets.sh` contains the right values):
+
+`$ (source secrets.sh; BOT_ENV=test ./swissrpg-app-test)`

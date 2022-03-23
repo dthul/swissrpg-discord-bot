@@ -2,10 +2,7 @@ use chrono::TimeZone;
 use futures::{stream, Stream, StreamExt};
 use graphql_client::{GraphQLQuery, Response};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
-use serde::de::Error as _;
-use serde::Deserialize;
-use serde::Serialize;
-use serde::Serializer;
+use serde::{de::Error as _, Deserialize, Serialize, Serializer};
 
 const API_ENDPOINT: &'static str = "https://api.meetup.com/gql";
 pub const URLNAMES: [&'static str; 3] =
@@ -83,6 +80,8 @@ pub struct CreateEventMutation;
 )]
 pub struct CloseEventRsvpsMutation;
 
+pub type EventDetails = event_query::EventQueryEvent;
+
 pub type UpcomingEventDetails =
     upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNode;
 
@@ -127,14 +126,79 @@ impl From<NewEventResponse> for UpcomingEventDetails {
             event_url: event.event_url,
             short_url: event.short_url,
             description: event.description,
-            hosts: event.hosts.map(|hosts| hosts.into_iter().map(|host| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeHosts { id: host.id }).collect()),
+            hosts: event.hosts.map(|hosts| {
+                hosts
+                    .into_iter()
+                    .map(|host| upcoming_events_query::EventDataHosts { id: host.id })
+                    .collect()
+            }),
+            how_to_find_us: event.how_to_find_us,
             date_time: event.date_time,
             max_tickets: event.max_tickets,
             going: event.going,
             is_online: event.is_online,
-            rsvp_settings: event.rsvp_settings.map(|rsvp_settings| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeRsvpSettings { rsvps_closed: rsvp_settings.rsvps_closed }),
-            venue: event.venue.map(|venue| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeVenue { lat: venue.lat, lng: venue.lng }),
-            group: event.group.map(|group| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeGroup { urlname: group.urlname }),
+            rsvp_settings: event.rsvp_settings.map(|rsvp_settings| {
+                upcoming_events_query::EventDataRsvpSettings {
+                    rsvps_closed: rsvp_settings.rsvps_closed,
+                }
+            }),
+            venue: event
+                .venue
+                .map(|venue| upcoming_events_query::EventDataVenue {
+                    id: venue.id,
+                    lat: venue.lat,
+                    lng: venue.lng,
+                }),
+            group: event
+                .group
+                .map(|group| upcoming_events_query::EventDataGroup {
+                    urlname: group.urlname,
+                }),
+            number_of_allowed_guests: event.number_of_allowed_guests,
+            image: upcoming_events_query::EventDataImage { id: event.image.id },
+        }
+    }
+}
+
+// TODO: using a GraphQL crate like "cynic" several queries could share the same type and we wouldn't need these conversions
+impl From<EventDetails> for NewEventResponse {
+    fn from(event: EventDetails) -> Self {
+        NewEventResponse {
+            id: event.id,
+            title: event.title,
+            event_url: event.event_url,
+            short_url: event.short_url,
+            description: event.description,
+            hosts: event.hosts.map(|hosts| {
+                hosts
+                    .into_iter()
+                    .map(|host| create_event_mutation::EventDataHosts { id: host.id })
+                    .collect()
+            }),
+            how_to_find_us: event.how_to_find_us,
+            date_time: event.date_time,
+            max_tickets: event.max_tickets,
+            going: event.going,
+            is_online: event.is_online,
+            rsvp_settings: event.rsvp_settings.map(|rsvp_settings| {
+                create_event_mutation::EventDataRsvpSettings {
+                    rsvps_closed: rsvp_settings.rsvps_closed,
+                }
+            }),
+            venue: event
+                .venue
+                .map(|venue| create_event_mutation::EventDataVenue {
+                    id: venue.id,
+                    lat: venue.lat,
+                    lng: venue.lng,
+                }),
+            group: event
+                .group
+                .map(|group| create_event_mutation::EventDataGroup {
+                    urlname: group.urlname,
+                }),
+            number_of_allowed_guests: event.number_of_allowed_guests,
+            image: create_event_mutation::EventDataImage { id: event.image.id },
         }
     }
 }
@@ -381,9 +445,12 @@ impl AsyncClient {
         }
     }
 
-    pub async fn get_event(&self, id: String) -> Result<event_query::EventQueryEvent, Error> {
+    pub async fn get_event(
+        &self,
+        id: AlphaNumericId,
+    ) -> Result<event_query::EventQueryEvent, Error> {
         use event_query::*;
-        let query_variables = Variables { id };
+        let query_variables = Variables { id: id.0 };
         let query = EventQuery::build_query(query_variables);
         let http_response = self.client.post(API_ENDPOINT).json(&query).send().await?;
         let response: Response<ResponseData> = http_response.json().await?;
@@ -505,7 +572,7 @@ impl AsyncClient {
 
     pub fn get_tickets<'a>(
         &'a self,
-        event_id: String,
+        event_id: AlphaNumericId,
     ) -> impl Stream<Item = Result<Ticket, Error>> + 'a {
         use event_tickets_query::*;
         enum States {
@@ -551,7 +618,7 @@ impl AsyncClient {
                         States::QueryPage { cursor } => {
                             // Query the next page of tickets
                             let query_variables = Variables {
-                                id: event_id.clone(),
+                                id: event_id.0.clone(),
                                 first: NUM_TICKETS_PER_QUERY,
                                 after: cursor,
                             };
@@ -601,7 +668,7 @@ impl AsyncClient {
         })
     }
 
-    pub async fn get_tickets_vec(&self, event_id: String) -> Result<Vec<Ticket>, Error> {
+    pub async fn get_tickets_vec(&self, event_id: AlphaNumericId) -> Result<Vec<Ticket>, Error> {
         let ticket_stream = self.get_tickets(event_id);
         let mut tickets = vec![];
         futures::pin_mut!(ticket_stream);

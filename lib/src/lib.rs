@@ -8,6 +8,7 @@ mod free_spots;
 pub mod meetup;
 pub mod redis;
 pub mod role_shortcode;
+pub mod schedule_session;
 pub mod strings;
 pub mod stripe;
 pub mod tasks;
@@ -102,6 +103,22 @@ pub async fn get_series_voice_channel(
     .fetch_optional(db_connection)
     .await?;
     Ok(discord_voice_channel_id
+        .flatten()
+        .map(|id| ChannelId(id as u64)))
+}
+
+pub async fn get_event_text_channel(
+    event_id: db::EventId,
+    db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<Option<ChannelId>, crate::meetup::Error> {
+    let discord_text_channel_id = sqlx::query_scalar!(
+        "SELECT discord_text_channel_id FROM event_series INNER JOIN event ON event_series.id = \
+         event.event_series_id WHERE event.id = $1",
+        event_id.0
+    )
+    .fetch_optional(db_connection)
+    .await?;
+    Ok(discord_text_channel_id
         .flatten()
         .map(|id| ChannelId(id as u64)))
 }

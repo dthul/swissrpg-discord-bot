@@ -1,7 +1,8 @@
+use std::sync::Arc;
+
 use futures::future::TryFutureExt;
 use futures_util::lock::Mutex;
 use serenity::model::id::UserId;
-use std::sync::Arc;
 use tokio::time::{Duration, Instant};
 
 pub async fn create_recurring_syncing_task(
@@ -46,7 +47,7 @@ pub async fn create_recurring_syncing_task(
                 &mut redis_connection,
                 &db_connection,
                 &discord_api,
-                bot_id.0,
+                bot_id,
             )
             .await
             {

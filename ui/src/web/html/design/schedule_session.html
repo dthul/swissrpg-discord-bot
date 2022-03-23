@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>
+        SwissRPG
+    </title>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Montserrat&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/link.css">
+    <script type="text/javascript" src="/static/form.js"></script>
+</head>
+
+<body>
+    <div id="logo">
+        <img src="/static/SwissRPG-logo-white-low.png">
+    </div>
+    <div id="main">
+        <h2>Schedule your next Game Session</h2>
+        <p>
+            Previous Session:<br>
+            <a href="#">Agoria [Session 86]</a>
+        </p>
+        <h3>Details of the next session</h3>
+        <form method="post" name="scheduleSessionForm" autocomplete="off" action="http://127.0.0.1:8080/hang">
+            <p>
+                <strong>Date:</strong><br>
+                <select name="day" autocomplete="off">
+                    <option value="1" selected>1</option>
+                </select>
+                <select name="month" autocomplete="off">
+                    <option value="1">Jan</option>
+                    <option value="2">Feb</option>
+                    <option value="3">Mar</option>
+                    <option value="4">Apr</option>
+                    <option value="5">May</option>
+                    <option value="6">Jun</option>
+                    <option value="7">Jul</option>
+                    <option value="8">Aug</option>
+                    <option value="9">Sep</option>
+                    <option value="10">Oct</option>
+                    <option value="11">Nov</option>
+                    <option value="12">Dec</option>
+                </select>
+                <select name="year" autocomplete="off">
+                    <option value="2022">2022</option>
+                </select>
+            </p>
+            <p>
+                <strong>Time:</strong><br>
+                <select name="hour" autocomplete="off">
+                    <option value="18">18</option>
+                </select>
+                :
+                <select name="minute" autocomplete="off">
+                    <option value="30">30</option>
+                </select>
+            </p>
+            <p>
+                <label for="duration"><strong>Duration:</strong></label><br>
+                <select name="duration" id="duration" autocomplete="off">
+                    <option value="240">4:00</option>
+                </select>
+            </p>
+            <p>
+                <label for="with_session_number"><strong>Include session number in title</strong></label>:
+                <input type="checkbox" name="with_session_number" id="with_session_number" value="yes"
+                    autocomplete="off" checked>
+            </p>
+            <p>
+                <label for="participant_limit"><strong>Maximum number of (new) participants:</strong></label>
+                <br>
+                <input type="number" name="participant_limit" id="participant_limit" value="0" min="0" max="100"
+                    style="width: 7em" autocomplete="off"><br>
+                When you specify a number larger than 0 the new session will be published on Meetup for new people to
+                sign
+                up.
+            </p>
+            <p>
+                <button type="submit">Schedule</button>
+            </p>
+        </form>
+    </div>
+</body>
+
+</html>

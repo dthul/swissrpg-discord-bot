@@ -5,7 +5,7 @@ pub mod schedule_session;
 pub mod server;
 pub mod stripe_webhook_endpoint;
 
-use std::borrow::Cow;
+use std::{borrow::Cow, num::ParseIntError};
 
 use askama::Template;
 use axum::{
@@ -182,6 +182,15 @@ impl From<simple_error::SimpleError> for WebError {
 
 impl From<InvalidUri> for WebError {
     fn from(err: InvalidUri) -> Self {
+        WebError::Other(BoxedError {
+            inner: Box::new(err),
+            backtrace: Backtrace::new(),
+        })
+    }
+}
+
+impl From<ParseIntError> for WebError {
+    fn from(err: ParseIntError) -> Self {
         WebError::Other(BoxedError {
             inner: Box::new(err),
             backtrace: Backtrace::new(),

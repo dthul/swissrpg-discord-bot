@@ -1,8 +1,10 @@
 use unicode_segmentation::UnicodeSegmentation;
 
+use super::newapi::AlphaNumericId;
+
 pub async fn clone_event<'a>(
     urlname: &'a str,
-    event_id: &'a str,
+    event_id: AlphaNumericId,
     meetup_client: &'a super::newapi::AsyncClient,
     hook: Option<
         Box<
@@ -12,7 +14,7 @@ pub async fn clone_event<'a>(
         >,
     >,
 ) -> Result<super::newapi::NewEventResponse, super::Error> {
-    let event = meetup_client.get_event(event_id.into()).await?;
+    let event = meetup_client.get_event(event_id).await?;
     let new_event = super::newapi::NewEvent {
         groupUrlname: urlname.into(),
         title: event.title.unwrap_or_else(|| "No title".into()),

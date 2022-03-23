@@ -9,6 +9,7 @@ use axum::{
     Router,
 };
 use futures_util::lock::Mutex;
+use serenity::model::id::UserId;
 use tower_http::services::ServeDir;
 
 use super::{api, auth, linking, schedule_session, stripe_webhook_endpoint};
@@ -20,6 +21,7 @@ pub struct State {
     pub async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     pub discord_cache_http: lib::discord::CacheAndHttp,
     pub bot_name: String,
+    pub bot_id: UserId,
     pub stripe_webhook_secret: Option<String>,
     pub stripe_client: Arc<stripe::Client>,
     pub api_key: Option<String>,
@@ -41,6 +43,7 @@ pub fn create_server(
     async_meetup_client: Arc<Mutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     discord_cache_http: lib::discord::CacheAndHttp,
     bot_name: String,
+    bot_id: UserId,
     stripe_webhook_secret: Option<String>,
     stripe_client: Arc<stripe::Client>,
     api_key: Option<String>,
@@ -53,6 +56,7 @@ pub fn create_server(
         async_meetup_client,
         discord_cache_http,
         bot_name,
+        bot_id,
         stripe_webhook_secret,
         stripe_client,
         api_key,

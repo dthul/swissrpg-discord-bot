@@ -1,12 +1,12 @@
-use futures::stream;
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use lazy_static::lazy_static;
 use redis::{self, AsyncCommands};
 use serenity::{
+    builder::CreateEmbed,
     http::CacheHttp,
     model::{
         channel::{PermissionOverwrite, PermissionOverwriteType},
-        id::{ChannelId, GuildId, RoleId, UserId},
+        id::{ChannelId, GuildId, MessageId, RoleId, UserId},
         permissions::Permissions,
     },
 };
@@ -67,7 +67,7 @@ pub async fn sync_discord(
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
-    bot_id: u64,
+    bot_id: UserId,
 ) -> Result<(), crate::meetup::Error> {
     let event_series_ids = sqlx::query!("SELECT id FROM event_series")
         .map(|row| db::EventSeriesId(row.id))
@@ -109,15 +109,16 @@ For each event series:
   - assign the users (including hosts) the player role
   - assign the hosts the host role
 */
-async fn sync_event_series(
+pub(crate) async fn sync_event_series(
     series_id: db::EventSeriesId,
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
-    bot_id: u64,
+    bot_id: UserId,
 ) -> Result<(), crate::meetup::Error> {
     // Only sync event series that have events in the future
-    let next_event = match db::get_next_event_in_series(db_connection, series_id).await? {
+    let upcoming_events = db::get_upcoming_events_for_series(db_connection, series_id).await?;
+    let next_event = match upcoming_events.first() {
         Some(event) => event,
         None => {
             // println!(
@@ -333,8 +334,32 @@ async fn sync_event_series(
     )
     .await?;
     // Step 6: Keep the channel's topic up-to-date
-    sync_channel_topic(channel_id, &next_event, discord_api).await?;
-    sync_channel_category(
+    if let Err(err) = sync_channel_topic(channel_id, &next_event, discord_api).await {
+        eprintln!(
+            "Could not sync topic for channel {}:\n{:#?}",
+            channel_id, err
+        );
+    }
+    // Step 7: Sync the channel's announcement messages
+    let upcoming_event_ids = upcoming_events
+        .iter()
+        .map(|event| event.id)
+        .collect::<Vec<_>>();
+    if let Err(err) = sync_channel_pinned_messages(
+        channel_id,
+        &upcoming_event_ids,
+        db_connection,
+        discord_api,
+        bot_id,
+    )
+    .await
+    {
+        eprintln!(
+            "Could not sync pinned messages for channel {}:\n{:#?}",
+            channel_id, err
+        );
+    }
+    if let Err(err) = sync_channel_category(
         series_id,
         ChannelType::Text,
         &next_event,
@@ -342,9 +367,15 @@ async fn sync_event_series(
         db_connection,
         discord_api,
     )
-    .await?;
+    .await
+    {
+        eprintln!(
+            "Could not sync category for channel {}:\n{:#?}",
+            channel_id, err
+        );
+    }
     if let Some(voice_channel_id) = voice_channel_id {
-        sync_channel_category(
+        if let Err(err) = sync_channel_category(
             series_id,
             ChannelType::Voice,
             &next_event,
@@ -352,7 +383,13 @@ async fn sync_event_series(
             db_connection,
             discord_api,
         )
-        .await?;
+        .await
+        {
+            eprintln!(
+                "Could not sync category for voice channel {}:\n{:#?}",
+                voice_channel_id, err
+            );
+        }
     }
     Ok(())
 }
@@ -401,16 +438,22 @@ async fn sync_role(
             // Delete it from the DB and retry
             if is_host_role {
                 sqlx::query!(
-                    "UPDATE event_series SET discord_host_role_id = NULL WHERE id = $1 AND discord_host_role_id = $2",
+                    "UPDATE event_series SET discord_host_role_id = NULL WHERE id = $1 AND \
+                     discord_host_role_id = $2",
                     event_series.0,
                     role.0 as i64
-                ).execute(db_connection).await?;
+                )
+                .execute(db_connection)
+                .await?;
             } else {
                 sqlx::query!(
-                    "UPDATE event_series SET discord_role_id = NULL WHERE id = $1 AND discord_role_id = $2",
+                    "UPDATE event_series SET discord_role_id = NULL WHERE id = $1 AND \
+                     discord_role_id = $2",
                     event_series.0,
                     role.0 as i64
-                ).execute(db_connection).await?;
+                )
+                .execute(db_connection)
+                .await?;
             }
             continue;
         } else {
@@ -543,7 +586,7 @@ async fn sync_channel(
     channel_type: ChannelType,
     channel_name: &str,
     event_series_id: db::EventSeriesId,
-    bot_id: u64,
+    bot_id: UserId,
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
@@ -590,16 +633,26 @@ async fn sync_channel(
             // This channel does not exist on Discord
             // Delete it from the DB and retry
             match channel_type {
-                ChannelType::Text => sqlx::query!(
-                    "UPDATE event_series SET discord_text_channel_id = NULL WHERE id = $1 AND discord_text_channel_id = $2",
-                    event_series_id.0,
-                    channel.0 as i64
-                ).execute(db_connection).await?,
-                ChannelType::Voice => sqlx::query!(
-                    "UPDATE event_series SET discord_voice_channel_id = NULL WHERE id = $1 AND discord_voice_channel_id = $2",
-                    event_series_id.0,
-                    channel.0 as i64
-                ).execute(db_connection).await?,
+                ChannelType::Text => {
+                    sqlx::query!(
+                        "UPDATE event_series SET discord_text_channel_id = NULL WHERE id = $1 AND \
+                         discord_text_channel_id = $2",
+                        event_series_id.0,
+                        channel.0 as i64
+                    )
+                    .execute(db_connection)
+                    .await?
+                }
+                ChannelType::Voice => {
+                    sqlx::query!(
+                        "UPDATE event_series SET discord_voice_channel_id = NULL WHERE id = $1 \
+                         AND discord_voice_channel_id = $2",
+                        event_series_id.0,
+                        channel.0 as i64
+                    )
+                    .execute(db_connection)
+                    .await?
+                }
             };
             continue;
         } else {
@@ -613,7 +666,7 @@ async fn sync_channel_impl(
     channel_type: ChannelType,
     channel_name: &str,
     event_series_id: db::EventSeriesId,
-    bot_id: u64,
+    bot_id: UserId,
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
@@ -655,7 +708,7 @@ async fn sync_channel_impl(
             PermissionOverwrite {
                 allow: Permissions::READ_MESSAGES,
                 deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Member(UserId(bot_id)),
+                kind: PermissionOverwriteType::Member(bot_id),
             },
         ],
         ChannelType::Voice => vec![
@@ -667,7 +720,7 @@ async fn sync_channel_impl(
             PermissionOverwrite {
                 allow: Permissions::CONNECT,
                 deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Member(UserId(bot_id)),
+                kind: PermissionOverwriteType::Member(bot_id),
             },
         ],
     };
@@ -767,7 +820,7 @@ async fn sync_channel_permissions(
     channel_type: ChannelType,
     role_id: RoleId,
     discord_host_ids: &[UserId],
-    bot_id: u64,
+    bot_id: UserId,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // The @everyone role has the same id as the guild
@@ -787,7 +840,7 @@ async fn sync_channel_permissions(
                 PermissionOverwrite {
                     allow: Permissions::READ_MESSAGES,
                     deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Member(UserId(bot_id)),
+                    kind: PermissionOverwriteType::Member(bot_id),
                 },
                 PermissionOverwrite {
                     allow: Permissions::READ_MESSAGES,
@@ -830,7 +883,7 @@ async fn sync_channel_permissions(
                 PermissionOverwrite {
                     allow: Permissions::READ_MESSAGES | Permissions::CONNECT,
                     deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Member(UserId(bot_id)),
+                    kind: PermissionOverwriteType::Member(bot_id),
                 },
                 PermissionOverwrite {
                     allow: Permissions::READ_MESSAGES | Permissions::CONNECT,
@@ -1108,6 +1161,175 @@ async fn sync_channel_topic(
                 })
                 .await?;
         }
+    }
+    Ok(())
+}
+
+async fn sync_channel_pinned_messages(
+    channel_id: ChannelId,
+    upcoming_events: &[db::EventId],
+    db_connection: &sqlx::PgPool,
+    discord_api: &super::CacheAndHttp,
+    bot_id: UserId,
+) -> Result<(), crate::meetup::Error> {
+    // Check if we need to unpin any of the channel's pinned messages
+    let pinned_messages = channel_id.pins(&discord_api.http).await?;
+    let upcoming_events_message_ids = sqlx::query!(
+        r#"SELECT discord_message_id AS "discord_message_id!"
+        FROM event
+        WHERE id = ANY($1) AND discord_message_id IS NOT NULL"#,
+        &upcoming_events.iter().map(|id| id.0).collect::<Vec<_>>()
+    )
+    .map(|row| MessageId(row.discord_message_id as u64))
+    .fetch_all(db_connection)
+    .await?;
+    for pinned_message in pinned_messages {
+        if pinned_message.author.id != bot_id {
+            continue;
+        }
+        if !upcoming_events_message_ids.contains(&pinned_message.id) {
+            // Unpin this message, it does not correspond to an upcoming event
+            channel_id
+                .unpin(&discord_api.http, pinned_message.id)
+                .await?;
+        }
+    }
+    let mut result = Ok(());
+    for &event_id in upcoming_events {
+        if let Err(err) =
+            sync_channel_pinned_message(channel_id, event_id, db_connection, discord_api).await
+        {
+            result = Err(err);
+        }
+    }
+
+    result
+}
+
+async fn sync_channel_pinned_message(
+    channel_id: ChannelId,
+    event_id: db::EventId,
+    db_connection: &sqlx::PgPool,
+    discord_api: &super::CacheAndHttp,
+) -> Result<(), crate::meetup::Error> {
+    // Get the event's participants
+    let participants =
+        crate::db::get_events_participants(&[event_id], false, db_connection).await?;
+    let hosts = crate::db::get_events_participants(&[event_id], true, db_connection).await?;
+    let participant_mentions = itertools::join(
+        participants
+            .iter()
+            .filter_map(|member| member.discord_id.map(|id| format!("<@{}>", id.0))),
+        ", ",
+    );
+    let host_mentions = itertools::join(
+        hosts
+            .iter()
+            .filter_map(|member| member.discord_id.map(|id| format!("<@{}>", id.0))),
+        ", ",
+    );
+    let event = crate::db::get_event(db_connection, event_id).await?;
+    let mut tx = db_connection.begin().await?;
+    let channel_roles = crate::get_channel_roles(channel_id, &mut tx).await?;
+    // Check if this event already has a pinned message and whether it still exists
+    let message_id = sqlx::query!(
+        r#"SELECT discord_message_id FROM event WHERE id = $1 FOR UPDATE"#,
+        event_id.0
+    )
+    .map(|row| row.discord_message_id.map(|id| MessageId(id as u64)))
+    .fetch_one(&mut tx)
+    .await?;
+    let message = match message_id {
+        None => None,
+        Some(message_id) => match discord_api
+            .http
+            .get_message(channel_id.0, message_id.0)
+            .await
+        {
+            Ok(message) => Some(message),
+            Err(err) => {
+                if let serenity::Error::Http(http_err) = &err {
+                    if let serenity::http::HttpError::UnsuccessfulRequest(response) =
+                        http_err.as_ref()
+                    {
+                        if response.status_code == serenity::http::StatusCode::NOT_FOUND {
+                            None
+                        } else {
+                            return Err(err.into());
+                        }
+                    } else {
+                        return Err(err.into());
+                    }
+                } else {
+                    return Err(err.into());
+                }
+            }
+        },
+    };
+    let description = if let Some(channel_roles) = channel_roles {
+        format!(
+            "Your adventure continues here, heroes of <@&{channel_role_id}>. Slay the dragon, \
+             save the prince, get the treasure, or whatever shenanigans you like to get into.",
+            channel_role_id = channel_roles.user
+        )
+    } else {
+        "Your adventure continues @here. Slay the dragon, save the prince, get the treasure, or \
+         whatever shenanigans you like to get into."
+            .to_string()
+    };
+    let local_event_time = event.time.with_timezone(&chrono_tz::Europe::Zurich);
+    let mut embed = CreateEmbed::default();
+    embed
+        .color(serenity::utils::Colour::BLUE)
+        .title(event.title)
+        .description(description)
+        .field("Date", local_event_time.format("%a, %d.%m."), true)
+        .field("Time", local_event_time.format("%H:%M"), true);
+    if let Some(meetup_event) = &event.meetup_event {
+        embed.field("Meetup", &meetup_event.url, false);
+    }
+    if !host_mentions.is_empty() {
+        embed.field("Host", host_mentions, false);
+    }
+    if !participant_mentions.is_empty() {
+        embed.field("Going", participant_mentions, false);
+    }
+    if let Some(mut message) = message {
+        // Update the message
+        message
+            .edit(discord_api, |edit_message| edit_message.set_embed(embed))
+            .await?;
+    } else {
+        // Create a message (and add to the database)
+        // let mut button_rsvp_yes = CreateButton::default();
+        // button_rsvp_yes
+        //     .label("Going")
+        //     .style(ButtonStyle::Primary)
+        //     .custom_id(format!("rsvp:{}:yes", event_id.0));
+        // let mut button_rsvp_no = CreateButton::default();
+        // button_rsvp_no
+        //     .label("Not Going")
+        //     .style(ButtonStyle::Secondary)
+        //     .custom_id(format!("rsvp:{}:no", event_id.0));
+        // let mut buttons = CreateActionRow::default();
+        // buttons
+        //     .add_button(button_rsvp_yes)
+        //     .add_button(button_rsvp_no);
+        // let mut components = CreateComponents::default();
+        // components.add_action_row(buttons);
+        let message = channel_id
+            .send_message(&discord_api.http, |create_message| {
+                create_message.set_embed(embed) //.set_components(components)
+            })
+            .await?;
+        sqlx::query!(
+            r#"UPDATE event SET discord_message_id = $2 WHERE id = $1"#,
+            event_id.0,
+            message.id.0 as i64
+        )
+        .execute(&mut tx)
+        .await?;
+        tx.commit().await?;
     }
     Ok(())
 }

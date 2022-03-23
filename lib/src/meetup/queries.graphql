@@ -1,3 +1,34 @@
+fragment EventData on Event {
+  id
+  title
+  eventUrl
+  shortUrl
+  description
+  hosts {
+    id
+  }
+  howToFindUs
+  dateTime
+  maxTickets
+  going
+  isOnline
+  rsvpSettings {
+    rsvpsClosed
+  }
+  venue {
+    id
+    lat
+    lng
+  }
+  group {
+    urlname
+  }
+  numberOfAllowedGuests
+  image {
+    id
+  }
+}
+
 query UpcomingEventsQuery($urlname: String!, $first: Int!, $after: String) {
   groupByUrlname(urlname: $urlname) {
     upcomingEvents(input: {first: $first, after: $after}) {
@@ -8,28 +39,7 @@ query UpcomingEventsQuery($urlname: String!, $first: Int!, $after: String) {
       count
       edges {
         node {
-          id
-          title
-          eventUrl
-          shortUrl
-          description
-          hosts {
-            id
-          }
-          dateTime
-          maxTickets
-          going
-          isOnline
-          rsvpSettings {
-            rsvpsClosed
-          }
-          venue {
-            lat
-            lng
-          }
-          group {
-            urlname
-          }
+          ...EventData
         }
       }
     }
@@ -68,34 +78,7 @@ query SelfQuery {
 
 query EventQuery($id: ID!) {
   event(id: $id) {
-    id
-    title
-    eventUrl
-    shortUrl
-    description
-    hosts {
-      id
-    }
-    howToFindUs
-    dateTime
-    maxTickets
-    going
-    isOnline
-    rsvpSettings {
-      rsvpsClosed
-    }
-    venue {
-      id
-      lat
-      lng
-    }
-    group {
-      urlname
-    }
-    numberOfAllowedGuests
-    image {
-      id
-    }
+    ...EventData
   }
 }
 
@@ -113,28 +96,7 @@ query GroupMembershipQuery($urlname: String!) {
 mutation CreateEventMutation($input: CreateEventInput!) {
   createEvent(input: $input) {
     event {
-      id
-      title
-      eventUrl
-      shortUrl
-      description
-      hosts {
-        id
-      }
-      dateTime
-      maxTickets
-      going
-      isOnline
-      rsvpSettings {
-        rsvpsClosed
-      }
-      venue {
-        lat
-        lng
-      }
-      group {
-        urlname
-      }
+      ...EventData
     }
     errors {
       code

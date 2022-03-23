@@ -13,6 +13,7 @@ use serenity::{
 
 mod add_user;
 // mod clone_event;
+mod component_test;
 mod count_inactive;
 mod end_adventure;
 mod help;
@@ -66,6 +67,7 @@ static ALL_COMMANDS: &[&Command] = &[
     // &clone_event::CLONE_EVENT_COMMAND,
     // &test::TEST_COMMAND,
     &login::LOGIN_COMMAND,
+    &component_test::COMPONENT_TEST_COMMAND,
 ];
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";

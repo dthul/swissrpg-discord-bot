@@ -9,7 +9,7 @@ use axum::{
 };
 use chrono::{offset::TimeZone, Datelike, Timelike};
 use chrono_tz::Europe;
-use lib::{db, DefaultStr};
+use lib::{db, schedule_session::ScheduleSessionResult};
 
 use super::{server::State, MessageTemplate, WebError};
 
@@ -34,6 +34,7 @@ pub fn create_routes() -> Router {
                     minute: local_time.minute() as u8,
                     selectable_years: &[local_time.year() as u16, local_time.year() as u16 + 1],
                     duration: 150,
+                    with_session_number: true,
                     title: "Test event",
                     link: Some("https://meetup.com/"),
                 };
@@ -45,9 +46,8 @@ pub fn create_routes() -> Router {
             get(|| {
                 let template = ScheduleSessionSuccessTemplate {
                     title: "Test event",
-                    link: "https://meetup.com/",
-                    transferred_all_rsvps: Some(true),
-                    closed_rsvps: true,
+                    link: Some("https://meetup.com/"),
+                    closed_rsvps: Some(true),
                 };
                 futures::future::ready(template.into_response())
             }),
@@ -67,15 +67,15 @@ struct ScheduleSessionTemplate<'a> {
     duration: u16, // In minutes
     title: &'a str,
     link: Option<&'a str>,
+    with_session_number: bool,
 }
 
 #[derive(Template)]
 #[template(path = "schedule_session_success.html")]
 struct ScheduleSessionSuccessTemplate<'a> {
     title: &'a str,
-    link: &'a str,
-    transferred_all_rsvps: Option<bool>,
-    closed_rsvps: bool,
+    link: Option<&'a str>,
+    closed_rsvps: Option<bool>,
 }
 
 pub mod filters {
@@ -151,6 +151,7 @@ async fn schedule_session_handler(
                     .meetup_event
                     .as_ref()
                     .map(|meetup_event| meetup_event.url.as_str()),
+                with_session_number: lib::meetup::sync::SESSION_REGEX.is_match(&event.title),
             };
             Ok(template.into_response())
         }
@@ -163,6 +164,14 @@ async fn schedule_session_post_handler(
     Path(flow_id): Path<u64>,
     Form(form_data): Form<HashMap<String, String>>,
 ) -> Result<Response, WebError> {
+    let meetup_client = match *(state.async_meetup_client).lock().await {
+        Some(ref meetup_client) => meetup_client.clone(),
+        None => {
+            let template: MessageTemplate =
+                ("Meetup API unavailable", "Please try again later").into();
+            return Ok(template.into_response());
+        }
+    };
     let mut redis_connection = state.redis_client.get_async_connection().await?;
     let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
@@ -173,12 +182,12 @@ async fn schedule_session_post_handler(
         }
     };
     // Check that the form contains all necessary data
-    let transfer_rsvps = form_data
-        .get("transfer_rsvps")
-        .map(|value| value == "yes")
-        .unwrap_or(false);
-    let is_open_game = form_data
-        .get("open_game")
+    let participant_limit = form_data
+        .get("participant_limit")
+        .map(|value| value.parse::<u16>())
+        .unwrap_or(Ok(0))?;
+    let with_session_number = form_data
+        .get("with_session_number")
         .map(|value| value == "yes")
         .unwrap_or(false);
     let (year, month, day, hour, minute) = match (
@@ -202,11 +211,12 @@ async fn schedule_session_post_handler(
     };
     let duration = match form_data.get("duration") {
         None => 4 * 60,
-        Some(duration) => match duration.parse::<u16>() {
+        Some(duration) => match duration.parse::<i64>() {
+            Ok(duration) => duration.clamp(30, 12 * 60),
             Err(_) => 4 * 60,
-            Ok(duration) => duration.min(12 * 60),
         },
     };
+    let duration = chrono::Duration::minutes(duration);
     // Try to convert the supplied data to a DateTime
     let date_time = match (
         year.parse::<i32>(),
@@ -255,169 +265,54 @@ async fn schedule_session_post_handler(
     };
     // Convert time to UTC
     let date_time = date_time.with_timezone(&chrono::Utc);
-    let meetup_client = match *(state.async_meetup_client).lock().await {
-        Some(ref meetup_client) => meetup_client.clone(),
-        None => {
-            let template: MessageTemplate =
-                ("Meetup API unavailable", "Please try again later").into();
-            return Ok(template.into_response());
-        }
-    };
-    // We go from the latest event to the oldest event until we find one
-    // that has not been deleted to use as a template
-    let event_series_id = flow.event_series_id.clone();
-    let events = db::get_events_for_series(&state.pool, event_series_id).await?;
-    for event in events {
-        let meetup_event = if let Some(meetup_event) = event.meetup_event {
-            meetup_event
-        } else {
-            continue;
-        };
-        let new_event_hook = Box::new(|mut new_event: lib::meetup::newapi::NewEvent| {
-            new_event.duration = Some(chrono::Duration::minutes(duration as i64).into());
-            new_event.publishStatus =
-                Some(lib::meetup::newapi::create_event_mutation::PublishStatus::PUBLISHED);
-            let result = lib::flow::ScheduleSessionFlow::new_event_hook(
-                new_event,
-                date_time,
-                &meetup_event.meetup_id,
-                is_open_game,
-            );
-            if let Ok(event_input) = &result {
-                println!(
-                    "Trying to create a Meetup event with the following details:\n{:#?}",
-                    event_input
-                );
-            }
-            result
-        }) as _;
-        let new_event = match lib::meetup::util::clone_event(
-            &meetup_event.urlname,
-            &meetup_event.meetup_id,
-            &meetup_client,
-            Some(new_event_hook),
-        )
-        .await
-        {
-            Err(lib::meetup::Error::NewAPIError(lib::meetup::newapi::Error::ResourceNotFound)) => {
-                // Event was deleted, try the next one
-                continue;
-            }
-            Err(err) => return Err(err.into()),
-            Ok(new_event) => new_event,
-        };
-        // Delete the flow, ignoring errors
-        if let Err(err) = flow.delete(&mut redis_connection).await {
-            eprintln!(
-                "Encountered an error when trying to delete a schedule session flow:\n{:#?}",
-                err
-            );
-        }
-        let transferred_all_rsvps = if transfer_rsvps {
-            // // Try to transfer the RSVPs to the new event
-            // if let Err(_) = lib::meetup::util::clone_rsvps(
-            //     &event.urlname,
-            //     &event.id,
-            //     &new_event.id,
-            //     redis_connection,
-            //     &meetup_client,
-            //     oauth2_consumer.as_ref(),
-            // )
-            // .await
-            // {
-            //     Some(false)
-            // } else {
-            //     Some(true)
-            // }
-            Some(false)
-        } else {
-            None
-        };
-        // // Close the RSVPs, ignoring errors
-        let rsvps_are_closed =
-            if let Err(err) = meetup_client.close_rsvps(new_event.id.0.clone()).await {
-                eprintln!(
-                    "RSVPs for event {} could not be closed:\n{:#?}",
-                    &new_event.id, err
-                );
-                false
-            } else {
-                true
-            };
-        // Remove any possibly existing channel snoozes
-        {
-            let mut tx = state.pool.begin().await?;
-            if let Ok(Some(channel_id)) =
-                lib::get_series_text_channel(event_series_id, &mut tx).await
-            {
-                sqlx::query!(r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#, channel_id.0 as i64).execute(&mut tx).await.ok();
-                tx.commit().await.ok();
-            }
-        }
-        // Announce the new session in the Discord channel
-        let channel_roles =
-            lib::get_event_series_roles(event_series_id, &mut state.pool.begin().await?).await?;
-        let message = if let Some(channel_roles) = channel_roles {
-            format!(
-                "Your adventure continues here, heroes of <@&{channel_role_id}>: {link}. Slay the \
-                 dragon, save the prince, get the treasure, or whatever shenanigans you like to \
-                 get into.",
-                link = &new_event.short_url,
-                channel_role_id = channel_roles.user
-            )
-        } else {
-            format!(
-                "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
-                 the treasure, or whatever shenanigans you like to get into.",
-                link = &new_event.short_url
-            )
-        };
-        if let Err(err) = lib::discord::util::say_in_event_channel(
-            event.id,
-            &message,
-            &state.pool,
-            &state.discord_cache_http,
-        )
-        .await
-        {
-            eprintln!(
-                "Encountered an error when trying to announce the new session in the \
-                 channel:\n{:#?}",
-                err
-            );
-        }
-        // If RSVPs were not transferred, announce the new session in the bot alerts channel
-        if is_open_game {
-            let message = format!(
-                "<@&{organiser_id}>, a new session has been scheduled:\n{link}.\nPlease announce \
-                 this session for new players to join. Don't forget to **open RSVPs** when you do \
-                 that.",
-                organiser_id = lib::discord::sync::ids::ORGANISER_ID.0,
-                link = &new_event.event_url,
-            );
-            if let Err(err) =
-                lib::discord::util::say_in_bot_alerts_channel(&message, &state.discord_cache_http)
-                    .await
-            {
-                eprintln!(
-                    "Encountered an error when trying to announce a new session in the bot alerts \
-                     channel:\n{:#?}",
-                    err
-                );
-            }
-        }
-        let template = ScheduleSessionSuccessTemplate {
-            title: new_event.title.unwrap_or_str("No title"),
-            link: &new_event.event_url,
-            transferred_all_rsvps: transferred_all_rsvps,
-            closed_rsvps: rsvps_are_closed,
-        };
-        return Ok(template.into_response());
-    }
-    let template: MessageTemplate = (
-        "No prior event found",
-        "Cannot schedule a continuation session without an initial event",
+
+    let ScheduleSessionResult {
+        event_id,
+        meetup_event,
+        ..
+    } = lib::schedule_session::schedule_session(
+        flow.event_series_id,
+        participant_limit,
+        with_session_number,
+        date_time,
+        duration,
+        &state.pool,
+        &state.discord_cache_http,
+        &meetup_client,
+        &mut redis_connection,
+        state.bot_id,
     )
-        .into();
+    .await?;
+
+    // Delete the flow, ignoring errors
+    if let Err(err) = flow.delete(&mut redis_connection).await {
+        eprintln!(
+            "Encountered an error when trying to delete a schedule session flow:\n{:#?}",
+            err
+        );
+    }
+
+    let event = lib::db::get_event(&state.pool, event_id).await?;
+
+    let template = ScheduleSessionSuccessTemplate {
+        title: &event.title,
+        link: meetup_event
+            .as_ref()
+            .map(|meetup_event| meetup_event.event_url.as_str()),
+        closed_rsvps: meetup_event.as_ref().map(|meetup_event| {
+            meetup_event
+                .rsvp_settings
+                .as_ref()
+                .and_then(|rsvp_settings| rsvp_settings.rsvps_closed)
+                .unwrap_or(false)
+        }),
+    };
+
+    // let template: MessageTemplate = (
+    //     "No prior event found",
+    //     "Cannot schedule a continuation session without an initial event",
+    // )
+    //     .into();
+
     Ok(template.into_response())
 }

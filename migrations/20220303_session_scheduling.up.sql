@@ -1,0 +1,1 @@
+ALTER TABLE event ADD COLUMN discord_message_id bigint;

@@ -28,7 +28,7 @@ type Event {
     endTime: ZonedDateTime!
     maxTickets: Int!
     going: Int!
-    tickets: EventTicketsConnection!
+    tickets(input: ConnectionInput!): EventTicketsConnection!
     isOnline: Boolean!
     venue: Venue
     onlineVenue: OnlineVenue
