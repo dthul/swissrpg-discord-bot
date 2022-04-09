@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use serenity::model::id::ChannelId;
 use std::{collections::HashMap, fmt::Write};
 
-pub const CLOSED_PATTERN: &'static str = r"(?i)\[\s*closed\s*\]";
+pub const CLOSED_PATTERN: &'static str = r"(?i)\\?\[\s*closed\s*\\?\]";
 
 lazy_static! {
     pub static ref CLOSED_REGEX: regex::Regex = regex::Regex::new(CLOSED_PATTERN).unwrap();
