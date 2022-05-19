@@ -175,11 +175,10 @@ pub fn CHANNEL_MARKED_FOR_CLOSING_ALERT(
     channel_id: ChannelId,
     channel_name: &str,
     gm_id: UserId,
-    organiser_id: RoleId,
 ) -> String {
     format!(
-        "<@{}> just ended the adventure {} (<#{}>)! <@&{}>",
-        gm_id.0, channel_name, channel_id.0, organiser_id.0
+        "<@{}> just ended the adventure {} (<#{}>)!",
+        gm_id.0, channel_name, channel_id.0
     )
 }
 

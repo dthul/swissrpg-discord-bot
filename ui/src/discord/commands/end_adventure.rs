@@ -6,7 +6,8 @@ use serenity::model::channel::Channel;
 #[level(host)]
 #[help(
     "end adventure",
-    "sets the channel for closure at the end of an adventure. The channel won't be deleted immediately but within 24 hours."
+    "sets the channel for closure at the end of an adventure. The channel won't be deleted \
+     immediately but within 24 hours."
 )]
 fn end_adventure<'a>(
     context: &'a mut super::CommandContext,
@@ -133,7 +134,6 @@ fn end_adventure<'a>(
                     context.msg.channel_id,
                     channel_name,
                     context.msg.author.id,
-                    lib::discord::sync::ids::ORGANISER_ID,
                 ),
             )
             .await
