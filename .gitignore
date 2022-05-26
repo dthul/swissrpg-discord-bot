@@ -4,3 +4,4 @@ secrets.sh
 secrets.ps1
 /venv
 conninfo.sh
+**/target/sqlx

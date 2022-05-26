@@ -1,0 +1,2494 @@
+{
+  "db": "PostgreSQL",
+  "041d45810394f234872ca8acd4fcad8ccbcfbd7245ab40a1b755da80481fd30d": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO \"member\" (meetup_id, discord_id) VALUES ($1, $2) RETURNING id"
+  },
+  "063719466fe383824251fc8ae4dc0809ca13ae0b65e14b25b5be079774f72092": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_text_channel_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_text_channel_id FROM event_series WHERE id = $1 FOR UPDATE"
+  },
+  "06b3c6386d5ac6ad9302693e30292e86046136b310163f5c55cd631e1b2eda9c": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text",
+          "Text"
+        ]
+      }
+    },
+    "query": "UPDATE meetup_event\n            SET url = $2, urlname = $3\n            WHERE id = $1\n            RETURNING id"
+  },
+  "06f8c5f0c9f36fe48164efe07c19577c2055a3fb03ec5bde976f4288da7045a2": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text",
+          "Text",
+          "Text"
+        ]
+      }
+    },
+    "query": "INSERT INTO meetup_event (event_id, meetup_id, url, urlname) VALUES ($1, $2, $3, $4)\n            RETURNING id"
+  },
+  "07930bfd60b593162226637b85d8fffb726f83a547af9716a7a1f1ef8a505aa8": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text"
+        ]
+      }
+    },
+    "query": "UPDATE member SET discord_nick = $2 WHERE id = $1 AND discord_nick IS DISTINCT FROM $2"
+  },
+  "07e738ed6a485937384a93cd2a008e399f1cac1358e3d22cda02e8a1fd9eae6a": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_series_removed_host (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"
+  },
+  "0ed1bd705d87642817154dc3d43151b9c88a17863282bbdb922770095517a02c": {
+    "describe": {
+      "columns": [
+        {
+          "name": "expiration_time",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "last_expiration_reminder_time",
+          "ordinal": 1,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "snooze_until",
+          "ordinal": 2,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "deletion_time",
+          "ordinal": 3,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT expiration_time, last_expiration_reminder_time, snooze_until, deletion_time\n        FROM event_series_text_channel\n        WHERE discord_id = $1"
+  },
+  "0f257bb918e0e55f33e4d1e54226994d08190f9ef3e23879c07a2895efc99aba": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_voice_channel_id = $2 WHERE id = $1"
+  },
+  "12658aa5754d993fa99c6bb6c3d5e0233b0e260802d2ded2909167846ceadc86": {
+    "describe": {
+      "columns": [
+        {
+          "name": "event_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "start_time",
+          "ordinal": 1,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "title",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "description",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "is_online",
+          "ordinal": 4,
+          "type_info": "Bool"
+        },
+        {
+          "name": "discord_category_id",
+          "ordinal": 5,
+          "type_info": "Int8"
+        },
+        {
+          "name": "meetup_event_id?",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_event_meetup_id?",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "meetup_event_url?",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "meetup_event_urlname?",
+          "ordinal": 9,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as \"meetup_event_id?\", meetup_event.meetup_id as \"meetup_event_meetup_id?\", meetup_event.url as \"meetup_event_url?\", meetup_event.urlname as \"meetup_event_urlname?\"\n        FROM event\n        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id\n        WHERE event_series_id = $1 AND start_time > now() AND event.deleted IS NULL\n        ORDER BY start_time\n        FETCH FIRST ROW ONLY"
+  },
+  "148b344689c51ddc7e2e468f59c1d63a98e59e55c09a9d82146936be13e65d4e": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT id FROM event_series"
+  },
+  "1a8ed6ab11ec1a3b515d5921891b5c37213c6a70dbb68081ff79f324ce6a8e61": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "DELETE FROM event_participant WHERE member_id = $1"
+  },
+  "272427387602c354460604dd7ed13278a0e6d8b07feb871d73c67ec1baeb9e57": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_text_channel_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "\n        SELECT discord_id as \"discord_text_channel_id!\"\n        FROM event_series_text_channel\n        WHERE deleted IS NULL"
+  },
+  "294299ef3585ec341b49bbf9f02eaaa30f8acbd674da7dbb59d7382a8f3de9f3": {
+    "describe": {
+      "columns": [
+        {
+          "name": "expiration_time",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT expiration_time FROM event_series_text_channel WHERE discord_id = $1"
+  },
+  "2d9dafd7382436d1e4c291f2f0918744a1f0c729fa2db1110ac1d41cf4b56094": {
+    "describe": {
+      "columns": [
+        {
+          "name": "meetup_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT meetup_id FROM \"member\" WHERE discord_id = $1"
+  },
+  "319469cbca8875ba23857103de83043bf60877a13c40d06fbc2872573832e6f9": {
+    "describe": {
+      "columns": [
+        {
+          "name": "deletion_time",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT deletion_time FROM event_series_text_channel WHERE discord_id = $1"
+  },
+  "32dabec0b707c5a08163fb7a4b3ef47911c0db13d5c24616bb7327de309a7e99": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_text_channel_id = NULL WHERE id = $1 AND discord_text_channel_id = $2"
+  },
+  "33b5f5dbd9f5fd5017766e71a9445b9da3085df17b321f36f67674cdc38c1578": {
+    "describe": {
+      "columns": [
+        {
+          "name": "event_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "start_time",
+          "ordinal": 1,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "title",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "description",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "is_online",
+          "ordinal": 4,
+          "type_info": "Bool"
+        },
+        {
+          "name": "discord_category_id",
+          "ordinal": 5,
+          "type_info": "Int8"
+        },
+        {
+          "name": "meetup_event_id?",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_event_meetup_id?",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "meetup_event_url?",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "meetup_event_urlname?",
+          "ordinal": 9,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as \"meetup_event_id?\", meetup_event.meetup_id as \"meetup_event_meetup_id?\", meetup_event.url as \"meetup_event_url?\", meetup_event.urlname as \"meetup_event_urlname?\"\n        FROM event\n        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id\n        WHERE event_series_id = $1 AND event.start_time > NOW() AND event.deleted IS NULL\n        ORDER BY start_time"
+  },
+  "35b9e48e35156dce41344c8e07c9764cdd2db9fffb6ff0e79d777051957edf63": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_series_voice_channel (discord_id) VALUES ($1)"
+  },
+  "3aa00888d4431cfbab32d735c4dafdd8f3772a453648d4f90691644af47939b4": {
+    "describe": {
+      "columns": [
+        {
+          "name": "meetup_access_token_refresh_time",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT meetup_access_token_refresh_time FROM organizer_token"
+  },
+  "3c0ff95dba7aa5d1c80abcc1a07a9e58c7491fddecf2f0807a845d0ccbe49686": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT id FROM \"member\" WHERE meetup_id = $1"
+  },
+  "477d37e4e8162a082e087562d164254c9a87c53668a935314cc162c462c5a2b8": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "\n        SELECT member.discord_id as \"discord_id!\"\n        FROM event\n        INNER JOIN event_participant ON event.id = event_participant.event_id\n        INNER JOIN member ON event_participant.member_id = member.id\n        WHERE event.id = $1 AND member.discord_id IS NOT NULL\n        "
+  },
+  "478b1a9cf96aa7723dc4bc18672dd305d3be428a1132dadff0997758b3ac8772": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO \"member\" (meetup_id) VALUES ($1) RETURNING id"
+  },
+  "4d42e13ad559c68c1aed480e1e9829178791c9a791e0413452ac333250c8eca5": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_role_id = NULL WHERE id = $1 AND discord_role_id = $2"
+  },
+  "4d80e6562321ea7201265fae617c694fb2ce650bda40f0c6fe12c8de5899f4ed": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_category_id = $2 WHERE id = $1 AND discord_category_id IS DISTINCT FROM $2"
+  },
+  "5108dfefd21323edc1259ec3ff1fffa858af571480c807f643a4c8184d3fc92d": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_role SET deletion_time = NULL WHERE discord_id = $1"
+  },
+  "583831d6acb5dd71dd927ff7e59de7c0a5e846f00b784682d47697d64ec1ef12": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_role_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_role_id FROM event_series WHERE id = $1 FOR UPDATE"
+  },
+  "59d8bca2d271de431ee863677799e0051de225d4e549de6663d959a8c058ed8a": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_id!",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_id",
+          "ordinal": 2,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT id, meetup_id as \"meetup_id!\", discord_id FROM \"member\" WHERE meetup_id = $1"
+  },
+  "5a9a06c0415bb5175dad75e05a54b95a0346f5019f42b63e2233c6e690e9f788": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_host_role_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_host_role_id FROM event_series WHERE id = $1 FOR UPDATE"
+  },
+  "5c3513a03fd3ca8f0a9a0a4015c78b273b43704fb613ac278b6d76424c52c052": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_voice_channel SET deletion_time = $2 WHERE discord_id = $1"
+  },
+  "61f10ea14fd8ded65315bbf534662f58a92b6ac5a8b57d59e32ac9c8bc9422c3": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "DELETE FROM organizer_token"
+  },
+  "6377b3c789eead7c4a548e57533c48af7fc74515ce5e83bf3b637c8e9650a98b": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "DELETE FROM \"member\" WHERE id = $1"
+  },
+  "63ad0de436dbd06f43dd86c541003e55c7c95c8234ce5c97e4ccea4ed5618d8a": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_series_role (discord_id) VALUES ($1)"
+  },
+  "6558a91e8e97bf5b20d87f80315d5bcc83e6356819e20c3f56e5aea7f6c76a28": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"
+  },
+  "68fcdb7ac753265b4dce1a38b0b45d767c9b83e380f381336ddde9fde15e75cc": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id!",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_id",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_nick",
+          "ordinal": 3,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4Array"
+        ]
+      }
+    },
+    "query": "SELECT \"member\".id as \"id!\", \"member\".meetup_id, \"member\".discord_id, \"member\".discord_nick\n            FROM event\n            INNER JOIN event_participant ON event.id = event_participant.event_id\n            INNER JOIN \"member\" ON event_participant.member_id = \"member\".id\n            WHERE event.id = ANY($1)\n            "
+  },
+  "6c2a8647051fe952266a7ac0e41813bcd08773c9b4e7b60416f438ace21852ec": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "UPDATE web_session SET last_used = NOW() WHERE id = $1"
+  },
+  "6ce4ac74e18405e3114971ca72d72709b86ec6d267b7759e0344b9f41b12f117": {
+    "describe": {
+      "columns": [
+        {
+          "name": "has_refresh_token!",
+          "ordinal": 0,
+          "type_info": "Bool"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT COUNT(*) > 0 AS \"has_refresh_token!\" FROM \"member\" WHERE id = $1 AND meetup_oauth2_refresh_token IS NOT NULL"
+  },
+  "6e4526fa80d5dc82bcbe4a02dddc3dad391759ca1961aa0549203ea2f7df51ed": {
+    "describe": {
+      "columns": [
+        {
+          "name": "type",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT \"type\" from event_series WHERE id = $1"
+  },
+  "7180f9053713aa071d4a502c2e7fe13ab3ec8f694c6f35d0d8654bbabb2b5cd0": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_id!",
+          "ordinal": 2,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT id, meetup_id, discord_id as \"discord_id!\" FROM \"member\" WHERE discord_id = $1"
+  },
+  "72b4821c2c0c1b42958775de6e5e07674c1b3d40fc673b4c802a959d6d231222": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT event.id FROM meetup_event INNER JOIN event ON meetup_event.event_id = event.id WHERE meetup_event.meetup_id = $1"
+  },
+  "7407847c8a43d8fcc0be95e34ea141a0622966599a7e23b69c1f16c8fda485f5": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_voice_channel SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())"
+  },
+  "762775694c870ee57877207b17ec7b1c9b1de8d1a30973b06837c7d5af7d05a9": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Timestamptz",
+          "Text",
+          "Text",
+          "Bool",
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO event (event_series_id, start_time, title, description, is_online, discord_category_id)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            RETURNING id"
+  },
+  "77e69a99a24966dbed76c05d11b53c146840f79c7e46f0f616ce45337efe6e52": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT event_series.id\n        FROM event_series\n        INNER JOIN event ON event_series.id = event.event_series_id\n        INNER JOIN meetup_event ON event.id = meetup_event.event_id\n        WHERE event.start_time > NOW() AND event.deleted IS NULL\n        GROUP BY event_series.id"
+  },
+  "78b8100509788ef738a912254d58536f87702e20409de4108124391051ebb428": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_text_channel SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())"
+  },
+  "78d3357a6fa6e41657ac22ee4e0b6de31fdeff3fee21e0e32c37e2a0e4defc85": {
+    "describe": {
+      "columns": [
+        {
+          "name": "member_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT member_id FROM event_series_removed_user WHERE event_series_id = $1"
+  },
+  "7a5b5b507d1a00569409acbe289b1957e0a70a7c3be784988fffb90af5f1b1aa": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_text_channel SET snooze_until = $2 WHERE discord_id = $1"
+  },
+  "7ef64f548474343de2d79d9f1240007928418db07e0f6a3cdb9b44f7a00c9482": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_voice_channel_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_voice_channel_id FROM event_series WHERE id = $1 FOR UPDATE"
+  },
+  "7f4255c87c315d0a8eef6acaa036b967f633e4d24e8020545180f990067a4a1d": {
+    "describe": {
+      "columns": [
+        {
+          "name": "deletion_time",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT deletion_time FROM event_series_voice_channel WHERE discord_id = $1"
+  },
+  "7f8e56df2ccec761e9ec20fd7ec0f068d4e76f2e897a500e6f882e36b0bfe453": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_voice_channel SET deletion_time = NULL WHERE discord_id = $1"
+  },
+  "80866f48d27dbf29bf27773ab2e05f185b05d90ded77ff0b81fc48c71f082bb0": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text",
+          "Text"
+        ]
+      }
+    },
+    "query": "UPDATE \"member\" SET meetup_oauth2_access_token = $2, meetup_oauth2_refresh_token = $3 WHERE id = $1"
+  },
+  "8184657d01b37280fa88cf4e7bead13280de82b13c3454361e94f1dcd69b78b4": {
+    "describe": {
+      "columns": [
+        {
+          "name": "is_managed!",
+          "ordinal": 0,
+          "type_info": "Bool"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT COUNT(*) > 0 as \"is_managed!\" FROM managed_channel WHERE discord_id = $1"
+  },
+  "81aefdc1a6aa9ff9cf7cc06e09e09e158a6348ed289f9e9c67a17a857372af80": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT id FROM \"member\""
+  },
+  "82ee4d5f44edd2e950d0b9392a1d9c75c58021c06485655aa53250740c77b93c": {
+    "describe": {
+      "columns": [
+        {
+          "name": "deletion_time",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT deletion_time FROM event_series_role WHERE discord_id = $1"
+  },
+  "85b196118e4b045ecacbe1411d5a584f54107810d227f6b675b106ca4e598d18": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_participant (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+  },
+  "862c20745861ffce2fc8573780ce9d30ea688cad84c3f240979cf14bf48d7198": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT discord_id FROM event_series_text_channel"
+  },
+  "86afd65752a403e59b3c61805129418b1663ebce5e35f48ffdca24cd10a2754a": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET \"type\" = 'campaign' WHERE id = $1 AND \"type\" <> 'campaign'"
+  },
+  "8703f3a3e6feb16e676c42227d78dd17e5956819c9b93a509e59b344b163fb96": {
+    "describe": {
+      "columns": [
+        {
+          "name": "meetup_oauth2_refresh_token",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT meetup_oauth2_refresh_token FROM \"member\" WHERE id = $1 FOR UPDATE"
+  },
+  "8767f7119db3a2b5a52cacd9091fff8b280c1c27b3a7a25afcd19f9927ba9b83": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE \"member\" SET meetup_id = $2, discord_id = $3 WHERE id = $1 RETURNING id"
+  },
+  "8835b29a0264e5e71e9630662b27191c7a8a5408e06095689a506813fceec96e": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_host_role SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())"
+  },
+  "89b685629ae23381759b87d3fa97d134a074a016ee6b2e25708816c6490040d0": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_text_channel SET deletion_time = $2 WHERE discord_id = $1"
+  },
+  "8b2dacba110aedcc36c956bfccc4876b6e185c4476cdce7d7ea882af5ee5c2ec": {
+    "describe": {
+      "columns": [
+        {
+          "name": "meetup_event_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "event_id",
+          "ordinal": 1,
+          "type_info": "Int4"
+        },
+        {
+          "name": "event_series_id",
+          "ordinal": 2,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT meetup_event.id as \"meetup_event_id\", event.id as \"event_id\", event.event_series_id\n        FROM meetup_event\n        INNER JOIN event ON meetup_event.event_id = event.id\n        WHERE meetup_event.meetup_id = $1\n        FOR UPDATE"
+  },
+  "8b4b00928fbfc892ac599c4ffd9c600de93805a24ff9b08c6022dd319a1e2ff9": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "DELETE FROM event_host WHERE member_id = $1"
+  },
+  "8d85eda9ac52ba4a09937563123838cf74d0188d8dfcce17a86812b444d21e80": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_voice_channel_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT discord_voice_channel_id FROM event_series WHERE discord_text_channel_id = $1"
+  },
+  "8e1f7e0dce8edf04f280b3dace4836417c324f265367435730909679fb3dfe22": {
+    "describe": {
+      "columns": [
+        {
+          "name": "query_discord_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "id?",
+          "ordinal": 1,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_id",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_nick",
+          "ordinal": 3,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        null,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8Array"
+        ]
+      }
+    },
+    "query": "SELECT query_discord_id AS \"query_discord_id!\", \"member\".id as \"id?\", \"member\".meetup_id, \"member\".discord_nick\n        FROM UNNEST($1::bigint[]) AS query_discord_id\n        LEFT OUTER JOIN \"member\" ON query_discord_id = \"member\".discord_id;"
+  },
+  "8f961c26da311ead6fc5c5224cc3b4a62d902844c699706a7997922aa1e87431": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE organizer_token SET meetup_access_token_refresh_time = $1"
+  },
+  "8ff119babcee96f519a167dc140deb134134aeb6ce4ee68f024847c7d3077fbd": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT id\n            FROM event_series\n            WHERE discord_text_channel_id = $1"
+  },
+  "906dfef2ba1a66d6406e03cc5f5550dfba5b5244dc69dee72c0f26c31b961fa6": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "UPDATE event SET deleted = NOW() WHERE id = $1"
+  },
+  "9288578d8d4c5e385362d821617917a9a57ed31a8e652534c63dfca26e936a09": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_voice_channel_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT discord_id as \"discord_voice_channel_id!\"\n        FROM event_series_voice_channel\n        WHERE deleted IS NULL AND deletion_time IS NOT NULL"
+  },
+  "948963616ae517c1579b238d74e64a13cee245d9fe78382d19e6b68d6e6608b1": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE \"member\" SET meetup_id = NULL WHERE discord_id = $1"
+  },
+  "94aa49769065e11cda60ebdb8e685d101fb6c18296cfc40e449eb5f87110228a": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_role_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT discord_id as \"discord_role_id!\"\n            FROM event_series_role\n            WHERE deleted IS NULL AND deletion_time IS NOT NULL"
+  },
+  "957174272f17946e81f25dc644861fc3f31783b775ebf2cb9bde1f7ed0d36401": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_text_channel_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_text_channel_id FROM event_series WHERE id = $1"
+  },
+  "9692a2b0527d026b74e87305ee32005e962c36f0d666a5c3b3b6e745bd839764": {
+    "describe": {
+      "columns": [
+        {
+          "name": "count!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT COUNT(*) as \"count!\" FROM event WHERE event_series_id = $1"
+  },
+  "9bd58da00cf8b1341d35146b8cbd6dc19c3200604ca9e60ec2ba365fb427a257": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_role_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_host_role_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_role_id, discord_host_role_id FROM event_series WHERE id = $1"
+  },
+  "9dde76b5f3688d3ed9070cb39a6b86efcd9fec4146567d5d6fd5e3edbc860d61": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO managed_channel (discord_id) VALUES ($1) ON CONFLICT DO NOTHING"
+  },
+  "9f8e5283856d4a04cf25359be13b7997d4bbb3e2db58631d678503070f19bf35": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "\n        SELECT member.discord_id as \"discord_id!\"\n        FROM event\n        INNER JOIN event_host ON event.id = event_host.event_id\n        INNER JOIN member ON event_host.member_id = member.id\n        WHERE event.id = $1 AND member.discord_id IS NOT NULL\n        "
+  },
+  "a2e5cc5a86b95a898ba46d1bbdcb3dfbe71892370068c973717c8cb274fdb31c": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_host_role_id = $2 WHERE id = $1"
+  },
+  "a3eb76726763255d2e9753e6968602250c9f600953997f7f40f86a2eb5d04cd8": {
+    "describe": {
+      "columns": [
+        {
+          "name": "event_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT event_id FROM event_host WHERE member_id = $1"
+  },
+  "ac2a9d1f647a7a5e734f12bf7d1cb2e3876b3dd5a3dbc4858c654202a15f9940": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_role SET deletion_time = $2 WHERE discord_id = $1"
+  },
+  "ad02511bec04321effa79be551145df1f3dd6dc7d45fab74a1e0455ee7868f8e": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_role_id = $2 WHERE id = $1"
+  },
+  "ad08c6f93b4ca8e2533c5c3f87185d4479090fe3873d638cce8b60fd40da0c4d": {
+    "describe": {
+      "columns": [
+        {
+          "name": "is_campaign!",
+          "ordinal": 0,
+          "type_info": "Bool"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT \"type\" = 'campaign' as \"is_campaign!\" FROM event_series WHERE discord_text_channel_id = $1"
+  },
+  "b00fe20b74aadde29d45e97d2fa64441f742112bece6d069a897068cdfcc80c6": {
+    "describe": {
+      "columns": [
+        {
+          "name": "query_meetup_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "id?",
+          "ordinal": 1,
+          "type_info": "Int4"
+        },
+        {
+          "name": "discord_id",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_nick",
+          "ordinal": 3,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        null,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8Array"
+        ]
+      }
+    },
+    "query": "SELECT query_meetup_id AS \"query_meetup_id!\", \"member\".id as \"id?\", \"member\".discord_id, \"member\".discord_nick\n        FROM UNNEST($1::bigint[]) AS query_meetup_id\n        LEFT OUTER JOIN \"member\" ON query_meetup_id = \"member\".meetup_id;"
+  },
+  "b239b86863c954c0de31d820854d79cbdfc6f875ed9295266fe0d21adc115e98": {
+    "describe": {
+      "columns": [
+        {
+          "name": "event_series_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT event.event_series_id\n            FROM event\n            INNER JOIN meetup_event ON event.id = meetup_event.event_id\n            WHERE meetup_event.meetup_id = $1"
+  },
+  "b475c2c6af829dadc76129950764ab84d0eb0f25ddadf74381b1aee8e72c97d1": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_host_role_id = NULL WHERE id = $1 AND discord_host_role_id = $2"
+  },
+  "be3196cdb1c753d55000255ed32cd41ed11551058f949f7ee8fa861b7b181b9a": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_text_channel_id = $2 WHERE id = $1"
+  },
+  "be394a63a8ec1580f0a3850584028e1071645936bd20b9b0c6feb3d33722d497": {
+    "describe": {
+      "columns": [
+        {
+          "name": "event_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "start_time",
+          "ordinal": 1,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "title",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "description",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "is_online",
+          "ordinal": 4,
+          "type_info": "Bool"
+        },
+        {
+          "name": "discord_category_id",
+          "ordinal": 5,
+          "type_info": "Int8"
+        },
+        {
+          "name": "meetup_event_id?",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_event_meetup_id?",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "meetup_event_url?",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "meetup_event_urlname?",
+          "ordinal": 9,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as \"meetup_event_id?\", meetup_event.meetup_id as \"meetup_event_meetup_id?\", meetup_event.url as \"meetup_event_url?\", meetup_event.urlname as \"meetup_event_urlname?\"\n        FROM event\n        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id\n        WHERE event_series_id = $1 AND event.deleted IS NULL\n        ORDER BY start_time DESC\n        FETCH FIRST ROW ONLY"
+  },
+  "be7a06440749cb130bcb53ff0115ea50fbb3b1c94fa25c409aa409bf62c1522c": {
+    "describe": {
+      "columns": [
+        {
+          "name": "event_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT event_id FROM event_participant WHERE member_id = $1"
+  },
+  "bf9959da53270ae760329c51e44e34a3d6df1913eb0d09e61f3216081a612312": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE \"member\" SET meetup_id = $2 WHERE id = $1 AND meetup_id IS NULL AND discord_id = $3 RETURNING id"
+  },
+  "bfbc706804a18747fda097c6e586cdfbade9e9ae2c1167c10d2f011c3d009525": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4Array"
+        ]
+      }
+    },
+    "query": "DELETE FROM event_participant WHERE event_id = $1 AND NOT (member_id = ANY($2))"
+  },
+  "bfd9595c4355187bfd9e554213eabc1e5d2628300f7e06f024f02c74e59a3f8d": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO \"member\" (discord_id) VALUES ($1) RETURNING id"
+  },
+  "c06bdac0fe2f8679c4c43a36445d40f0dd8f6d4031f7c3bc7e17bc9ec2f63294": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "\n        SELECT member.discord_id as \"discord_id!\"\n        FROM event_series\n        INNER JOIN event ON event_series.id = event.event_series_id\n        INNER JOIN event_host ON event.id = event_host.event_id\n        INNER JOIN member ON event_host.member_id = member.id\n        WHERE event_series.id = $1 AND member.discord_id IS NOT NULL"
+  },
+  "c09f1270d81f3dbf31284748e51857ad6b2155e0ed49277f740041ff3d0bc692": {
+    "describe": {
+      "columns": [
+        {
+          "name": "meetup_oauth2_last_token_refresh_time",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT meetup_oauth2_last_token_refresh_time FROM \"member\" WHERE id = $1"
+  },
+  "c120fc8c276c79b54b142a794cbfb0744a5ef5c8500e057d1edd73afec415b0a": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_host_role SET deletion_time = NULL WHERE discord_id = $1"
+  },
+  "c180e764c1cf7491fd41477df692652661619229f071268db36bfa6b33b271ae": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_removed_user SET member_id = $2 WHERE member_id = $1"
+  },
+  "c24a2d743f676f0e906920a699451acf1924bfd0d23d2e0af3ae02f8e5732cf8": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_role SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())"
+  },
+  "c28240dfffbbdcd09e28126ae411cd68e305836a9159d7d5ce6341e2e17ec5d2": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_text_channel_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_voice_channel_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_role_id",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_host_role_id",
+          "ordinal": 3,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_text_channel_id, discord_voice_channel_id, discord_role_id, discord_host_role_id FROM event_series WHERE id = $1"
+  },
+  "c38ffa8816aa3653d16a5609a89d94cd24836f5ed22d9509385d7de5a0f13ca8": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_text_channel SET expiration_time = $2, deletion_time = NULL WHERE discord_id = $1"
+  },
+  "c54debb930213b1e4f395ac55f4b7960a9565f4618d06484314e65a7d12229d4": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_voice_channel_id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_voice_channel_id FROM event_series WHERE id = $1"
+  },
+  "c5b2b0029e2ffc93c1e8350c659d088e9e146e5e52b12a18913879b0706d5924": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Bytea",
+          "Int4"
+        ]
+      }
+    },
+    "query": "INSERT INTO web_session (session_id, member_id) VALUES ($1, $2)"
+  },
+  "c6a63f1da94d7c51f46b1ef497624804acd54831a2577d00ee8bf251e73792b7": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT id FROM \"member\" WHERE discord_id = $1"
+  },
+  "c6f7354e434f1c181ef019faf527fa8df28bb3eaf249627cdbe3324362b42618": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_text_channel_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT event_series.discord_text_channel_id as \"discord_text_channel_id!\"\n        FROM event\n        INNER JOIN event_series ON event.event_series_id = event_series.id\n        WHERE event.id = $1"
+  },
+  "c704279414464f09c20d7c20a65f0a62a3fd36543bfecf03efad196853951216": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_removed_host SET member_id = $2 WHERE member_id = $1"
+  },
+  "c7140e43bd88e882dca1b110acf299676c33498af4b7b7de52d030e8c10dea05": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_role_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT discord_id as \"discord_role_id!\"\n            FROM event_series_host_role\n            WHERE deleted IS NULL AND deletion_time IS NOT NULL"
+  },
+  "c7206c4712ec6bbdf8c8f9ddb3f5801abbc4bf511180b380ec78c1ff4f469e64": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1"
+  },
+  "c8a2f32a79e2f538978ba02009203aea9179708be2b00e77e6d3ab5239cc2dcf": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "DELETE FROM web_session WHERE id = $1"
+  },
+  "cb31b68989e554324b181392b8b00044ce6328b96c92120a701843b4f1a47816": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_host (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+  },
+  "cd14ffbdfd4fc02635eb57ebfb1582d1dd06466ab4d9dd13dc79a1851cc6b9ec": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE event_series_host_role SET deletion_time = $2 WHERE discord_id = $1"
+  },
+  "d02afa7a3b9b7f6a65ee8cbd782535dbfdfda66692c9006eef76126786391503": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_series (\"type\") VALUES ($1) RETURNING id"
+  },
+  "d28c7b5860e7190ac30460f74ac897c624cbe6be3ecfe082a5bfd20d56e3fa7c": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_series_removed_user (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"
+  },
+  "d2f023163d59ccb0deb72252986b55a5a38545123266c1854e98e7f63f2fa668": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT id FROM event_series WHERE discord_text_channel_id = $1"
+  },
+  "d3275db101b6e9580f2397684bda60f90aa479bf49df469b95e9d7134d240e0c": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Bytea"
+        ]
+      }
+    },
+    "query": "DELETE FROM web_session WHERE session_id = $1"
+  },
+  "d744607b60d8a95007f188ec9620de4ab6d101d49fe5a0194f1281a0763d5993": {
+    "describe": {
+      "columns": [
+        {
+          "name": "member_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT member_id FROM event_series_removed_host WHERE event_series_id = $1"
+  },
+  "d7b7fb8895869a7de2dd929ac673357e31a92e7279d9bb07760b05de27b5697b": {
+    "describe": {
+      "columns": [
+        {
+          "name": "meetup_refresh_token",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT meetup_refresh_token FROM organizer_token FOR UPDATE"
+  },
+  "da5dd83b5ecf0540f2d65ee9c41eb64170d583f54075c0911ee62900ecdc31db": {
+    "describe": {
+      "columns": [
+        {
+          "name": "event_series_id!",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT event_series.id as \"event_series_id!\"\n        FROM event_series\n        INNER JOIN event_series_text_channel ON event_series.discord_text_channel_id = event_series_text_channel.discord_id\n        WHERE event_series_text_channel.deleted IS NULL"
+  },
+  "dab62fbc58928b5f901006ae814920b7771f2ba65133a00ab26d2855beb0811b": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text",
+          "Text",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE \"member\" SET meetup_oauth2_access_token = $2, meetup_oauth2_refresh_token = $3, meetup_oauth2_last_token_refresh_time = $4 WHERE id = $1"
+  },
+  "dae9414e2a168769a7e455df9fecd4c49c591491e9cf7fb669e4e3b41f511248": {
+    "describe": {
+      "columns": [
+        {
+          "name": "deletion_time",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT deletion_time FROM event_series_host_role WHERE discord_id = $1"
+  },
+  "dbc5c5270bf95d01d1e8c1f985d02c685066d133e5ca5fa0cc654c4a7935ccf7": {
+    "describe": {
+      "columns": [
+        {
+          "name": "is_game_channel!",
+          "ordinal": 0,
+          "type_info": "Bool"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT COUNT(*) > 0 AS \"is_game_channel!\" FROM event_series_text_channel WHERE discord_id = $1"
+  },
+  "e33a2cdccb83fd4cdadb3620d07065a5bd26da23d4660f98ce3fd82acf66f099": {
+    "describe": {
+      "columns": [
+        {
+          "name": "is_managed_channel!",
+          "ordinal": 0,
+          "type_info": "Bool"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT COUNT(*) > 0 AS \"is_managed_channel!\" FROM managed_channel WHERE discord_id = $1"
+  },
+  "e45063b89c074b84f01012467cf91d4cb1d5b1b47cfe941c57fd42d73496ebb5": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Bytea"
+        ]
+      }
+    },
+    "query": "INSERT INTO ephemeral_settings (cookie_key)\n                        VALUES ($1)\n                        ON CONFLICT (id) DO UPDATE\n                        SET cookie_key = $1"
+  },
+  "e65db40d5d868a6476368100f162021da2224fe8268c4b8909225b1c7ebdb09e": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Timestamptz",
+          "Text",
+          "Text",
+          "Bool",
+          "Int8",
+          "Int4"
+        ]
+      }
+    },
+    "query": "UPDATE event\n            SET event_series_id = $1, start_time = $2, title = $3, description = $4, is_online = $5, discord_category_id = $6\n            WHERE id = $7\n            RETURNING id"
+  },
+  "e770299494d8199539aae69498c9db9bd822798270a39b03ff7a05e9ee61207d": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Text"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_series (discord_text_channel_id, \"type\") VALUES ($1, $2) RETURNING id"
+  },
+  "ef384ae0f58d6f8abdb0a38eb306a1500074208eb54acedd42b2112085f5dc96": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_series_text_channel (discord_id) VALUES ($1)"
+  },
+  "efa8595a5fc15ba1114bc30732ef79a4f48b39cfc35a9afd29c097d79ef7241d": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "INSERT INTO organizer_token (meetup_access_token, meetup_refresh_token, meetup_access_token_refresh_time) VALUES ($1, $2, $3)"
+  },
+  "f48ffc896676b71d3cd39223009555739ebe117521b0db80708465462ed6f4b0": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id!",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_id",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "discord_nick",
+          "ordinal": 3,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4Array"
+        ]
+      }
+    },
+    "query": "SELECT \"member\".id as \"id!\", \"member\".meetup_id, \"member\".discord_id, \"member\".discord_nick\n            FROM event\n            INNER JOIN event_host ON event.id = event_host.event_id\n            INNER JOIN \"member\" ON event_host.member_id = \"member\".id\n            WHERE event.id = ANY($1)\n            "
+  },
+  "f4a2aca3da8e2d80e82d8a06dc2ae980b6e5f02048b9d2abec307d56d9b10234": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO event_series_host_role (discord_id) VALUES ($1)"
+  },
+  "f8056d64ef96a8630c62a605b5a403c38e12a04694a3d7f5a98ab8441bff75f1": {
+    "describe": {
+      "columns": [
+        {
+          "name": "discord_text_channel_id!",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT discord_text_channel_id as \"discord_text_channel_id!\" FROM event_series WHERE id = $1"
+  },
+  "f9239573d54527f0a6fa2ba125f5c80994250b41697154558af9ea7f968124c9": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE event_series SET discord_voice_channel_id = NULL WHERE id = $1 AND discord_voice_channel_id = $2"
+  },
+  "fbbf5f8b8792e0be0a2ab44fdb97c476ee9c62af071c603c16a02eaf5f1eeda7": {
+    "describe": {
+      "columns": [
+        {
+          "name": "event_id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "start_time",
+          "ordinal": 1,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "title",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "description",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "is_online",
+          "ordinal": 4,
+          "type_info": "Bool"
+        },
+        {
+          "name": "discord_category_id",
+          "ordinal": 5,
+          "type_info": "Int8"
+        },
+        {
+          "name": "meetup_event_id?",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "meetup_event_meetup_id?",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "meetup_event_url?",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "meetup_event_urlname?",
+          "ordinal": 9,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      }
+    },
+    "query": "SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as \"meetup_event_id?\", meetup_event.meetup_id as \"meetup_event_meetup_id?\", meetup_event.url as \"meetup_event_url?\", meetup_event.urlname as \"meetup_event_urlname?\"\n        FROM event\n        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id\n        WHERE event_series_id = $1 AND event.deleted IS NULL\n        ORDER BY start_time DESC"
+  }
+}
