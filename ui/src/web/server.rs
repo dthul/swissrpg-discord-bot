@@ -3,9 +3,9 @@ use std::{future::Future, sync::Arc};
 use askama::Template;
 use askama_axum::IntoResponse;
 use axum::{
+    extract::Extension,
     http::StatusCode,
     routing::{get, get_service},
-    AddExtensionLayer,
     Router,
 };
 use futures_util::lock::Mutex;
@@ -84,7 +84,7 @@ pub fn create_server(
         )
         .nest("api", api_routes)
         .merge(static_route)
-        .layer(AddExtensionLayer::new(state));
+        .layer(Extension(state));
     async move {
         if let Err(err) = axum::Server::bind(&addr)
             .serve(router.into_make_service())

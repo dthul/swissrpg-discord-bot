@@ -8,7 +8,6 @@ use axum::{
     headers::HeaderMap,
     response::Response,
     routing::get,
-    AddExtensionLayer,
     Router,
 };
 use cookie::Cookie;
@@ -27,11 +26,11 @@ pub fn create_routes() -> Router {
         .route("/link/:linking_id", get(link_handler))
         .route(
             "/link/:linking_id/rsvp/redirect",
-            get(link_redirect_handler).layer(AddExtensionLayer::new(WithRsvpScope(true))),
+            get(link_redirect_handler).layer(Extension(WithRsvpScope(true))),
         )
         .route(
             "/link/:linking_id/norsvp/redirect",
-            get(link_redirect_handler).layer(AddExtensionLayer::new(WithRsvpScope(false))),
+            get(link_redirect_handler).layer(Extension(WithRsvpScope(false))),
         )
 }
 
