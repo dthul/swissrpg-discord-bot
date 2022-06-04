@@ -319,7 +319,7 @@ async fn link_redirect_handler(
     // }
     // Exchange the code with a token.
     let code = AuthorizationCode::new(query.code);
-    let redirect_url = RedirectUrl::new(format!("{}{}", lib::urls::BASE_URL, path))?;
+    let redirect_url = RedirectUrl::new(format!("{}{}", lib::urls::BASE_URL, path.path()))?;
     let token_res = (*state.oauth2_consumer.link_client)
         .clone()
         .set_redirect_uri(redirect_url)
