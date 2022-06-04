@@ -12,7 +12,7 @@ default = []
 bottest = []
 
 [dependencies]
-askama = "0.11"
+askama = { git = "https://github.com/djc/askama", rev = "064077a9001e121a12fc234fee44514840380a0e" }
 backtrace = "0.3"
 base64 = "0.13.0"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

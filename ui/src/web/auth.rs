@@ -4,7 +4,7 @@ use askama::Template;
 use axum::{
     extract::{Extension, Form, Path, TypedHeader},
     headers::HeaderMapExt,
-    http::{header::SET_COOKIE, HeaderValue, Request, Uri},
+    http::{header::SET_COOKIE, HeaderValue, Request},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -131,8 +131,7 @@ async fn auth_handler_post(
     let mut jar = CookieJar::new();
     jar.private_mut(&key).add(auth_cookie);
     // let auth_cookie_header = HeaderValue::from_str(&auth_cookie.to_string())?;
-    let redirect_uri: Uri = "/".parse()?;
-    let mut response = Redirect::to(redirect_uri).into_response();
+    let mut response = Redirect::to("/").into_response();
     for cookie_to_set in jar.delta() {
         let cookie_header_value: HeaderValue = cookie_to_set.to_string().parse()?;
         response
@@ -226,8 +225,7 @@ async fn logout_handler(
     .execute(&state.pool)
     .await
     .ok();
-    let redirect_uri: Uri = "/".parse()?;
-    Ok(RemoveAuthCookie(Redirect::to(redirect_uri)))
+    Ok(RemoveAuthCookie(Redirect::to("/")))
 }
 
 pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, WebError> {
