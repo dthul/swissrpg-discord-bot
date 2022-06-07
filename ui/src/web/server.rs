@@ -82,7 +82,7 @@ pub fn create_server(
             "/",
             get(main_handler).layer(axum::middleware::from_fn(auth::auth)),
         )
-        .nest("api", api_routes)
+        .nest("/api", api_routes)
         .merge(static_route)
         .layer(Extension(state));
     async move {
