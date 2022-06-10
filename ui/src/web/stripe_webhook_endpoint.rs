@@ -127,8 +127,7 @@ async fn handle_new_subscription(
     let customer = stripe::Customer::retrieve(stripe_client, &customer.id, &[]).await?;
     if let Some(username) = customer.metadata.get("Discord") {
         // Try to find the Discord user associated with this subscription
-        let id =
-            lib::tasks::subscription_roles::discord_username_to_id(discord_api, username).await?;
+        let id = lib::tasks::subscription_roles::discord_username_to_id(discord_api, username)?;
         if let Some(discord_id) = id {
             // TODO: might block
             let discord_user = discord_id.to_user(discord_api).await?;
@@ -152,6 +151,10 @@ async fn handle_new_subscription(
                         discord_api,
                         discord_id,
                         lib::tasks::subscription_roles::ids::GM_CHAMPION_ID,
+                        Some(
+                            "Automatic role assignment due to being a GM champion (via Stripe \
+                             Webhook)",
+                        ),
                     )
                     .await?;
                 } else {
@@ -160,6 +163,10 @@ async fn handle_new_subscription(
                         discord_api,
                         discord_id,
                         lib::tasks::subscription_roles::ids::CHAMPION_ID,
+                        Some(
+                            "Automatic role assignment due to being a champion (via Stripe \
+                             Webhook)",
+                        ),
                     )
                     .await?;
                 }
@@ -170,6 +177,7 @@ async fn handle_new_subscription(
                     discord_api,
                     discord_id,
                     lib::tasks::subscription_roles::ids::INSIDER_ID,
+                    Some("Automatic role assignment due to being an insider (via Stripe Webhook)"),
                 )
                 .await?;
             }

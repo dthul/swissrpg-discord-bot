@@ -8,10 +8,7 @@ pub fn numcached<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID
-        .to_guild_cached(&context.ctx)
-        .await
-    {
+    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&context.ctx) {
         let num_cached_members = guild.members.len();
         context
             .msg
@@ -26,11 +23,16 @@ pub fn numcached<'a>(
             .await
             .ok();
     } else {
-        context.msg.channel_id.say(
-            &context.ctx,
-            "No guild associated with this message (use the command from a guild channel instead \
-             of a direct message).",
-        ).await.ok();
+        context
+            .msg
+            .channel_id
+            .say(
+                &context.ctx,
+                "No guild associated with this message (use the command from a guild channel \
+                 instead of a direct message).",
+            )
+            .await
+            .ok();
     }
     Ok(())
 }

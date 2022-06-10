@@ -1,5 +1,4 @@
-use futures::stream;
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use lazy_static::lazy_static;
 use redis::{self, AsyncCommands};
 use serenity::{
@@ -383,7 +382,7 @@ async fn sync_role(
         .await?;
         // Make sure that the role ID that was returned actually exists on Discord
         // First, check the cache
-        let role_exists = match GUILD_ID.to_guild_cached(&discord_api.cache).await {
+        let role_exists = match GUILD_ID.to_guild_cached(&discord_api.cache) {
             Some(guild) => guild.roles.contains_key(&role),
             None => false,
         };
@@ -401,16 +400,22 @@ async fn sync_role(
             // Delete it from the DB and retry
             if is_host_role {
                 sqlx::query!(
-                    "UPDATE event_series SET discord_host_role_id = NULL WHERE id = $1 AND discord_host_role_id = $2",
+                    "UPDATE event_series SET discord_host_role_id = NULL WHERE id = $1 AND \
+                     discord_host_role_id = $2",
                     event_series.0,
                     role.0 as i64
-                ).execute(db_connection).await?;
+                )
+                .execute(db_connection)
+                .await?;
             } else {
                 sqlx::query!(
-                    "UPDATE event_series SET discord_role_id = NULL WHERE id = $1 AND discord_role_id = $2",
+                    "UPDATE event_series SET discord_role_id = NULL WHERE id = $1 AND \
+                     discord_role_id = $2",
                     event_series.0,
                     role.0 as i64
-                ).execute(db_connection).await?;
+                )
+                .execute(db_connection)
+                .await?;
             }
             continue;
         } else {
@@ -590,16 +595,26 @@ async fn sync_channel(
             // This channel does not exist on Discord
             // Delete it from the DB and retry
             match channel_type {
-                ChannelType::Text => sqlx::query!(
-                    "UPDATE event_series SET discord_text_channel_id = NULL WHERE id = $1 AND discord_text_channel_id = $2",
-                    event_series_id.0,
-                    channel.0 as i64
-                ).execute(db_connection).await?,
-                ChannelType::Voice => sqlx::query!(
-                    "UPDATE event_series SET discord_voice_channel_id = NULL WHERE id = $1 AND discord_voice_channel_id = $2",
-                    event_series_id.0,
-                    channel.0 as i64
-                ).execute(db_connection).await?,
+                ChannelType::Text => {
+                    sqlx::query!(
+                        "UPDATE event_series SET discord_text_channel_id = NULL WHERE id = $1 AND \
+                         discord_text_channel_id = $2",
+                        event_series_id.0,
+                        channel.0 as i64
+                    )
+                    .execute(db_connection)
+                    .await?
+                }
+                ChannelType::Voice => {
+                    sqlx::query!(
+                        "UPDATE event_series SET discord_voice_channel_id = NULL WHERE id = $1 \
+                         AND discord_voice_channel_id = $2",
+                        event_series_id.0,
+                        channel.0 as i64
+                    )
+                    .execute(db_connection)
+                    .await?
+                }
             };
             continue;
         } else {
@@ -649,11 +664,11 @@ async fn sync_channel_impl(
         ChannelType::Text => vec![
             PermissionOverwrite {
                 allow: Permissions::empty(),
-                deny: Permissions::READ_MESSAGES,
+                deny: Permissions::VIEW_CHANNEL,
                 kind: PermissionOverwriteType::Role(role_everyone_id),
             },
             PermissionOverwrite {
-                allow: Permissions::READ_MESSAGES,
+                allow: Permissions::VIEW_CHANNEL,
                 deny: Permissions::empty(),
                 kind: PermissionOverwriteType::Member(UserId(bot_id)),
             },
@@ -773,29 +788,29 @@ async fn sync_channel_permissions(
     // The @everyone role has the same id as the guild
     let role_everyone_id = RoleId(GUILD_ID.0);
     // Make this channel private.
-    // This is achieved by denying @everyone the READ_MESSAGES permission
-    // but allowing the new role the READ_MESSAGES permission.
+    // This is achieved by denying @everyone the VIEW_CHANNEL permission
+    // but allowing the new role the VIEW_CHANNEL permission.
     // see: https://support.discordapp.com/hc/en-us/articles/206143877-How-do-I-set-up-a-Role-Exclusive-channel-
     let permission_overwrites = match channel_type {
         ChannelType::Text => {
             let mut permission_overwrites = vec![
                 PermissionOverwrite {
                     allow: Permissions::empty(),
-                    deny: Permissions::READ_MESSAGES,
+                    deny: Permissions::VIEW_CHANNEL,
                     kind: PermissionOverwriteType::Role(role_everyone_id),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES,
+                    allow: Permissions::VIEW_CHANNEL,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Member(UserId(bot_id)),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES,
+                    allow: Permissions::VIEW_CHANNEL,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(role_id),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES
+                    allow: Permissions::VIEW_CHANNEL
                         | Permissions::MENTION_EVERYONE
                         | Permissions::MANAGE_MESSAGES,
                     deny: Permissions::empty(),
@@ -804,14 +819,14 @@ async fn sync_channel_permissions(
             ];
             if let Some(dice_roller_bot_id) = DICE_ROLLER_BOT_ID {
                 permission_overwrites.push(PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES,
+                    allow: Permissions::VIEW_CHANNEL,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(dice_roller_bot_id),
                 });
             }
             for &host_id in discord_host_ids {
                 permission_overwrites.push(PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES
+                    allow: Permissions::VIEW_CHANNEL
                         | Permissions::MENTION_EVERYONE
                         | Permissions::MANAGE_MESSAGES,
                     deny: Permissions::empty(),
@@ -824,21 +839,21 @@ async fn sync_channel_permissions(
             let mut permission_overwrites = vec![
                 PermissionOverwrite {
                     allow: Permissions::empty(),
-                    deny: Permissions::READ_MESSAGES | Permissions::CONNECT,
+                    deny: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
                     kind: PermissionOverwriteType::Role(role_everyone_id),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES | Permissions::CONNECT,
+                    allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Member(UserId(bot_id)),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES | Permissions::CONNECT,
+                    allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(role_id),
                 },
                 PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES
+                    allow: Permissions::VIEW_CHANNEL
                         | Permissions::CONNECT
                         | Permissions::MOVE_MEMBERS
                         | Permissions::MUTE_MEMBERS
@@ -849,7 +864,7 @@ async fn sync_channel_permissions(
             ];
             for &rythm_bot_id in RYTHM_BOT_IDS {
                 permission_overwrites.push(PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES | Permissions::CONNECT,
+                    allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(rythm_bot_id),
                 });
@@ -917,7 +932,12 @@ async fn sync_role_assignments_permissions(
                     if !has_role {
                         match discord_api
                             .http()
-                            .add_member_role(GUILD_ID.0, user_id.0, user_role.0)
+                            .add_member_role(
+                                GUILD_ID.0,
+                                user_id.0,
+                                user_role.0,
+                                Some("Automatic role assignment due to event participation"),
+                            )
                             .await
                         {
                             Ok(_) => {
@@ -946,7 +966,7 @@ async fn sync_role_assignments_permissions(
             continue;
         }
         // Assign text channel permissions
-        let new_permissions = Permissions::READ_MESSAGES
+        let new_permissions = Permissions::VIEW_CHANNEL
             | Permissions::MENTION_EVERYONE
             | Permissions::MANAGE_MESSAGES;
         match crate::discord::add_channel_user_permissions(
@@ -969,7 +989,7 @@ async fn sync_role_assignments_permissions(
         }
         // Also assign rights in the possibly existing voice channel
         if let Some(voice_channel_id) = voice_channel_id {
-            let new_permissions = Permissions::READ_MESSAGES
+            let new_permissions = Permissions::VIEW_CHANNEL
                 | Permissions::CONNECT
                 | Permissions::MUTE_MEMBERS
                 | Permissions::DEAFEN_MEMBERS
@@ -1055,7 +1075,12 @@ async fn sync_game_master_role(
                     if !has_role {
                         match discord_api
                             .http()
-                            .add_member_role(GUILD_ID.0, host_id.0, GAME_MASTER_ID.0)
+                            .add_member_role(
+                                GUILD_ID.0,
+                                host_id.0,
+                                GAME_MASTER_ID.0,
+                                Some("Automatic role assignment due to being a game master"),
+                            )
                             .await
                         {
                             Ok(_) => println!("Assigned user {} to the game master role", host_id),
@@ -1148,7 +1173,7 @@ async fn sync_channel_category(
     }
     let channel = channel_id.to_channel(discord_api).await?;
     if let serenity::model::channel::Channel::Guild(channel) = channel {
-        let category_needs_update = match channel.category_id {
+        let category_needs_update = match channel.parent_id {
             Some(channel_category) => {
                 if let Some(special_category) = next_event.discord_category {
                     special_category != channel_category

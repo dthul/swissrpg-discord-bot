@@ -118,10 +118,7 @@ async fn whois_by_discord_username_tag(
     context: &mut super::CommandContext,
     username_tag: &str,
 ) -> Result<(), lib::meetup::Error> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID
-        .to_guild_cached(&context.ctx)
-        .await
-    {
+    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&context.ctx) {
         let discord_id = guild.member_named(username_tag).map(|m| m.user.id);
         if let Some(discord_id) = discord_id {
             // Look up by Discord ID
@@ -183,10 +180,10 @@ async fn whois_by_meetup_id(
                 .say(
                     &context.ctx,
                     format!(
-                    "https://www.meetup.com/members/{}/ does not seem to be linked to a Discord \
-                     user",
-                    meetup_id
-                ),
+                        "https://www.meetup.com/members/{}/ does not seem to be linked to a \
+                         Discord user",
+                        meetup_id
+                    ),
                 )
                 .await
                 .ok();

@@ -1,10 +1,11 @@
-use crate::{db, DefaultStr};
+use std::sync::Arc;
 
-use super::free_spots::EventCollector;
 use futures_util::lock::Mutex;
 use serenity::model::id::RoleId;
 use simple_error::SimpleError;
-use std::sync::Arc;
+
+use super::free_spots::EventCollector;
+use crate::{db, DefaultStr};
 
 impl EventCollector {
     pub async fn assign_roles(
@@ -114,12 +115,15 @@ impl EventCollector {
                             discord_api,
                             discord_user_id,
                             role_id,
+                            Some(
+                                "Automatic role assignment due to being enrolled in an event with \
+                                 role shortcode",
+                            ),
                         )
                         .await
                         {
                             let role_text = role_id
                                 .to_role_cached(&discord_api.cache)
-                                .await
                                 .map(|role| format!("**{}**", role.name))
                                 .unwrap_or_else(|| format!("<@&{}>", role_id.0));
                             // Let the user know about the new role

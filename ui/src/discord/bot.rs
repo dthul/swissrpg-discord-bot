@@ -1,13 +1,15 @@
-use super::commands::CommandContext;
-use super::commands::PreparedCommands;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use serenity::{
     async_trait,
-    client::bridge::gateway::GatewayIntents,
     model::{
         channel::Message,
-        gateway::Ready,
+        gateway::{GatewayIntents, Ready},
         guild::Member,
         id::{GuildId, UserId},
         interactions::Interaction,
@@ -15,10 +17,8 @@ use serenity::{
     },
     prelude::*,
 };
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+
+use super::commands::{CommandContext, PreparedCommands};
 
 pub async fn create_discord_client(
     discord_token: &str,
@@ -33,20 +33,20 @@ pub async fn create_discord_client(
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let client = Client::builder(&discord_token)
-        .application_id(application_id)
-        .intents(
-            GatewayIntents::GUILDS
-                | GatewayIntents::GUILD_MEMBERS
-                | GatewayIntents::GUILD_MESSAGES
-                | GatewayIntents::GUILD_MESSAGE_REACTIONS
-                | GatewayIntents::DIRECT_MESSAGES
-                | GatewayIntents::DIRECT_MESSAGE_REACTIONS
-                | GatewayIntents::GUILD_PRESENCES
-                | GatewayIntents::GUILD_VOICE_STATES,
-        )
-        .event_handler(Handler)
-        .await?;
+    let client = Client::builder(
+        &discord_token,
+        GatewayIntents::GUILDS
+            | GatewayIntents::GUILD_MEMBERS
+            | GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::GUILD_MESSAGE_REACTIONS
+            | GatewayIntents::DIRECT_MESSAGES
+            | GatewayIntents::DIRECT_MESSAGE_REACTIONS
+            | GatewayIntents::GUILD_PRESENCES
+            | GatewayIntents::GUILD_VOICE_STATES,
+    )
+    .application_id(application_id)
+    .event_handler(Handler)
+    .await?;
 
     // We will fetch the bot's id.
     let (bot_id, bot_name) = client
@@ -159,7 +159,7 @@ impl Handler {
                 let _ = cmdctx.msg.channel_id.say(
                     &cmdctx.ctx,
                     "I can't figure out what to do. This is a bug. Could you please let a bot \
-             admin know about this?",
+                     admin know about this?",
                 );
                 return Ok(());
             }
@@ -174,8 +174,8 @@ impl Handler {
                 eprintln!("Unmatcheable command: {}", &message_content);
                 let _ = cmdctx.msg.channel_id.say(
                     &cmdctx.ctx,
-                    "I can't parse your command. This is a bug. Could you please let a bot \
-             admin know about this?",
+                    "I can't parse your command. This is a bug. Could you please let a bot admin \
+                     know about this?",
                 );
                 return Ok(());
             }
@@ -310,8 +310,8 @@ impl EventHandler for Handler {
         println!("{} is connected!", ready.user.name);
     }
 
-    async fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
-        if guild_id != lib::discord::sync::ids::GUILD_ID {
+    async fn guild_member_addition(&self, ctx: Context, new_member: Member) {
+        if new_member.guild_id != lib::discord::sync::ids::GUILD_ID {
             return;
         }
         Self::send_welcome_message(&ctx, &new_member.user).await;
@@ -345,7 +345,6 @@ impl EventHandler for Handler {
         let members = match ctx
             .cache
             .guild_field(guild_id, |guild| guild.members.clone())
-            .await
         {
             Some(members) => members,
             None => return,

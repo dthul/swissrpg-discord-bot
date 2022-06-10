@@ -203,6 +203,7 @@ async fn channel_add_or_remove_user_impl(
                     lib::discord::sync::ids::GUILD_ID.0,
                     discord_id,
                     channel_roles.user.0,
+                    Some("Role assignment due to 'add user' command"),
                 )
                 .await
             {
@@ -227,7 +228,7 @@ async fn channel_add_or_remove_user_impl(
             }
             if as_host {
                 // Grant direct permissions
-                let new_permissions = Permissions::READ_MESSAGES
+                let new_permissions = Permissions::VIEW_CHANNEL
                     | Permissions::MENTION_EVERYONE
                     | Permissions::MANAGE_MESSAGES;
                 match lib::discord::add_channel_user_permissions(
@@ -265,7 +266,7 @@ async fn channel_add_or_remove_user_impl(
                 }
                 // Also grant permissions in a possibly existing voice channel
                 if let Some(voice_channel_id) = voice_channel_id {
-                    let new_permissions = Permissions::READ_MESSAGES
+                    let new_permissions = Permissions::VIEW_CHANNEL
                         | Permissions::CONNECT
                         | Permissions::MUTE_MEMBERS
                         | Permissions::DEAFEN_MEMBERS
@@ -302,6 +303,7 @@ async fn channel_add_or_remove_user_impl(
                         lib::discord::sync::ids::GUILD_ID.0,
                         discord_id,
                         host_role.0,
+                        Some("Role removal due to 'remove user' command"),
                     )
                     .await
                 {
@@ -414,6 +416,7 @@ async fn channel_add_or_remove_user_impl(
                         lib::discord::sync::ids::GUILD_ID.0,
                         discord_id,
                         channel_roles.user.0,
+                        Some("Role removal due to 'remove user' command"),
                     )
                     .await
                 {
@@ -433,9 +436,14 @@ async fn channel_add_or_remove_user_impl(
             // Remember which users were removed manually
             let series_id = lib::get_channel_series(context.msg.channel_id, &mut tx).await?;
             match series_id {
-                None => eprintln!("Could not remember removed channel role because channel {} has no associated series", context.msg.channel_id),
+                None => eprintln!(
+                    "Could not remember removed channel role because channel {} has no associated \
+                     series",
+                    context.msg.channel_id
+                ),
                 Some(series_id) => {
-                    let member = lib::db::discord_ids_to_members(&[UserId(discord_id)], &pool).await?;
+                    let member =
+                        lib::db::discord_ids_to_members(&[UserId(discord_id)], &pool).await?;
                     if let Some((_, Some(member))) = member.first() {
                         if as_host {
                             sqlx::query!(
@@ -460,12 +468,12 @@ async fn channel_add_or_remove_user_impl(
         if add {
             let new_permissions = if as_host {
                 // Add normal and host specific permissions
-                Permissions::READ_MESSAGES
+                Permissions::VIEW_CHANNEL
                     | Permissions::MANAGE_MESSAGES
                     | Permissions::MENTION_EVERYONE
             } else {
                 // Add only user permissions
-                Permissions::READ_MESSAGES
+                Permissions::VIEW_CHANNEL
             };
             let permissions_changed = lib::discord::add_channel_user_permissions(
                 &discord_api,
@@ -484,7 +492,7 @@ async fn channel_add_or_remove_user_impl(
             }
             context.msg.react(&context.ctx, '\u{2705}').await.ok();
         } else {
-            // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
+            // Assume that users with the VIEW_CHANNEL, MANAGE_MESSAGES and
             // MENTION_EVERYONE permission are channel hosts
             let target_is_host = lib::discord::is_host(
                 &discord_api,
@@ -507,7 +515,7 @@ async fn channel_add_or_remove_user_impl(
                 Permissions::MANAGE_MESSAGES | Permissions::MENTION_EVERYONE
             } else {
                 // Remove host and user permissions
-                Permissions::READ_MESSAGES
+                Permissions::VIEW_CHANNEL
                     | Permissions::MANAGE_MESSAGES
                     | Permissions::MENTION_EVERYONE
             };

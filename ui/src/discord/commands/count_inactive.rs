@@ -8,10 +8,7 @@ fn count_inactive<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID
-        .to_guild_cached(&context.ctx)
-        .await
-    {
+    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&context.ctx) {
         let num_inactive_users = &guild
             .members
             .iter()
@@ -45,10 +42,7 @@ fn count_members<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID
-        .to_guild_cached(&context.ctx)
-        .await
-    {
+    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&context.ctx) {
         let num_members = &guild.members.len();
         context
             .msg

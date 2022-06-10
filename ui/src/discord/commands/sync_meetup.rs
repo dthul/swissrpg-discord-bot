@@ -7,7 +7,8 @@ use std::time::Duration;
 #[level(admin)]
 #[help(
     "sync meetup",
-    "Synchronizes the database with the current Meetup data. Please use carefully due to Meetup API usage limits."
+    "Synchronizes the database with the current Meetup data. Please use carefully due to Meetup \
+     API usage limits."
 )]
 fn sync_meetup<'a>(
     context: &'a mut super::CommandContext,

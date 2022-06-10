@@ -1,12 +1,13 @@
 pub mod sync;
 pub mod util;
 
+use std::sync::Arc;
+
 use serenity::model::{
     channel::{Channel, PermissionOverwrite, PermissionOverwriteType},
     id::{ChannelId, UserId},
     permissions::Permissions,
 };
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct CacheAndHttp {
@@ -43,7 +44,7 @@ pub async fn is_host(
     } else {
         return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
     };
-    // Assume that users with the READ_MESSAGES, MANAGE_MESSAGES and
+    // Assume that users with the VIEW_CHANNEL, MANAGE_MESSAGES and
     // MENTION_EVERYONE permission are channel hosts
     let user_permission_overwrites = channel
         .permission_overwrites
@@ -52,7 +53,7 @@ pub async fn is_host(
         .cloned();
     let is_host = user_permission_overwrites.map_or(false, |overwrites| {
         overwrites.allow.contains(
-            Permissions::READ_MESSAGES
+            Permissions::VIEW_CHANNEL
                 | Permissions::MANAGE_MESSAGES
                 | Permissions::MENTION_EVERYONE,
         )

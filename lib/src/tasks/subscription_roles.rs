@@ -1,11 +1,12 @@
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
+
 use lazy_static::lazy_static;
 use serenity::{
     http::CacheHttp,
     model::id::{RoleId, UserId},
-};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
 };
 
 pub const CHAMPION_PRODUCT_PATTERN: &'static str =
@@ -136,7 +137,6 @@ pub async fn update_roles(
         .guild_field(crate::discord::sync::ids::GUILD_ID, |guild| {
             guild.members.clone()
         })
-        .await
         .ok_or_else(|| simple_error::SimpleError::new("Did not find guild in cache"))?;
     for (&user_id, member) in &members {
         let is_champion = member.roles.contains(&ids::CHAMPION_ID);
@@ -170,16 +170,26 @@ pub async fn update_roles(
             // Is also a GM
             if !current_gm_champions.contains(new_champion) {
                 // Assign GM champion role
-                if let Err(err) =
-                    add_member_role(discord_api, *new_champion, ids::GM_CHAMPION_ID).await
+                if let Err(err) = add_member_role(
+                    discord_api,
+                    *new_champion,
+                    ids::GM_CHAMPION_ID,
+                    Some("Automatic role assignment due to being a GM champion"),
+                )
+                .await
                 {
                     eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
                 }
             }
             if current_champions.contains(new_champion) {
                 // Remove (non-GM) champion role
-                if let Err(err) =
-                    remove_member_role(discord_api, *new_champion, ids::CHAMPION_ID).await
+                if let Err(err) = remove_member_role(
+                    discord_api,
+                    *new_champion,
+                    ids::CHAMPION_ID,
+                    Some("Automatic role removal due to being upgraded to a GM champion"),
+                )
+                .await
                 {
                     eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
                 }
@@ -188,16 +198,26 @@ pub async fn update_roles(
             // Is not also a GM
             if !current_champions.contains(new_champion) {
                 // Assign champion role
-                if let Err(err) =
-                    add_member_role(discord_api, *new_champion, ids::CHAMPION_ID).await
+                if let Err(err) = add_member_role(
+                    discord_api,
+                    *new_champion,
+                    ids::CHAMPION_ID,
+                    Some("Automatic role assignment due to being a champion"),
+                )
+                .await
                 {
                     eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
                 }
             }
             if current_gm_champions.contains(new_champion) {
                 // Remove GM champion role
-                if let Err(err) =
-                    remove_member_role(discord_api, *new_champion, ids::GM_CHAMPION_ID).await
+                if let Err(err) = remove_member_role(
+                    discord_api,
+                    *new_champion,
+                    ids::GM_CHAMPION_ID,
+                    Some("Automatic role removal due to no longer being a GM champion"),
+                )
+                .await
                 {
                     eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
                 }
@@ -207,7 +227,14 @@ pub async fn update_roles(
     for new_insider in &new_insiders {
         if !current_insiders.contains(new_insider) {
             // Assign insider role
-            if let Err(err) = add_member_role(discord_api, *new_insider, ids::INSIDER_ID).await {
+            if let Err(err) = add_member_role(
+                discord_api,
+                *new_insider,
+                ids::INSIDER_ID,
+                Some("Automatic role assignment due to being an insider"),
+            )
+            .await
+            {
                 eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
             }
         }
@@ -215,8 +242,13 @@ pub async fn update_roles(
     for current_champion in &current_champions {
         if !new_champions.contains(current_champion) {
             // Remove champion role
-            if let Err(err) =
-                remove_member_role(discord_api, *current_champion, ids::CHAMPION_ID).await
+            if let Err(err) = remove_member_role(
+                discord_api,
+                *current_champion,
+                ids::CHAMPION_ID,
+                Some("Automatic role removal due to no longer being a champion"),
+            )
+            .await
             {
                 eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
@@ -227,8 +259,13 @@ pub async fn update_roles(
             || !current_gms.contains(current_gm_champion)
         {
             // Remove GM champion role
-            if let Err(err) =
-                remove_member_role(discord_api, *current_gm_champion, ids::GM_CHAMPION_ID).await
+            if let Err(err) = remove_member_role(
+                discord_api,
+                *current_gm_champion,
+                ids::GM_CHAMPION_ID,
+                Some("Automatic role removal due to no longer being a GM or a champion"),
+            )
+            .await
             {
                 eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
@@ -237,8 +274,13 @@ pub async fn update_roles(
     for current_insider in &current_insiders {
         if !new_insiders.contains(current_insider) {
             // Remove insider role
-            if let Err(err) =
-                remove_member_role(discord_api, *current_insider, ids::INSIDER_ID).await
+            if let Err(err) = remove_member_role(
+                discord_api,
+                *current_insider,
+                ids::INSIDER_ID,
+                Some("Automatic role removal due to no longer being an insider"),
+            )
+            .await
             {
                 eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
@@ -303,7 +345,7 @@ async fn ensure_customer_has_discord_id(
             None => return Ok(None),
             Some(username) => username,
         };
-        let discord_id = match discord_username_to_id(discord_api, discord_username).await? {
+        let discord_id = match discord_username_to_id(discord_api, discord_username)? {
             Some(id) => id,
             None => {
                 eprintln!(
@@ -341,14 +383,11 @@ async fn ensure_customer_has_discord_id(
 }
 
 // TODO: move to discord utils
-pub async fn discord_username_to_id(
+pub fn discord_username_to_id(
     discord_api: &crate::discord::CacheAndHttp,
     username: &str,
 ) -> Result<Option<UserId>, crate::meetup::Error> {
-    let guild = match crate::discord::sync::ids::GUILD_ID
-        .to_guild_cached(&discord_api.cache)
-        .await
-    {
+    let guild = match crate::discord::sync::ids::GUILD_ID.to_guild_cached(&discord_api.cache) {
         Some(guild) => guild,
         None => {
             eprintln!(
@@ -384,10 +423,16 @@ pub async fn add_member_role(
     discord_api: &crate::discord::CacheAndHttp,
     user_id: UserId,
     role_id: RoleId,
+    audit_log_reason: Option<&str>,
 ) -> Result<(), crate::meetup::Error> {
     match discord_api
         .http()
-        .add_member_role(crate::discord::sync::ids::GUILD_ID.0, user_id.0, role_id.0)
+        .add_member_role(
+            crate::discord::sync::ids::GUILD_ID.0,
+            user_id.0,
+            role_id.0,
+            audit_log_reason,
+        )
         .await
     {
         Ok(_) => {
@@ -409,10 +454,16 @@ async fn remove_member_role(
     discord_api: &crate::discord::CacheAndHttp,
     user_id: UserId,
     role_id: RoleId,
+    audit_log_reason: Option<&str>,
 ) -> Result<(), crate::meetup::Error> {
     match discord_api
         .http()
-        .remove_member_role(crate::discord::sync::ids::GUILD_ID.0, user_id.0, role_id.0)
+        .remove_member_role(
+            crate::discord::sync::ids::GUILD_ID.0,
+            user_id.0,
+            role_id.0,
+            audit_log_reason,
+        )
         .await
     {
         Ok(_) => {

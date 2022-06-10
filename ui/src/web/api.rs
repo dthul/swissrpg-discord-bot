@@ -132,8 +132,7 @@ async fn check_discord_username_handler(
     let id = lib::tasks::subscription_roles::discord_username_to_id(
         &state.discord_cache_http,
         &discord_username.0,
-    )
-    .await?;
+    )?;
     if id.is_none() {
         // The username seems to be invalid, return a 204 HTTP code
         Ok(StatusCode::NO_CONTENT)

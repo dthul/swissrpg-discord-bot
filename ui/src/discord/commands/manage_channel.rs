@@ -35,16 +35,27 @@ fn manage_channel<'a>(
     )
     .execute(&mut tx)
     .await?;
-    let channel = if let Some(Channel::Guild(channel)) = context.msg.channel(&context.ctx).await {
-        channel.clone()
-    } else {
-        context
-            .msg
-            .channel_id
-            .say(&context.ctx, "Can not manage this channel")
-            .await
-            .ok();
-        return Ok(());
+    let channel = match context.msg.channel(&context.ctx).await {
+        Ok(Channel::Guild(channel)) => channel,
+        Ok(_) => {
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx, "Can not manage this channel")
+                .await
+                .ok();
+            return Ok(());
+        }
+        Err(err) => {
+            eprintln!("manage channel failed:\n{:#?}", err);
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx, "Error when trying to manage this channel")
+                .await
+                .ok();
+            return Ok(());
+        }
     };
     // Step 2: Grant the bot continued access to the channel
     let bot_id = context.bot_id().await?;
@@ -52,7 +63,7 @@ fn manage_channel<'a>(
         .create_permission(
             &context.ctx,
             &PermissionOverwrite {
-                allow: Permissions::READ_MESSAGES,
+                allow: Permissions::VIEW_CHANNEL,
                 deny: Permissions::empty(),
                 kind: PermissionOverwriteType::Member(bot_id),
             },
@@ -63,7 +74,7 @@ fn manage_channel<'a>(
     for member in &mut current_channel_members {
         // Don't explicitly grant access to admins
         let is_admin = {
-            if let Ok(member_permissions) = member.permissions(&context.ctx).await {
+            if let Ok(member_permissions) = member.permissions(&context.ctx) {
                 member_permissions.administrator()
             } else {
                 false
@@ -76,7 +87,7 @@ fn manage_channel<'a>(
             .create_permission(
                 &context.ctx,
                 &PermissionOverwrite {
-                    allow: Permissions::READ_MESSAGES,
+                    allow: Permissions::VIEW_CHANNEL,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Member(member.user.id),
                 },
