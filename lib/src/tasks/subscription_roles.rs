@@ -307,7 +307,7 @@ pub async fn get_customer_and_product(
                 subscription.id
             ))
         })?;
-    let product = match product.as_ref() {
+    let product = match product {
         stripe::Expandable::Object(product) => *product.clone(),
         stripe::Expandable::Id(product_id) => {
             stripe::Product::retrieve(client, &product_id, &[]).await?

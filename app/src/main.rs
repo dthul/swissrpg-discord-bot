@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms)]
 
-use futures::future;
-use sqlx::{postgres::PgPoolOptions, Executor};
 use std::{
     env,
     sync::{
@@ -10,6 +8,9 @@ use std::{
         Arc,
     },
 };
+
+use futures::future;
+use sqlx::{postgres::PgPoolOptions, Executor};
 
 fn main() {
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
@@ -61,12 +62,7 @@ fn main() {
     );
 
     // Create a Stripe client
-    let stripe_client = Arc::new(stripe::Client::new(&stripe_client_secret).with_headers(
-        stripe::Headers {
-            // stripe_version: Some(stripe::ApiVersion::V2019_03_14),
-            ..Default::default()
-        },
-    ));
+    let stripe_client = Arc::new(stripe::Client::new(stripe_client_secret));
 
     // Create a tokio runtime
     let async_runtime = tokio::runtime::Builder::new_multi_thread()
