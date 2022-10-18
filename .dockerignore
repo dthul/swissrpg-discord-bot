@@ -1,0 +1,6 @@
+.git
+secrets*
+target
+venv
+.vscode
+.aws

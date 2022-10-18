@@ -46,12 +46,13 @@ fn main() {
     if api_key.is_none() {
         eprintln!("No API key set. Will not listen to API requests.");
     }
+    let static_file_directory = env::var("STATIC_FILE_DIRECTORY").ok();
 
     // Connect to the local Redis server
     let redis_url = if cfg!(feature = "bottest") {
-        "redis://127.0.0.1/1"
+        "redis://swissrpg-redis/1"
     } else {
-        "redis://127.0.0.1/0"
+        "redis://swissrpg-redis/0"
     };
     let redis_client = redis::Client::open(redis_url).expect("Could not create a Redis client");
 
@@ -72,20 +73,25 @@ fn main() {
         .expect("Could not create tokio runtime");
 
     // Connect to the local Postgres server
-    let pool = async_runtime
-        .block_on(
-            PgPoolOptions::new()
-                .max_connections(5)
-                .after_connect(|conn| {
-                    Box::pin(async move {
-                        conn.execute("SET default_transaction_isolation TO 'serializable'")
-                            .await?;
-                        Ok(())
-                    })
+    let pool = loop {
+        let pool_options = PgPoolOptions::new()
+            .max_connections(5)
+            .after_connect(|conn| {
+                Box::pin(async move {
+                    conn.execute("SET default_transaction_isolation TO 'serializable'")
+                        .await?;
+                    Ok(())
                 })
-                .connect(&database_url),
-        )
-        .expect("Could not connect to the Postgres database");
+            });
+        match async_runtime.block_on(pool_options.connect(&database_url)) {
+            Ok(pool) => break pool,
+            Err(err) => {
+                eprintln!("Could not connect to the Postgres database:\n{:#?}", err);
+                println!("Retrying in 5 seconds");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+            }
+        }
+    };
 
     // Create a Meetup API client (might not be possible if there is no access token yet)
     let meetup_access_token = async_runtime
@@ -142,13 +148,20 @@ fn main() {
     } else {
         3000
     };
+    let static_file_directory = static_file_directory.unwrap_or_else(|| {
+        if cfg!(feature = "bottest") {
+            "/usr/local/share/swissrpg-app-test/www".into()
+        } else {
+            "/usr/local/share/swissrpg-app/www".into()
+        }
+    });
     let (abort_web_server_tx, abort_web_server_rx) = tokio::sync::oneshot::channel::<()>();
     let abort_web_server_signal = async {
         abort_web_server_rx.await.ok();
     };
     let web_server = ui::web::server::create_server(
         meetup_oauth2_consumer.clone(),
-        ([127, 0, 0, 1], port).into(),
+        ([0, 0, 0, 0], port).into(),
         redis_client.clone(),
         pool.clone(),
         async_meetup_client.clone(),
@@ -157,6 +170,7 @@ fn main() {
         stripe_webhook_signing_secret,
         stripe_client.clone(),
         api_key,
+        static_file_directory,
         abort_web_server_signal,
     );
 

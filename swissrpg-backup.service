@@ -1,0 +1,18 @@
+[Unit]
+Description=SwissRPG Bot Backup
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=docker run -it --rm \
+    --name swissrpg-backupper \
+    --user "$(id -u redis):$(id -g redis)" \
+    --network swissrpg-net \
+    -v /root/.aws:/.aws:ro \
+    -v swissrpg-redis-data:/var/lib/redis:ro \
+    -v /etc/passwd:/etc/passwd:ro \
+    -e "AWS_CONFIG_FILE=/.aws/config" \
+    -e "AWS_SHARED_CREDENTIALS_FILE=/.aws/credentials" \
+    -e "REDIS_DATA_ROOT=/var/lib/redis" \
+    --env-file /root/secrets-backup.sh \
+    swissrpg-backupper

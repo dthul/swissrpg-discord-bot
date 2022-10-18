@@ -8,11 +8,11 @@ use lib::strings;
 use serenity::{
     async_trait,
     model::{
+        application::interaction::Interaction,
         channel::Message,
         gateway::{GatewayIntents, Ready},
         guild::Member,
         id::{GuildId, UserId},
-        interactions::Interaction,
         user::User,
     },
     prelude::*,

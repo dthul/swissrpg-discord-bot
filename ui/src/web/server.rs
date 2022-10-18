@@ -44,6 +44,7 @@ pub fn create_server(
     stripe_webhook_secret: Option<String>,
     stripe_client: Arc<stripe::Client>,
     api_key: Option<String>,
+    static_file_directory: String,
     shutdown_signal: impl Future<Output = ()> + Send + 'static,
 ) -> impl Future<Output = ()> + Send + 'static {
     let state = Arc::new(State {
@@ -65,7 +66,7 @@ pub fn create_server(
     let static_route: Router = Router::new().nest(
         "/static",
         get_service(
-            ServeDir::new("ui/src/web/html/static").append_index_html_on_directories(false),
+            ServeDir::new(static_file_directory).append_index_html_on_directories(false),
         )
         .handle_error(|err: std::io::Error| async move {
             (

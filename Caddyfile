@@ -1,0 +1,7 @@
+bot.swissrpg.ch {
+    reverse_proxy swissrpg-app:3000
+}
+
+bottest.swissrpg.ch {
+    reverse_proxy swissrpg-app-test:3001
+}
