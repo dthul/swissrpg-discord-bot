@@ -32,5 +32,4 @@ COPY --chown=bot ui/src/web/html/static /usr/local/share/swissrpg-app-test/www
 RUN find /usr/local/share/swissrpg-app-test/www -type d -exec chmod a=rx {} \;
 RUN find /usr/local/share/swissrpg-app-test/www -type f -exec chmod a=r {} \;
 EXPOSE 3001
-ENV BOT_ENV test
 CMD ["/usr/local/bin/swissrpg-app-test"]

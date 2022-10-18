@@ -158,6 +158,7 @@ Start the app container:
       --network-alias swissrpg-app \
       -v /etc/passwd:/etc/passwd:ro \
       --env-file secrets-prod.sh \
+      -e "BOT_ENV=prod" \
       --restart on-failure \
       swissrpg-app
 
@@ -170,6 +171,7 @@ Optionally start the test app container:
       --network-alias swissrpg-app-test \
       -v /etc/passwd:/etc/passwd:ro \
       --env-file secrets-test.sh \
+      -e "BOT_ENV=test" \
       --restart on-failure \
       swissrpg-app-test
 
