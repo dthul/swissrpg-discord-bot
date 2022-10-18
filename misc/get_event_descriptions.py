@@ -3,12 +3,12 @@ from gql.transport.requests import RequestsHTTPTransport
 import redis
 import time
 
-with open("lib/src/meetup/schema.graphql") as f:
+with open("../lib/src/meetup/schema.graphql") as f:
     schema_str = f.read()
 
 transport = RequestsHTTPTransport(
     url="https://api.meetup.com/gql",
-    headers={"Authorization": "Bearer 65128e618d98649c40c21f80fbe8ba90"},
+    headers={"Authorization": "Bearer access_token_goes_here"},
 )
 client = Client(schema=schema_str, transport=transport)
 

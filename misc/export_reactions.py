@@ -7,7 +7,7 @@ def run(co):
     return c.loop.run_until_complete(co)
 
 
-run(c.login("NjAwNzUyMTA1NTE4NzkyNzE2.XS4T_w.I58xYLSGc-Y5-i0n32Nt2Xx5icY"))
+run(c.login("key goes here"))
 # channel = run(c.fetch_channel(603487434952671232))
 # message = run(channel.fetch_message(902522856137711646))
 

@@ -7,7 +7,7 @@ def run(co):
     return c.loop.run_until_complete(co)
 
 
-run(c.login("NjAwNzUyMTA1NTE4NzkyNzE2.XS4T_w.I58xYLSGc-Y5-i0n32Nt2Xx5icY"))
+run(c.login("key goes here"))
 
 guild = run(c.fetch_guild(401856510709202945))
 channel = run(c.fetch_channel(781916550515916800))

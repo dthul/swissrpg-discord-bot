@@ -2,12 +2,12 @@ from gql import gql, Client
 from gql.transport.requests import RequestsHTTPTransport
 import sys
 
-with open("lib/src/meetup/schema.graphql") as f:
+with open("../lib/src/meetup/schema.graphql") as f:
     schema_str = f.read()
 
 transport = RequestsHTTPTransport(
     url="https://api.meetup.com/gql",
-    headers={"Authorization": "Bearer 02e1dbc04690c12ca0f6abafc954264f"},
+    headers={"Authorization": "Bearer access_token_goes_here"},
 )
 client = Client(schema=schema_str, transport=transport)
 
