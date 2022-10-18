@@ -86,32 +86,6 @@
     },
     "query": "INSERT INTO meetup_event (event_id, meetup_id, url, urlname) VALUES ($1, $2, $3, $4)\n            RETURNING id"
   },
-  "07930bfd60b593162226637b85d8fffb726f83a547af9716a7a1f1ef8a505aa8": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4",
-          "Text"
-        ]
-      }
-    },
-    "query": "UPDATE member SET discord_nick = $2 WHERE id = $1 AND discord_nick IS DISTINCT FROM $2"
-  },
-  "07e738ed6a485937384a93cd2a008e399f1cac1358e3d22cda02e8a1fd9eae6a": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4",
-          "Int4"
-        ]
-      }
-    },
-    "query": "INSERT INTO event_series_removed_host (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"
-  },
   "0ed1bd705d87642817154dc3d43151b9c88a17863282bbdb922770095517a02c": {
     "describe": {
       "columns": [
@@ -632,19 +606,6 @@
     },
     "query": "SELECT discord_host_role_id FROM event_series WHERE id = $1 FOR UPDATE"
   },
-  "5c3513a03fd3ca8f0a9a0a4015c78b273b43704fb613ac278b6d76424c52c052": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int8",
-          "Timestamptz"
-        ]
-      }
-    },
-    "query": "UPDATE event_series_voice_channel SET deletion_time = $2 WHERE discord_id = $1"
-  },
   "61f10ea14fd8ded65315bbf534662f58a92b6ac5a8b57d59e32ac9c8bc9422c3": {
     "describe": {
       "columns": [],
@@ -679,18 +640,6 @@
     },
     "query": "INSERT INTO event_series_role (discord_id) VALUES ($1)"
   },
-  "6558a91e8e97bf5b20d87f80315d5bcc83e6356819e20c3f56e5aea7f6c76a28": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int8"
-        ]
-      }
-    },
-    "query": "UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"
-  },
   "68fcdb7ac753265b4dce1a38b0b45d767c9b83e380f381336ddde9fde15e75cc": {
     "describe": {
       "columns": [
@@ -716,7 +665,7 @@
         }
       ],
       "nullable": [
-        true,
+        false,
         true,
         true,
         true
@@ -728,18 +677,6 @@
       }
     },
     "query": "SELECT \"member\".id as \"id!\", \"member\".meetup_id, \"member\".discord_id, \"member\".discord_nick\n            FROM event\n            INNER JOIN event_participant ON event.id = event_participant.event_id\n            INNER JOIN \"member\" ON event_participant.member_id = \"member\".id\n            WHERE event.id = ANY($1)\n            "
-  },
-  "6c2a8647051fe952266a7ac0e41813bcd08773c9b4e7b60416f438ace21852ec": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4"
-        ]
-      }
-    },
-    "query": "UPDATE web_session SET last_used = NOW() WHERE id = $1"
   },
   "6ce4ac74e18405e3114971ca72d72709b86ec6d267b7759e0344b9f41b12f117": {
     "describe": {
@@ -920,19 +857,6 @@
     },
     "query": "SELECT member_id FROM event_series_removed_user WHERE event_series_id = $1"
   },
-  "7a5b5b507d1a00569409acbe289b1957e0a70a7c3be784988fffb90af5f1b1aa": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int8",
-          "Timestamptz"
-        ]
-      }
-    },
-    "query": "UPDATE event_series_text_channel SET snooze_until = $2 WHERE discord_id = $1"
-  },
   "7ef64f548474343de2d79d9f1240007928418db07e0f6a3cdb9b44f7a00c9482": {
     "describe": {
       "columns": [
@@ -984,20 +908,6 @@
       }
     },
     "query": "UPDATE event_series_voice_channel SET deletion_time = NULL WHERE discord_id = $1"
-  },
-  "80866f48d27dbf29bf27773ab2e05f185b05d90ded77ff0b81fc48c71f082bb0": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4",
-          "Text",
-          "Text"
-        ]
-      }
-    },
-    "query": "UPDATE \"member\" SET meetup_oauth2_access_token = $2, meetup_oauth2_refresh_token = $3 WHERE id = $1"
   },
   "8184657d01b37280fa88cf4e7bead13280de82b13c3454361e94f1dcd69b78b4": {
     "describe": {
@@ -1070,24 +980,6 @@
     },
     "query": "INSERT INTO event_participant (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
   },
-  "862c20745861ffce2fc8573780ce9d30ea688cad84c3f240979cf14bf48d7198": {
-    "describe": {
-      "columns": [
-        {
-          "name": "discord_id",
-          "ordinal": 0,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Left": []
-      }
-    },
-    "query": "SELECT discord_id FROM event_series_text_channel"
-  },
   "86afd65752a403e59b3c61805129418b1663ebce5e35f48ffdca24cd10a2754a": {
     "describe": {
       "columns": [],
@@ -1153,19 +1045,6 @@
       }
     },
     "query": "UPDATE event_series_host_role SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())"
-  },
-  "89b685629ae23381759b87d3fa97d134a074a016ee6b2e25708816c6490040d0": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int8",
-          "Timestamptz"
-        ]
-      }
-    },
-    "query": "UPDATE event_series_text_channel SET deletion_time = $2 WHERE discord_id = $1"
   },
   "8b2dacba110aedcc36c956bfccc4876b6e185c4476cdce7d7ea882af5ee5c2ec": {
     "describe": {
@@ -1427,18 +1306,6 @@
     },
     "query": "SELECT discord_role_id, discord_host_role_id FROM event_series WHERE id = $1"
   },
-  "9dde76b5f3688d3ed9070cb39a6b86efcd9fec4146567d5d6fd5e3edbc860d61": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int8"
-        ]
-      }
-    },
-    "query": "INSERT INTO managed_channel (discord_id) VALUES ($1) ON CONFLICT DO NOTHING"
-  },
   "9f8e5283856d4a04cf25359be13b7997d4bbb3e2db58631d678503070f19bf35": {
     "describe": {
       "columns": [
@@ -1491,19 +1358,6 @@
       }
     },
     "query": "SELECT event_id FROM event_host WHERE member_id = $1"
-  },
-  "ac2a9d1f647a7a5e734f12bf7d1cb2e3876b3dd5a3dbc4858c654202a15f9940": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int8",
-          "Timestamptz"
-        ]
-      }
-    },
-    "query": "UPDATE event_series_role SET deletion_time = $2 WHERE discord_id = $1"
   },
   "ad02511bec04321effa79be551145df1f3dd6dc7d45fab74a1e0455ee7868f8e": {
     "describe": {
@@ -1919,19 +1773,6 @@
     },
     "query": "SELECT discord_voice_channel_id FROM event_series WHERE id = $1"
   },
-  "c5b2b0029e2ffc93c1e8350c659d088e9e146e5e52b12a18913879b0706d5924": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Bytea",
-          "Int4"
-        ]
-      }
-    },
-    "query": "INSERT INTO web_session (session_id, member_id) VALUES ($1, $2)"
-  },
   "c6a63f1da94d7c51f46b1ef497624804acd54831a2577d00ee8bf251e73792b7": {
     "describe": {
       "columns": [
@@ -2015,18 +1856,6 @@
     },
     "query": "UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1"
   },
-  "c8a2f32a79e2f538978ba02009203aea9179708be2b00e77e6d3ab5239cc2dcf": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4"
-        ]
-      }
-    },
-    "query": "DELETE FROM web_session WHERE id = $1"
-  },
   "cb31b68989e554324b181392b8b00044ce6328b96c92120a701843b4f1a47816": {
     "describe": {
       "columns": [],
@@ -2039,19 +1868,6 @@
       }
     },
     "query": "INSERT INTO event_host (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
-  },
-  "cd14ffbdfd4fc02635eb57ebfb1582d1dd06466ab4d9dd13dc79a1851cc6b9ec": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int8",
-          "Timestamptz"
-        ]
-      }
-    },
-    "query": "UPDATE event_series_host_role SET deletion_time = $2 WHERE discord_id = $1"
   },
   "d02afa7a3b9b7f6a65ee8cbd782535dbfdfda66692c9006eef76126786391503": {
     "describe": {
@@ -2073,19 +1889,6 @@
     },
     "query": "INSERT INTO event_series (\"type\") VALUES ($1) RETURNING id"
   },
-  "d28c7b5860e7190ac30460f74ac897c624cbe6be3ecfe082a5bfd20d56e3fa7c": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4",
-          "Int4"
-        ]
-      }
-    },
-    "query": "INSERT INTO event_series_removed_user (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())"
-  },
   "d2f023163d59ccb0deb72252986b55a5a38545123266c1854e98e7f63f2fa668": {
     "describe": {
       "columns": [
@@ -2105,18 +1908,6 @@
       }
     },
     "query": "SELECT id FROM event_series WHERE discord_text_channel_id = $1"
-  },
-  "d3275db101b6e9580f2397684bda60f90aa479bf49df469b95e9d7134d240e0c": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Bytea"
-        ]
-      }
-    },
-    "query": "DELETE FROM web_session WHERE session_id = $1"
   },
   "d744607b60d8a95007f188ec9620de4ab6d101d49fe5a0194f1281a0763d5993": {
     "describe": {
@@ -2166,7 +1957,7 @@
         }
       ],
       "nullable": [
-        true
+        false
       ],
       "parameters": {
         "Left": []
@@ -2208,58 +1999,6 @@
       }
     },
     "query": "SELECT deletion_time FROM event_series_host_role WHERE discord_id = $1"
-  },
-  "dbc5c5270bf95d01d1e8c1f985d02c685066d133e5ca5fa0cc654c4a7935ccf7": {
-    "describe": {
-      "columns": [
-        {
-          "name": "is_game_channel!",
-          "ordinal": 0,
-          "type_info": "Bool"
-        }
-      ],
-      "nullable": [
-        null
-      ],
-      "parameters": {
-        "Left": [
-          "Int8"
-        ]
-      }
-    },
-    "query": "SELECT COUNT(*) > 0 AS \"is_game_channel!\" FROM event_series_text_channel WHERE discord_id = $1"
-  },
-  "e33a2cdccb83fd4cdadb3620d07065a5bd26da23d4660f98ce3fd82acf66f099": {
-    "describe": {
-      "columns": [
-        {
-          "name": "is_managed_channel!",
-          "ordinal": 0,
-          "type_info": "Bool"
-        }
-      ],
-      "nullable": [
-        null
-      ],
-      "parameters": {
-        "Left": [
-          "Int8"
-        ]
-      }
-    },
-    "query": "SELECT COUNT(*) > 0 AS \"is_managed_channel!\" FROM managed_channel WHERE discord_id = $1"
-  },
-  "e45063b89c074b84f01012467cf91d4cb1d5b1b47cfe941c57fd42d73496ebb5": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Bytea"
-        ]
-      }
-    },
-    "query": "INSERT INTO ephemeral_settings (cookie_key)\n                        VALUES ($1)\n                        ON CONFLICT (id) DO UPDATE\n                        SET cookie_key = $1"
   },
   "e65db40d5d868a6476368100f162021da2224fe8268c4b8909225b1c7ebdb09e": {
     "describe": {
@@ -2359,7 +2098,7 @@
         }
       ],
       "nullable": [
-        true,
+        false,
         true,
         true,
         true

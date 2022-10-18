@@ -23,22 +23,22 @@ chrono-tz = "0.6"
 # cynic = { git = "https://github.com/dthul/cynic", branch = "v1.0.0" }
 futures = "0.3"
 futures-util = "0.3"
-geo = "0.20"
-graphql_client = "0.10.0"
+geo = "0.23"
+graphql_client = "0.11"
 hyper = "0.14"
-iso8601 = "0.4.1"
+iso8601 = "0.5"
 itertools = "0.10"
 lazy_static = "1.4"
 oauth2 = "4.0"
 rand = "0.8"
-redis = { version = "0.21", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.22", default-features = false, features = ["tokio-comp"] }
 regex = "1"
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = "1.0"
 serde_json = "1.0"
 serenity = { version = "0.11", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
 simple-error = "0.2"
-sqlx = { version = "0.5", features = [ "runtime-tokio-rustls", "postgres", "chrono", "offline" ] }
+sqlx = { version = "0.6", features = [ "runtime-tokio-rustls", "postgres", "chrono", "offline" ] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
 unicode-segmentation = "1.7"
 url = "2.1"

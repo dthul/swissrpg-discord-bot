@@ -1,7 +1,8 @@
-use crate::{db, meetup::newapi::create_event_mutation::CreateEventInput};
 use futures_util::FutureExt;
 use rand::Rng;
 use redis::AsyncCommands;
+
+use crate::{db, meetup::newapi::create_event_mutation::CreateEventInput};
 
 pub struct ScheduleSessionFlow {
     pub id: u64,
@@ -214,7 +215,7 @@ impl ScheduleSessionFlow {
         };
         new_event.title = new_event_title;
         new_event.description = description;
-        new_event.startDateTime = crate::meetup::newapi::DateTime(new_date_time);
+        new_event.start_date_time = crate::meetup::newapi::DateTime(new_date_time);
         Ok(new_event)
     }
 }

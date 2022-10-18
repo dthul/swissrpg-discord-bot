@@ -2,10 +2,7 @@ use chrono::TimeZone;
 use futures::{stream, Stream, StreamExt};
 use graphql_client::{GraphQLQuery, Response};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
-use serde::de::Error as _;
-use serde::Deserialize;
-use serde::Serialize;
-use serde::Serializer;
+use serde::{de::Error as _, Deserialize, Serialize, Serializer};
 
 const API_ENDPOINT: &'static str = "https://api.meetup.com/gql";
 pub const URLNAMES: [&'static str; 3] =
@@ -670,7 +667,7 @@ impl AsyncClient {
     pub async fn close_rsvps(&self, event_id: String) -> Result<(), Error> {
         use close_event_rsvps_mutation::*;
         let query_variables = Variables {
-            input: CloseEventRsvpsInput { eventId: event_id },
+            input: CloseEventRsvpsInput { event_id: event_id },
         };
         let query = CloseEventRsvpsMutation::build_query(query_variables);
         let http_response = self.client.post(API_ENDPOINT).json(&query).send().await?;

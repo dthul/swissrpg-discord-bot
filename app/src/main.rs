@@ -76,7 +76,7 @@ fn main() {
     let pool = loop {
         let pool_options = PgPoolOptions::new()
             .max_connections(5)
-            .after_connect(|conn| {
+            .after_connect(|conn, _meta| {
                 Box::pin(async move {
                     conn.execute("SET default_transaction_isolation TO 'serializable'")
                         .await?;

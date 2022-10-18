@@ -14,22 +14,22 @@ pub async fn clone_event<'a>(
 ) -> Result<super::newapi::NewEventResponse, super::Error> {
     let event = meetup_client.get_event(event_id.into()).await?;
     let new_event = super::newapi::NewEvent {
-        groupUrlname: urlname.into(),
+        group_urlname: urlname.into(),
         title: event.title.unwrap_or_else(|| "No title".into()),
         description: event
             .description
             .unwrap_or_else(|| "Missing description".into()),
-        startDateTime: event.date_time.into(),
+        start_date_time: event.date_time.into(),
         duration: None,
-        rsvpSettings: Some(super::newapi::NewEventRsvpSettings {
-            rsvpLimit: Some(event.max_tickets),
-            guestLimit: Some(event.number_of_allowed_guests),
-            rsvpOpenTime: None,
-            rsvpCloseTime: None,
-            rsvpOpenDuration: None,
-            rsvpCloseDuration: None,
+        rsvp_settings: Some(super::newapi::NewEventRsvpSettings {
+            rsvp_limit: Some(event.max_tickets),
+            guest_limit: Some(event.number_of_allowed_guests),
+            rsvp_open_time: None,
+            rsvp_close_time: None,
+            rsvp_open_duration: None,
+            rsvp_close_duration: None,
         }),
-        eventHosts: Some(
+        event_hosts: Some(
             event
                 .hosts
                 .unwrap_or(vec![])
@@ -37,20 +37,20 @@ pub async fn clone_event<'a>(
                 .map(|host| host.id.0 as i64)
                 .collect(),
         ),
-        venueId: if event.is_online {
+        venue_id: if event.is_online {
             Some("online".into())
         } else {
             event.venue.map(|venue| venue.id.0)
         },
-        selfRsvp: Some(false),
-        howToFindUs: if event.is_online {
+        self_rsvp: Some(false),
+        how_to_find_us: if event.is_online {
             None
         } else {
             event.how_to_find_us
         },
         question: None,
-        featuredPhotoId: Some(event.image.id.0 as i64),
-        publishStatus: Some(super::newapi::NewEventPublishStatus::DRAFT),
+        featured_photo_id: Some(event.image.id.0 as i64),
+        publish_status: Some(super::newapi::NewEventPublishStatus::DRAFT),
     };
     // If there is a hook specified, let it modify the new event before
     // publishing it to Meetup
