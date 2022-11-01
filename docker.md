@@ -26,13 +26,13 @@ That is:
 
 # Build Docker Images on Build Machine
 
-    docker build -f swissrpg-app.Dockerfile -t swissrpg-app .
+    docker build --platform linux/amd64 -f swissrpg-app.Dockerfile -t swissrpg-app .
     docker save swissrpg-app | gzip | pv | ssh root@167.235.157.111 docker load
 
-    docker build -f swissrpg-app-test.Dockerfile -t swissrpg-app-test .
+    docker build --platform linux/amd64 -f swissrpg-app-test.Dockerfile -t swissrpg-app-test .
     docker save swissrpg-app-test | gzip | pv | ssh root@167.235.157.111 docker load
 
-    docker build -f swissrpg-backupper.Dockerfile -t swissrpg-backupper .
+    docker build --platform linux/amd64 -f swissrpg-backupper.Dockerfile -t swissrpg-backupper .
     docker save swissrpg-backupper | gzip | pv | ssh root@167.235.157.111 docker load
 
 # Create User Accounts on Host
