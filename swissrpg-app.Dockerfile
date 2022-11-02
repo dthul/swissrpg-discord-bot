@@ -34,7 +34,7 @@ WORKDIR /usr/src/swissrpg-app
 RUN apt update && apt install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/src/swissrpg-app/target/x86_64-unknown-linux-gnu/release/swissrpg-app /usr/local/bin/swissrpg-app
 RUN chmod a=rx /usr/local/bin/swissrpg-app
-COPY --chown=bot ui/src/web/html/static /usr/local/share/swissrpg-app/www
+COPY ui/src/web/html/static /usr/local/share/swissrpg-app/www
 RUN find /usr/local/share/swissrpg-app/www -type d -exec chmod a=rx {} \;
 RUN find /usr/local/share/swissrpg-app/www -type f -exec chmod a=r {} \;
 EXPOSE 3000
