@@ -23,7 +23,7 @@ backtrace = "0.3"
 base64 = "0.13.0"
 command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-chrono-tz = "0.6"
+chrono-tz = "0.8"
 cookie = { version = "0.16", features = ["private"] }
 futures = "0.3"
 futures-channel = "0.3"
