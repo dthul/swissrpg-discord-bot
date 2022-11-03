@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1.64.0-slim-buster AS chef
+FROM --platform=$BUILDPLATFORM rust:1.65.0-slim-buster AS chef
 RUN rustup target add x86_64-unknown-linux-gnu
 RUN cargo install cargo-chef
 RUN apt-get update && \

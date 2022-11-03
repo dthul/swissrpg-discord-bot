@@ -19,7 +19,6 @@ askama_axum = { git = "https://github.com/djc/askama", rev = "064077a9001e121a12
 async-stripe = { version = "0.15", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
 axum = { version = "0.5", features=["headers"] }
 assert-impl = "0.1"
-backtrace = "0.3"
 base64 = "0.13.0"
 command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
