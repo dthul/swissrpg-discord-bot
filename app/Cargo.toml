@@ -22,4 +22,4 @@ redis = { version = "0.22", default-features = false, features = ["tokio-comp"] 
 serenity = { version = "0.11", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
 signal-hook = "0.3"
 sqlx = { version = "0.6", features = [ "runtime-tokio-rustls", "postgres", "chrono", "offline" ] }
-tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
+tokio = { version = "1.24", default-features = false, features = ["rt-multi-thread", "time"] }
