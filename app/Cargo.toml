@@ -18,7 +18,7 @@ async-stripe = { version = "0.22", default-features = false, features = ["runtim
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"
-redis = { version = "0.22", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.23", default-features = false, features = ["tokio-comp"] }
 serenity = { version = "0.11", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
 signal-hook = "0.3"
 sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
