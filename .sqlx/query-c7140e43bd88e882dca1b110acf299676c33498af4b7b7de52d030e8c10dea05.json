@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT discord_id as \"discord_role_id!\"\n            FROM event_series_host_role\n            WHERE deleted IS NULL AND deletion_time IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "discord_role_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c7140e43bd88e882dca1b110acf299676c33498af4b7b7de52d030e8c10dea05"
+}

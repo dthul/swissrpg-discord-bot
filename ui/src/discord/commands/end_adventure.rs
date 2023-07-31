@@ -32,7 +32,7 @@ fn end_adventure<'a>(
         r#"SELECT expiration_time FROM event_series_text_channel WHERE discord_id = $1"#,
         context.msg.channel_id.0 as i64
     )
-    .fetch_one(&mut tx)
+    .fetch_one(&mut *tx)
     .await?;
     let expiration_time = if let Some(expiration_time) = expiration_time {
         expiration_time
@@ -60,7 +60,7 @@ fn end_adventure<'a>(
         r#"SELECT deletion_time FROM event_series_text_channel WHERE discord_id = $1"#,
         context.msg.channel_id.0 as i64
     )
-    .fetch_one(&mut tx)
+    .fetch_one(&mut *tx)
     .await?;
     if let Some(current_deletion_time) = current_deletion_time {
         if new_deletion_time > current_deletion_time && current_deletion_time > expiration_time {
@@ -84,7 +84,7 @@ fn end_adventure<'a>(
         context.msg.channel_id.0 as i64,
         new_deletion_time
     )
-    .execute(&mut tx)
+    .execute(&mut *tx)
     .await?;
     // If there is an associated voice channel, mark it also for deletion
     if let Some(voice_channel_id) = voice_channel_id {
@@ -93,7 +93,7 @@ fn end_adventure<'a>(
             voice_channel_id.0 as i64,
             new_deletion_time
         )
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await?;
     }
     if let Some(channel_roles) = channel_roles {
@@ -102,7 +102,7 @@ fn end_adventure<'a>(
             channel_roles.user.0 as i64,
             new_deletion_time
         )
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await?;
         if let Some(host_role_id) = channel_roles.host {
             sqlx::query!(
@@ -110,7 +110,7 @@ fn end_adventure<'a>(
                 host_role_id.0 as i64,
                 new_deletion_time
             )
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
         }
     }

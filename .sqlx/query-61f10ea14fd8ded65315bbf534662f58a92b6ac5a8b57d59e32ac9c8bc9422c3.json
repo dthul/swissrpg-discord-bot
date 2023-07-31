@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM organizer_token",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "61f10ea14fd8ded65315bbf534662f58a92b6ac5a8b57d59e32ac9c8bc9422c3"
+}

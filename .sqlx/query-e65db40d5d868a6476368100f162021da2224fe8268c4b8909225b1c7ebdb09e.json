@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event\n            SET event_series_id = $1, start_time = $2, title = $3, description = $4, is_online = $5, discord_category_id = $6\n            WHERE id = $7\n            RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Bool",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e65db40d5d868a6476368100f162021da2224fe8268c4b8909225b1c7ebdb09e"
+}

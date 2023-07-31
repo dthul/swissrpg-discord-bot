@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT discord_text_channel_id, discord_voice_channel_id, discord_role_id, discord_host_role_id FROM event_series WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "discord_text_channel_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "discord_voice_channel_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "discord_role_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "discord_host_role_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c28240dfffbbdcd09e28126ae411cd68e305836a9159d7d5ce6341e2e17ec5d2"
+}

@@ -44,7 +44,7 @@ pub async fn get_event_series_roles(
         "SELECT discord_role_id, discord_host_role_id FROM event_series WHERE id = $1",
         event_series_id.0
     )
-    .fetch_one(db_connection)
+    .fetch_one(&mut **db_connection)
     .await?;
     match (row.discord_role_id, row.discord_host_role_id) {
         (Some(role), host_role) => Ok(Some(ChannelRoles {
@@ -67,7 +67,7 @@ pub async fn get_channel_roles(
         "SELECT id FROM event_series WHERE discord_text_channel_id = $1",
         channel_id.0 as i64
     )
-    .fetch_optional(&mut *db_connection)
+    .fetch_optional(&mut **db_connection)
     .await?
     .map(|id| db::EventSeriesId(id));
     match event_series_id {
@@ -84,7 +84,7 @@ pub async fn get_series_text_channel(
         "SELECT discord_text_channel_id FROM event_series WHERE id = $1",
         event_series_id.0
     )
-    .fetch_optional(db_connection)
+    .fetch_optional(&mut **db_connection)
     .await?;
     Ok(discord_text_channel_id
         .flatten()
@@ -99,7 +99,7 @@ pub async fn get_series_voice_channel(
         "SELECT discord_voice_channel_id FROM event_series WHERE id = $1",
         event_series_id.0
     )
-    .fetch_optional(db_connection)
+    .fetch_optional(&mut **db_connection)
     .await?;
     Ok(discord_voice_channel_id
         .flatten()
@@ -114,7 +114,7 @@ pub async fn get_channel_voice_channel(
         "SELECT discord_voice_channel_id FROM event_series WHERE discord_text_channel_id = $1",
         channel_id.0 as i64
     )
-    .fetch_optional(db_connection)
+    .fetch_optional(&mut **db_connection)
     .await?;
     Ok(discord_voice_channel_id
         .flatten()
@@ -129,7 +129,7 @@ pub async fn get_channel_series(
         r#"SELECT id FROM event_series WHERE discord_text_channel_id = $1"#,
         channel_id.0 as i64
     )
-    .fetch_optional(db_connection)
+    .fetch_optional(&mut **db_connection)
     .await?;
     Ok(series_id.map(|id| EventSeriesId(id)))
 }
@@ -184,7 +184,7 @@ pub async fn link_discord_meetup(
         meetup_id: row.meetup_id as u64,
         discord_id: row.discord_id.map(|id| UserId(id as u64)),
     })
-    .fetch_optional(&mut *db_connection)
+    .fetch_optional(&mut **db_connection)
     .await?;
     let member_discord = sqlx::query!(
         r#"SELECT id, meetup_id, discord_id as "discord_id!" FROM "member" WHERE discord_id = $1"#,
@@ -195,7 +195,7 @@ pub async fn link_discord_meetup(
         meetup_id: row.meetup_id.map(|id| id as u64),
         discord_id: UserId(row.discord_id as u64),
     })
-    .fetch_optional(&mut *db_connection)
+    .fetch_optional(&mut **db_connection)
     .await?;
     // A sanity check that should never fail:
     if let Some(member_discord) = &member_discord {
@@ -225,7 +225,7 @@ pub async fn link_discord_meetup(
                 meetup_id as i64,
                 discord_id.0 as i64
             )
-            .fetch_one(db_connection)
+            .fetch_one(&mut **db_connection)
             .await?;
             Ok(LinkingResult::Success {
                 member_id: db::MemberId(new_member_id),
@@ -241,7 +241,7 @@ pub async fn link_discord_meetup(
                 meetup_id as i64,
                 discord_id.0 as i64
             )
-            .fetch_one(db_connection)
+            .fetch_one(&mut **db_connection)
             .await?;
             Ok(LinkingResult::Success {
                 member_id: db::MemberId(member_id),
@@ -267,27 +267,27 @@ pub async fn link_discord_meetup(
                 member_id_with_meetup.0,
                 member_id_with_discord.0
             )
-            .execute(&mut *db_connection)
+            .execute(&mut **db_connection)
             .await?;
             sqlx::query!(
                 r#"UPDATE event_series_removed_user SET member_id = $2 WHERE member_id = $1"#,
                 member_id_with_meetup.0,
                 member_id_with_discord.0
             )
-            .execute(&mut *db_connection)
+            .execute(&mut **db_connection)
             .await?;
             let hosted_events_old_member = sqlx::query!(
                 r#"SELECT event_id FROM event_host WHERE member_id = $1"#,
                 member_id_with_meetup.0
             )
             .map(|row| db::EventId(row.event_id))
-            .fetch_all(&mut *db_connection)
+            .fetch_all(&mut **db_connection)
             .await?;
             sqlx::query!(
                 r#"DELETE FROM event_host WHERE member_id = $1"#,
                 member_id_with_meetup.0
             )
-            .execute(&mut *db_connection)
+            .execute(&mut **db_connection)
             .await?;
             for hosted_event_id in hosted_events_old_member {
                 sqlx::query!(
@@ -295,7 +295,7 @@ pub async fn link_discord_meetup(
                     hosted_event_id.0,
                     member_id_with_discord.0
                 )
-                .execute(&mut *db_connection)
+                .execute(&mut **db_connection)
                 .await?;
             }
             let attended_events_old_member = sqlx::query!(
@@ -303,13 +303,13 @@ pub async fn link_discord_meetup(
                 member_id_with_meetup.0
             )
             .map(|row| db::EventId(row.event_id))
-            .fetch_all(&mut *db_connection)
+            .fetch_all(&mut **db_connection)
             .await?;
             sqlx::query!(
                 r#"DELETE FROM event_participant WHERE member_id = $1"#,
                 member_id_with_meetup.0
             )
-            .execute(&mut *db_connection)
+            .execute(&mut **db_connection)
             .await?;
             for attended_event_id in attended_events_old_member {
                 sqlx::query!(
@@ -317,14 +317,14 @@ pub async fn link_discord_meetup(
                     attended_event_id.0,
                     member_id_with_discord.0
                 )
-                .execute(&mut *db_connection)
+                .execute(&mut **db_connection)
                 .await?;
             }
             sqlx::query!(
                 r#"DELETE FROM "member" WHERE id = $1"#,
                 member_id_with_meetup.0
             )
-            .execute(&mut *db_connection)
+            .execute(&mut **db_connection)
             .await?;
             let member_id = sqlx::query_scalar!(
                 r#"UPDATE "member" SET meetup_id = $2 WHERE id = $1 AND meetup_id IS NULL AND discord_id = $3 RETURNING id"#,
@@ -332,7 +332,7 @@ pub async fn link_discord_meetup(
                 meetup_id as i64,
                 discord_id.0 as i64
             )
-            .fetch_one(&mut *db_connection)
+            .fetch_one(&mut **db_connection)
             .await?;
             Ok(LinkingResult::Success {
                 member_id: db::MemberId(member_id),
@@ -360,7 +360,7 @@ pub async fn unlink_meetup(
         discord_id.0 as i64
     )
     .map(|row| row.meetup_id.map(|id| id as u64))
-    .fetch_one(&mut *db_connection)
+    .fetch_one(&mut **db_connection)
     .await?;
     if meetup_id.is_none() {
         Ok(UnlinkingResult::NotLinked)
@@ -369,7 +369,7 @@ pub async fn unlink_meetup(
             r#"UPDATE "member" SET meetup_id = NULL WHERE discord_id = $1"#,
             discord_id.0 as i64
         )
-        .execute(&mut *db_connection)
+        .execute(&mut **db_connection)
         .await?;
         Ok(UnlinkingResult::Success)
     }

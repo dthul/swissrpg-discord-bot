@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ephemeral_settings (cookie_key)\n                        VALUES ($1)\n                        ON CONFLICT (id) DO UPDATE\n                        SET cookie_key = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e45063b89c074b84f01012467cf91d4cb1d5b1b47cfe941c57fd42d73496ebb5"
+}

@@ -437,14 +437,14 @@ async fn sync_role_impl(
             r#"SELECT discord_host_role_id FROM event_series WHERE id = $1 FOR UPDATE"#,
             series_id.0
         )
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await?
     } else {
         sqlx::query_scalar!(
             r#"SELECT discord_role_id FROM event_series WHERE id = $1 FOR UPDATE"#,
             series_id.0
         )
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await?
     };
     let role_id = role_id.map(|id| RoleId(id as u64));
@@ -488,9 +488,9 @@ async fn sync_role_impl(
             temp_channel_role.id.0 as i64
         )
     };
-    let mut any_err = insert_query.execute(&mut tx).await.err();
+    let mut any_err = insert_query.execute(&mut *tx).await.err();
     if any_err.is_none() {
-        any_err = update_query.execute(&mut tx).await.err();
+        any_err = update_query.execute(&mut *tx).await.err();
     }
     if any_err.is_none() {
         any_err = tx.commit().await.err();
@@ -638,7 +638,7 @@ async fn sync_channel_impl(
                 "SELECT discord_text_channel_id FROM event_series WHERE id = $1 FOR UPDATE",
                 event_series_id.0
             )
-            .fetch_one(&mut tx)
+            .fetch_one(&mut *tx)
             .await?
         }
         ChannelType::Voice => {
@@ -646,7 +646,7 @@ async fn sync_channel_impl(
                 "SELECT discord_voice_channel_id FROM event_series WHERE id = $1 FOR UPDATE",
                 event_series_id.0
             )
-            .fetch_one(&mut tx)
+            .fetch_one(&mut *tx)
             .await?
         }
     };
@@ -729,9 +729,9 @@ async fn sync_channel_impl(
             )
         }
     };
-    let mut any_err = insert_query.execute(&mut tx).await.err();
+    let mut any_err = insert_query.execute(&mut *tx).await.err();
     if any_err.is_none() {
-        any_err = update_query.execute(&mut tx).await.err();
+        any_err = update_query.execute(&mut *tx).await.err();
     }
     if any_err.is_none() {
         any_err = tx.commit().await.err();

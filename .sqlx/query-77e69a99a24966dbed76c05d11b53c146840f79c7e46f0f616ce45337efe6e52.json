@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT event_series.id\n        FROM event_series\n        INNER JOIN event ON event_series.id = event.event_series_id\n        INNER JOIN meetup_event ON event.id = meetup_event.event_id\n        WHERE event.start_time > NOW() AND event.deleted IS NULL\n        GROUP BY event_series.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "77e69a99a24966dbed76c05d11b53c146840f79c7e46f0f616ce45337efe6e52"
+}

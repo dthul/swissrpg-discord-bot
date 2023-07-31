@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM event_participant WHERE event_id = $1 AND NOT (member_id = ANY($2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bfbc706804a18747fda097c6e586cdfbade9e9ae2c1167c10d2f011c3d009525"
+}

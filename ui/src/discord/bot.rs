@@ -431,7 +431,7 @@ impl Handler {
             member_id.0,
             nick
         )
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await?;
         tx.commit().await?;
         Ok(())

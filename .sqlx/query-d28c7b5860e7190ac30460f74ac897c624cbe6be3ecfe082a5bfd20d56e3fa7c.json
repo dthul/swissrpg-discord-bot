@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO event_series_removed_user (event_series_id, member_id, removal_time) VALUES ($1, $2, NOW())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d28c7b5860e7190ac30460f74ac897c624cbe6be3ecfe082a5bfd20d56e3fa7c"
+}

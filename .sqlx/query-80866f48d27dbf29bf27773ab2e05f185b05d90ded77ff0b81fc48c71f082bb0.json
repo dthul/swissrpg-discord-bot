@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE \"member\" SET meetup_oauth2_access_token = $2, meetup_oauth2_refresh_token = $3 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "80866f48d27dbf29bf27773ab2e05f185b05d90ded77ff0b81fc48c71f082bb0"
+}

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT meetup_event.id as \"meetup_event_id\", event.id as \"event_id\", event.event_series_id\n        FROM meetup_event\n        INNER JOIN event ON meetup_event.event_id = event.id\n        WHERE meetup_event.meetup_id = $1\n        FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "meetup_event_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "event_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "event_series_id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8b2dacba110aedcc36c956bfccc4876b6e185c4476cdce7d7ea882af5ee5c2ec"
+}

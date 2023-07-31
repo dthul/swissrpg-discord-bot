@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series_role SET deletion_time = NULL WHERE discord_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5108dfefd21323edc1259ec3ff1fffa858af571480c807f643a4c8184d3fc92d"
+}

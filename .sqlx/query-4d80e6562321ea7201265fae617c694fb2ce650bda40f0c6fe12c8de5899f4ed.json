@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series SET discord_category_id = $2 WHERE id = $1 AND discord_category_id IS DISTINCT FROM $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d80e6562321ea7201265fae617c694fb2ce650bda40f0c6fe12c8de5899f4ed"
+}

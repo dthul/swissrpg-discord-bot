@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT discord_id as \"discord_text_channel_id!\"\n        FROM event_series_text_channel\n        WHERE deleted IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "discord_text_channel_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "272427387602c354460604dd7ed13278a0e6d8b07feb871d73c67ec1baeb9e57"
+}

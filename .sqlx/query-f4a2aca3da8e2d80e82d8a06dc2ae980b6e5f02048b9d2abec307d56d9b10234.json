@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO event_series_host_role (discord_id) VALUES ($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f4a2aca3da8e2d80e82d8a06dc2ae980b6e5f02048b9d2abec307d56d9b10234"
+}

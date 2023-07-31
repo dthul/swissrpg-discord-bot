@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO event_series_voice_channel (discord_id) VALUES ($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35b9e48e35156dce41344c8e07c9764cdd2db9fffb6ff0e79d777051957edf63"
+}

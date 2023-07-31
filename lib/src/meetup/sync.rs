@@ -177,7 +177,7 @@ pub async fn sync_event(
         INNER JOIN event ON meetup_event.event_id = event.id
         WHERE meetup_event.meetup_id = $1
         FOR UPDATE"#,
-        event.id.0).fetch_optional(&mut tx).await?;
+        event.id.0).fetch_optional(&mut *tx).await?;
     let db_meetup_event_id = row.as_ref().map(|row| row.meetup_event_id);
     let db_event_id = row.as_ref().map(|row| row.event_id);
     let existing_series_id = row.as_ref().map(|row| row.event_series_id);
@@ -200,7 +200,7 @@ pub async fn sync_event(
             WHERE meetup_event.meetup_id = $1"#,
             series_event_id
         )
-        .fetch_optional(&mut tx)
+        .fetch_optional(&mut *tx)
         .await?;
         if event_series_id.is_none() {
             eprintln!("Event syncing task: Meetup event {} indicates that it is part of the same event series as Meetup event {} but the latter is not in the database", event.id, series_event_id);
@@ -217,7 +217,7 @@ pub async fn sync_event(
             r#"SELECT COUNT(*) > 0 as "is_managed!" FROM managed_channel WHERE discord_id = $1"#,
             indicated_channel_id as i64
         )
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await?;
         if is_managed_channel {
             eprintln!("Event syncing task: Meetup event {} indicates a channel but that channel is already managed", event.id);
@@ -232,7 +232,7 @@ pub async fn sync_event(
             WHERE discord_text_channel_id = $1"#,
             indicated_channel_id as i64
         )
-        .fetch_optional(&mut tx)
+        .fetch_optional(&mut *tx)
         .await?;
         indicated_channel_series
     } else {
@@ -317,7 +317,7 @@ pub async fn sync_event(
                             r#"INSERT INTO event_series (discord_text_channel_id, "type") VALUES ($1, $2) RETURNING id"#,
                             channel_id as i64,
                             new_series_type
-                        ).fetch_one(&mut tx).await?;
+                        ).fetch_one(&mut *tx).await?;
                         new_series_id
                     }
                 } else {
@@ -327,7 +327,7 @@ pub async fn sync_event(
                         r#"INSERT INTO event_series ("type") VALUES ($1) RETURNING id"#,
                         new_series_type
                     )
-                    .fetch_one(&mut tx)
+                    .fetch_one(&mut *tx)
                     .await?;
                     new_series_id
                 };
@@ -359,7 +359,7 @@ pub async fn sync_event(
             is_online,
             category_id.map(|id| id as i64),
             db_event_id
-        ).fetch_one(&mut tx).await?
+        ).fetch_one(&mut *tx).await?
     } else {
         sqlx::query_scalar!(
             r#"INSERT INTO event (event_series_id, start_time, title, description, is_online, discord_category_id)
@@ -371,7 +371,7 @@ pub async fn sync_event(
             description,
             is_online,
             category_id.map(|id| id as i64)
-        ).fetch_one(&mut tx).await?
+        ).fetch_one(&mut *tx).await?
     };
     let _db_meetup_event_id = if let Some(db_meetup_event_id) = db_meetup_event_id {
         sqlx::query_scalar!(
@@ -383,7 +383,7 @@ pub async fn sync_event(
             event.event_url,
             urlname
         )
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await?
     } else {
         sqlx::query_scalar!(
@@ -394,7 +394,7 @@ pub async fn sync_event(
             event.event_url,
             urlname
         )
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await?
     };
 
@@ -406,7 +406,7 @@ pub async fn sync_event(
                 r#"INSERT INTO event_host (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
                 db_event_id,
                 member_id.0
-            ).execute(&mut tx).await?;
+            ).execute(&mut *tx).await?;
         }
     }
 
@@ -495,7 +495,7 @@ pub async fn sync_rsvps(
             .map(|id| id.0)
             .collect::<Vec<_>>()
     )
-    .execute(&mut tx)
+    .execute(&mut *tx)
     .await?;
     for member_id in rsvp_yes_member_ids {
         // Mark this member as attending
@@ -503,7 +503,7 @@ pub async fn sync_rsvps(
             r#"INSERT INTO event_participant (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
             event_id.0,
             member_id.0
-        ).execute(&mut tx).await?;
+        ).execute(&mut *tx).await?;
     }
     tx.commit().await?;
     Ok(())

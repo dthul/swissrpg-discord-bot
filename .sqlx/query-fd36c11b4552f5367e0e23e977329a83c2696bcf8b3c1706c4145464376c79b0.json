@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cookie_key FROM ephemeral_settings",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cookie_key",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "fd36c11b4552f5367e0e23e977329a83c2696bcf8b3c1706c4145464376c79b0"
+}

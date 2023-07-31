@@ -93,7 +93,7 @@ pub async fn refresh_oauth_tokens(
     let refresh_token: Option<String> = match token_type {
         TokenType::Organizer => {
             sqlx::query_scalar!(r#"SELECT meetup_refresh_token FROM organizer_token FOR UPDATE"#)
-                .fetch_optional(&mut tx)
+                .fetch_optional(&mut *tx)
                 .await?
                 .flatten()
         }
@@ -101,7 +101,7 @@ pub async fn refresh_oauth_tokens(
             r#"SELECT meetup_oauth2_refresh_token FROM "member" WHERE id = $1 FOR UPDATE"#,
             member_id.0
         )
-        .fetch_optional(&mut tx)
+        .fetch_optional(&mut *tx)
         .await?
         .flatten(),
     };
@@ -125,14 +125,14 @@ pub async fn refresh_oauth_tokens(
     match token_type {
         TokenType::Organizer => {
             sqlx::query!(r#"DELETE FROM organizer_token"#)
-                .execute(&mut tx)
+                .execute(&mut *tx)
                 .await?;
             sqlx::query!(
                 r#"INSERT INTO organizer_token (meetup_access_token, meetup_refresh_token, meetup_access_token_refresh_time) VALUES ($1, $2, $3)"#,
                 refresh_token_response.access_token().secret(),
                 refresh_token_response.refresh_token().map(|token| token.secret()),
                 chrono::Utc::now() + chrono::Duration::days(2))
-                .execute(&mut tx)
+                .execute(&mut *tx)
                 .await?;
         }
         TokenType::Member(member_id) => {
@@ -144,7 +144,7 @@ pub async fn refresh_oauth_tokens(
                     .refresh_token()
                     .map(|token| token.secret()),
                 chrono::Utc::now()
-            ).execute(&mut tx).await?;
+            ).execute(&mut *tx).await?;
         }
     };
     tx.commit().await?;

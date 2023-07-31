@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series SET discord_text_channel_id = NULL WHERE id = $1 AND discord_text_channel_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "32dabec0b707c5a08163fb7a4b3ef47911c0db13d5c24616bb7327de309a7e99"
+}

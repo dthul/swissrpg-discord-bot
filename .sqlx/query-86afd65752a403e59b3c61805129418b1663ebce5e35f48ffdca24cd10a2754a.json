@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series SET \"type\" = 'campaign' WHERE id = $1 AND \"type\" <> 'campaign'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86afd65752a403e59b3c61805129418b1663ebce5e35f48ffdca24cd10a2754a"
+}

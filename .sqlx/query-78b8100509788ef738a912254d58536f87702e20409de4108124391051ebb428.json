@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series_text_channel SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "78b8100509788ef738a912254d58536f87702e20409de4108124391051ebb428"
+}

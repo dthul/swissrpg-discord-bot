@@ -185,14 +185,14 @@ async fn authorize_redirect_handler(
     // Store the new access and refresh tokens
     let mut tx = state.pool.begin().await?;
     sqlx::query!(r#"DELETE FROM organizer_token"#)
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await?;
     sqlx::query!(
         r#"INSERT INTO organizer_token (meetup_access_token, meetup_refresh_token, meetup_access_token_refresh_time) VALUES ($1, $2, $3)"#,
         token_res.access_token().secret(),
         token_res.refresh_token().map(|token| token.secret()),
         chrono::Utc::now() + chrono::Duration::days(2))
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await?;
     tx.commit().await?;
     // Replace the meetup client

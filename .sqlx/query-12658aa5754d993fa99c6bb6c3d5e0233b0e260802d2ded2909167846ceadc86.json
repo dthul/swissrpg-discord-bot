@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as \"meetup_event_id?\", meetup_event.meetup_id as \"meetup_event_meetup_id?\", meetup_event.url as \"meetup_event_url?\", meetup_event.urlname as \"meetup_event_urlname?\"\n        FROM event\n        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id\n        WHERE event_series_id = $1 AND start_time > now() AND event.deleted IS NULL\n        ORDER BY start_time\n        FETCH FIRST ROW ONLY",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_online",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "discord_category_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "meetup_event_id?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "meetup_event_meetup_id?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "meetup_event_url?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "meetup_event_urlname?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "12658aa5754d993fa99c6bb6c3d5e0233b0e260802d2ded2909167846ceadc86"
+}

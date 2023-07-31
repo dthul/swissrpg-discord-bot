@@ -221,14 +221,14 @@ async fn update_series_channel_expiration(
             discord_text_channel_id.0 as i64,
             new_expiration_time
         )
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await?;
         if let Some(discord_voice_channel_id) = discord_voice_channel_id {
             sqlx::query!(
                 r#"UPDATE event_series_voice_channel SET deletion_time = NULL WHERE discord_id = $1"#,
                 discord_voice_channel_id.0 as i64
             )
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
         }
         if let Some(discord_role_id) = discord_role_id {
@@ -236,7 +236,7 @@ async fn update_series_channel_expiration(
                 r#"UPDATE event_series_role SET deletion_time = NULL WHERE discord_id = $1"#,
                 discord_role_id.0 as i64
             )
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
         }
         if let Some(discord_host_role_id) = discord_host_role_id {
@@ -244,7 +244,7 @@ async fn update_series_channel_expiration(
                 r#"UPDATE event_series_host_role SET deletion_time = NULL WHERE discord_id = $1"#,
                 discord_host_role_id.0 as i64
             )
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
         }
         tx.commit().await?;

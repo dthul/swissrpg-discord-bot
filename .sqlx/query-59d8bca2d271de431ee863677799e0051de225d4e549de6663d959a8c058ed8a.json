@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, meetup_id as \"meetup_id!\", discord_id FROM \"member\" WHERE meetup_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "meetup_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "discord_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "59d8bca2d271de431ee863677799e0051de225d4e549de6663d959a8c058ed8a"
+}

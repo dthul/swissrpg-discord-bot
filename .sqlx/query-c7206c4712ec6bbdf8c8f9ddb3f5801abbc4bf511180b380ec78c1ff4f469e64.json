@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c7206c4712ec6bbdf8c8f9ddb3f5801abbc4bf511180b380ec78c1ff4f469e64"
+}

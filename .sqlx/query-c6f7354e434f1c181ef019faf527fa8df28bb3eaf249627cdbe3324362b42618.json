@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT event_series.discord_text_channel_id as \"discord_text_channel_id!\"\n        FROM event\n        INNER JOIN event_series ON event.event_series_id = event_series.id\n        WHERE event.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "discord_text_channel_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "c6f7354e434f1c181ef019faf527fa8df28bb3eaf249627cdbe3324362b42618"
+}

@@ -116,7 +116,7 @@ async fn auth_handler_post(
         &session_id,
         member_id.0
     )
-    .execute(&mut tx)
+    .execute(&mut *tx)
     .await?;
     tx.commit().await?;
     let session_id_encoded = base64::encode_config(session_id, base64::URL_SAFE_NO_PAD);
@@ -155,7 +155,7 @@ async fn get_or_create_cookie_key(state: &State) -> Result<Key, WebError> {
     // Get cookie key from the database or generate a new one if there is no key
     let mut tx = state.pool.begin().await?;
     let key = sqlx::query_scalar!(r#"SELECT cookie_key FROM ephemeral_settings"#)
-        .fetch_optional(&mut tx)
+        .fetch_optional(&mut *tx)
         .await?
         .flatten();
     let key = match key {
@@ -170,7 +170,7 @@ async fn get_or_create_cookie_key(state: &State) -> Result<Key, WebError> {
                         SET cookie_key = $1"#,
                     key.master()
                 )
-                .execute(&mut tx)
+                .execute(&mut *tx)
                 .await?;
                 tx.commit().await?;
                 key

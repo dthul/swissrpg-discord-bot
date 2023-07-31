@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT query_discord_id AS \"query_discord_id!\", \"member\".id as \"id?\", \"member\".meetup_id, \"member\".discord_nick\n        FROM UNNEST($1::bigint[]) AS query_discord_id\n        LEFT OUTER JOIN \"member\" ON query_discord_id = \"member\".discord_id;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "query_discord_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "id?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "meetup_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "discord_nick",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8e1f7e0dce8edf04f280b3dace4836417c324f265367435730909679fb3dfe22"
+}

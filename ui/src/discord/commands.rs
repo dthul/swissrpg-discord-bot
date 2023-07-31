@@ -309,7 +309,7 @@ impl CommandContext {
             channel_id as i64
         );
         let res = match tx {
-            Some(tx) => query.fetch_one(tx).await?,
+            Some(tx) => query.fetch_one(&mut **tx).await?,
             None => {
                 let pool = self.pool().await?;
                 query.fetch_one(&pool).await?

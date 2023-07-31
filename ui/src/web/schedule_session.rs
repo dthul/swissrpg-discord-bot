@@ -350,7 +350,7 @@ async fn schedule_session_post_handler(
             if let Ok(Some(channel_id)) =
                 lib::get_series_text_channel(event_series_id, &mut tx).await
             {
-                sqlx::query!(r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#, channel_id.0 as i64).execute(&mut tx).await.ok();
+                sqlx::query!(r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#, channel_id.0 as i64).execute(&mut *tx).await.ok();
                 tx.commit().await.ok();
             }
         }

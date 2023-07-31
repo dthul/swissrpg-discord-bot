@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series_text_channel SET expiration_time = $2, deletion_time = NULL WHERE discord_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c38ffa8816aa3653d16a5609a89d94cd24836f5ed22d9509385d7de5a0f13ca8"
+}

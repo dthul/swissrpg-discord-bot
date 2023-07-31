@@ -33,7 +33,7 @@ fn manage_channel<'a>(
         r#"INSERT INTO managed_channel (discord_id) VALUES ($1) ON CONFLICT DO NOTHING"#,
         channel_id.0 as i64
     )
-    .execute(&mut tx)
+    .execute(&mut *tx)
     .await?;
     let channel = match context.msg.channel(&context.ctx).await {
         Ok(Channel::Guild(channel)) => channel,

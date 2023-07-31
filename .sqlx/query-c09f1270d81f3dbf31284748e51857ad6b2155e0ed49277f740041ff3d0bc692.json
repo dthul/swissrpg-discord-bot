@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT meetup_oauth2_last_token_refresh_time FROM \"member\" WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "meetup_oauth2_last_token_refresh_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "c09f1270d81f3dbf31284748e51857ad6b2155e0ed49277f740041ff3d0bc692"
+}

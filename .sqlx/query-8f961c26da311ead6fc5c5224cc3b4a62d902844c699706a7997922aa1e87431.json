@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE organizer_token SET meetup_access_token_refresh_time = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f961c26da311ead6fc5c5224cc3b4a62d902844c699706a7997922aa1e87431"
+}

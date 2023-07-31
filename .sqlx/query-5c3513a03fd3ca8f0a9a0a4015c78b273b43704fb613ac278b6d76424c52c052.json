@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series_voice_channel SET deletion_time = $2 WHERE discord_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c3513a03fd3ca8f0a9a0a4015c78b273b43704fb613ac278b6d76424c52c052"
+}

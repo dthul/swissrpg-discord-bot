@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series SET discord_host_role_id = NULL WHERE id = $1 AND discord_host_role_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b475c2c6af829dadc76129950764ab84d0eb0f25ddadf74381b1aee8e72c97d1"
+}

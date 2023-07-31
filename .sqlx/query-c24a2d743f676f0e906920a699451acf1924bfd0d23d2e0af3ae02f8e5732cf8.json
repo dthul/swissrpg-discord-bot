@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE event_series_role SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c24a2d743f676f0e906920a699451acf1924bfd0d23d2e0af3ae02f8e5732cf8"
+}

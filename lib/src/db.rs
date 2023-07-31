@@ -66,7 +66,7 @@ pub struct EventId(pub i32);
 pub struct MeetupEventId(pub i32);
 
 #[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[sqlx(transparent)]
+#[sqlx(transparent, no_pg_array)]
 pub struct DiscordChannelId(pub u64);
 
 #[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -279,7 +279,7 @@ pub async fn get_or_create_member_for_meetup_id(
         meetup_id as i64
     )
     .map(|row| MemberId(row.id))
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
     if let Some(member_id) = member_id {
         Ok(member_id)
@@ -290,7 +290,7 @@ pub async fn get_or_create_member_for_meetup_id(
             meetup_id as i64
         )
         .map(|row| MemberId(row.id))
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
         Ok(member_id)
     }
@@ -305,7 +305,7 @@ pub async fn get_or_create_member_for_discord_id(
         discord_id.0 as i64
     )
     .map(|row| MemberId(row.id))
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
     if let Some(member_id) = member_id {
         Ok(member_id)
@@ -316,7 +316,7 @@ pub async fn get_or_create_member_for_discord_id(
             discord_id.0 as i64
         )
         .map(|row| MemberId(row.id))
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
         Ok(member_id)
     }
