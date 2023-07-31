@@ -74,7 +74,7 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut help_texts = vec![];
     for attribute in &command_fun.attributes {
         // let meta_attribute = propagate_err!(attribute.parse_meta());
-        let attr_ident = match attribute.path.get_ident() {
+        let attr_ident = match attribute.path().get_ident() {
             Some(ident) => ident,
             None => {
                 unknown_attrs.push(attribute);
