@@ -2,7 +2,7 @@ use std::{ops::Deref, sync::Arc};
 
 use axum::{
     body::Bytes,
-    extract::{ContentLengthLimit, Extension, TypedHeader},
+    extract::{DefaultBodyLimit, Extension, TypedHeader},
     headers::Header,
     http::StatusCode,
     routing::post,
@@ -13,7 +13,10 @@ use lazy_static::lazy_static;
 use super::server::State;
 
 pub fn create_routes() -> Router {
-    Router::new().route("/webhooks/stripe", post(stripe_webhook_handler))
+    Router::new().route(
+        "/webhooks/stripe",
+        post(stripe_webhook_handler).layer(DefaultBodyLimit::max(32768)),
+    )
 }
 
 struct StripeSignatureHeader(String);
@@ -57,9 +60,9 @@ impl Header for StripeSignatureHeader {
 }
 
 async fn stripe_webhook_handler(
-    payload: ContentLengthLimit<Bytes, 32768>,
     TypedHeader(signature): TypedHeader<StripeSignatureHeader>,
     Extension(state): Extension<Arc<State>>,
+    payload: Bytes,
 ) -> StatusCode {
     println!("Stripe webhook!");
     let stripe_webhook_secret =

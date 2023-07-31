@@ -2,13 +2,14 @@ use std::{ops::Deref, sync::Arc};
 
 use axum::{
     async_trait,
-    extract::{Extension, FromRequest, RequestParts, TypedHeader},
+    extract::{Extension, FromRequestParts, TypedHeader},
     headers::Header,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
     Router,
 };
+use hyper::http::request::Parts;
 use lazy_static::lazy_static;
 
 use super::{server::State, WebError};
@@ -103,17 +104,17 @@ impl Header for DiscordUsernameHeader {
 struct ApiKeyIsValid;
 
 #[async_trait]
-impl<B> FromRequest<B> for ApiKeyIsValid
+impl<S> FromRequestParts<S> for ApiKeyIsValid
 where
-    B: Send,
+    S: Send + Sync,
 {
     type Rejection = Response;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let TypedHeader(api_key) = TypedHeader::<ApiKeyHeader>::from_request(req)
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let TypedHeader(api_key) = TypedHeader::<ApiKeyHeader>::from_request_parts(parts, state)
             .await
             .map_err(|err| err.into_response())?;
-        let Extension(state): Extension<Arc<State>> = Extension::from_request(req)
+        let Extension(state): Extension<Arc<State>> = Extension::from_request_parts(parts, state)
             .await
             .map_err(|err| err.into_response())?;
         match &state.api_key {

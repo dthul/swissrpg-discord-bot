@@ -14,10 +14,10 @@ bottest = ["lib/bottest"]
 [dependencies]
 lib = { path = "../lib", package = "swissrpg-lib" }
 aho-corasick = "1.0"
-askama = { git = "https://github.com/djc/askama", rev = "1b18bab91ba773425e521abc276a1278e0d61f3c" }
-askama_axum = { git = "https://github.com/djc/askama", rev = "1b18bab91ba773425e521abc276a1278e0d61f3c" }
+askama = "0.12"
+askama_axum = "0.3"
 async-stripe = { version = "0.22", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
-axum = { version = "0.5", features=["headers"] }
+axum = { version = "0.6", features=["headers"] }
 assert-impl = "0.1"
 base64 = "0.21"
 command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
@@ -41,4 +41,4 @@ serenity = { version = "0.11", default-features = false, features = ["cache", "c
 simple-error = "0.3"
 sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
-tower-http = { version = "0.3.0", features = ["fs"] }
+tower-http = { version = "0.4", features = ["fs"] }

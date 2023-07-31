@@ -87,8 +87,8 @@ async fn auth_handler_get(
 }
 
 async fn auth_handler_post(
-    form: Form<AuthForm>,
     state: Extension<Arc<State>>,
+    form: Form<AuthForm>,
 ) -> Result<Response, WebError> {
     let mut redis_connection = state.redis_client.get_async_connection().await?;
     let redis_key = format!("web_session_auth:{}:discord_user", form.auth_id);

@@ -4,7 +4,6 @@ use askama::Template;
 use askama_axum::IntoResponse;
 use axum::{
     extract::Extension,
-    http::StatusCode,
     routing::{get, get_service},
     Router,
 };
@@ -63,17 +62,9 @@ pub fn create_server(
     let stripe_webhook_routes = stripe_webhook_endpoint::create_routes();
     let auth_routes = auth::create_routes();
     let api_routes = api::create_routes();
-    let static_route: Router = Router::new().nest(
+    let static_route: Router = Router::new().nest_service(
         "/static",
-        get_service(
-            ServeDir::new(static_file_directory).append_index_html_on_directories(false),
-        )
-        .handle_error(|err: std::io::Error| async move {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Internal server error:\n{:#?}", err),
-            )
-        }),
+        get_service(ServeDir::new(static_file_directory).append_index_html_on_directories(false)),
     );
     let router = linking_routes
         .merge(schedule_session_routes)

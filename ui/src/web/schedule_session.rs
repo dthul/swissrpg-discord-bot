@@ -2,7 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use askama::Template;
 use axum::{
-    extract::{ContentLengthLimit, Extension, Form, Path},
+    extract::{DefaultBodyLimit, Extension, Form, Path},
+    handler::Handler,
     response::{IntoResponse, Response},
     routing::get,
     Router,
@@ -16,7 +17,8 @@ use super::{server::State, MessageTemplate, WebError};
 pub fn create_routes() -> Router {
     let routes = Router::new().route(
         "/schedule_session/:flow_id",
-        get(schedule_session_handler).post(schedule_session_post_handler),
+        get(schedule_session_handler)
+            .post(schedule_session_post_handler.layer(DefaultBodyLimit::max(32768))),
     );
     // The following routes are just to be able to take a look at the scheduling
     // and success templates without using an actual flow
@@ -155,7 +157,6 @@ async fn schedule_session_handler(
 }
 
 async fn schedule_session_post_handler(
-    _: ContentLengthLimit<(), 32768>,
     Extension(state): Extension<Arc<State>>,
     Path(flow_id): Path<u64>,
     Form(form_data): Form<HashMap<String, String>>,
