@@ -84,7 +84,7 @@ async fn stripe_webhook_handler(
         return StatusCode::BAD_REQUEST;
     };
     let webhook_handler_future = async move {
-        if event.event_type == stripe::EventType::CustomerSubscriptionCreated {
+        if event.type_ == stripe::EventType::CustomerSubscriptionCreated {
             if let stripe::EventObject::Subscription(subscription) = event.data.object {
                 if let Err(err) = handle_new_subscription(
                     &state.discord_cache_http,
