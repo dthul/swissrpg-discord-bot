@@ -1,4 +1,5 @@
 use crate::{db, discord::sync::ChannelType, strings};
+use chrono::{NaiveTime, TimeZone};
 use serenity::model::{
     channel::GuildChannel,
     guild::Role,
@@ -14,7 +15,14 @@ pub async fn create_recurring_end_of_game_task(
     bot_id: UserId,
 ) -> ! {
     let next_end_of_game_task_time = {
-        let mut task_time = chrono::Utc::now().date().and_hms(18, 30, 0);
+        let mut task_time = chrono::Utc
+            .from_local_datetime(
+                &chrono::Utc::now()
+                    .date_naive()
+                    .and_time(NaiveTime::from_hms_opt(18, 30, 0).unwrap()),
+            )
+            .earliest()
+            .expect("18:30 o'clock exists today");
         // Check if it is later than 6:30pm
         // In that case, run the task tomorrow
         if chrono::Utc::now() > task_time {

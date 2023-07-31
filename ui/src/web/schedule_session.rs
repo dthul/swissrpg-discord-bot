@@ -7,7 +7,7 @@ use axum::{
     routing::get,
     Router,
 };
-use chrono::{offset::TimeZone, Datelike, Timelike};
+use chrono::{offset::TimeZone, Datelike, NaiveDateTime, Timelike};
 use chrono_tz::Europe;
 use lib::{db, DefaultStr};
 
@@ -119,21 +119,18 @@ async fn schedule_session_handler(
             let local_time = event.time.with_timezone(&Europe::Zurich);
             // We don't just add 7 * 24 hours, since that might break across
             // daylight saving time boundaries
-            let mut next_event_local_datetime = match (local_time.date()
-                + chrono::Duration::weeks(1))
-            .and_time(local_time.time())
-            {
-                Some(time) => time,
-                None => local_time,
-            };
+            let mut next_event_local_datetime = local_time + chrono::Days::new(7);
             // If the proposed next event time is in the past, propose a time in the future instead
             let now = chrono::Utc::now().with_timezone(&Europe::Zurich);
             if next_event_local_datetime < now {
-                next_event_local_datetime = now
-                    .with_timezone(&Europe::Zurich)
-                    .date()
-                    .and_time(local_time.time())
-                    .unwrap_or(now + chrono::Duration::days(1));
+                next_event_local_datetime = next_event_local_datetime
+                    .timezone()
+                    .from_local_datetime(&NaiveDateTime::new(
+                        now.date_naive() + chrono::Days::new(1),
+                        local_time.time(),
+                    ))
+                    .earliest()
+                    .expect("DateTime for tomorrow is valid");
             }
             let template = ScheduleSessionTemplate {
                 day: next_event_local_datetime.day() as u8,

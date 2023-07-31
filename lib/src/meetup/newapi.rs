@@ -1,4 +1,4 @@
-use chrono::TimeZone;
+use chrono::{NaiveDate, TimeZone};
 use futures::{stream, Stream, StreamExt};
 use graphql_client::{GraphQLQuery, Response};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
@@ -185,7 +185,7 @@ impl<'de> Deserialize<'de> for ZonedDateTime {
             .and_then(|timezone| {
                 let date = match datetime.date {
                     iso8601::Date::YMD { year, month, day } => {
-                        timezone.ymd_opt(year, month, day).earliest()
+                        NaiveDate::from_ymd_opt(year, month, day)
                     }
                     iso8601::Date::Week { year, ww, d } => {
                         let weekday = match d {
@@ -198,18 +198,18 @@ impl<'de> Deserialize<'de> for ZonedDateTime {
                             7 => Some(chrono::Weekday::Sun),
                             _ => None,
                         };
-                        weekday
-                            .and_then(|weekday| timezone.isoywd_opt(year, ww, weekday).earliest())
+                        weekday.and_then(|weekday| NaiveDate::from_isoywd_opt(year, ww, weekday))
                     }
-                    iso8601::Date::Ordinal { year, ddd } => timezone.yo_opt(year, ddd).earliest(),
+                    iso8601::Date::Ordinal { year, ddd } => NaiveDate::from_yo_opt(year, ddd),
                 };
-                date.and_then(|date| {
+                let datetime = date.and_then(|date| {
                     date.and_hms_opt(
                         datetime.time.hour,
                         datetime.time.minute,
                         datetime.time.second,
                     )
-                })
+                });
+                datetime.and_then(|datetime| timezone.from_local_datetime(&datetime).earliest())
             })
         });
         if let Some(datetime) = datetime {
