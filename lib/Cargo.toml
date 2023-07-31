@@ -12,7 +12,7 @@ default = []
 bottest = []
 
 [dependencies]
-askama = { git = "https://github.com/djc/askama", rev = "064077a9001e121a12fc234fee44514840380a0e" }
+askama = { git = "https://github.com/djc/askama", rev = "1b18bab91ba773425e521abc276a1278e0d61f3c" }
 async-stripe = { version = "0.15", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
 base64 = "0.13.0"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
