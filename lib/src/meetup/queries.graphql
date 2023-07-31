@@ -26,6 +26,7 @@ query UpcomingEventsQuery($urlname: String!, $first: Int!, $after: String) {
           venue {
             lat
             lng
+            city
           }
           group {
             urlname
@@ -88,6 +89,7 @@ query EventQuery($id: ID!) {
       id
       lat
       lng
+      city
     }
     group {
       urlname
@@ -131,6 +133,7 @@ mutation CreateEventMutation($input: CreateEventInput!) {
       venue {
         lat
         lng
+        city
       }
       group {
         urlname

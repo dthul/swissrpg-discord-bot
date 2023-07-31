@@ -130,7 +130,7 @@ impl From<NewEventResponse> for UpcomingEventDetails {
             going: event.going,
             is_online: event.is_online,
             rsvp_settings: event.rsvp_settings.map(|rsvp_settings| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeRsvpSettings { rsvps_closed: rsvp_settings.rsvps_closed }),
-            venue: event.venue.map(|venue| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeVenue { lat: venue.lat, lng: venue.lng }),
+            venue: event.venue.map(|venue| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeVenue { lat: venue.lat, lng: venue.lng, city: venue.city }),
             group: event.group.map(|group| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeGroup { urlname: group.urlname }),
         }
     }

@@ -114,6 +114,13 @@ impl Location {
         }
     }
 
+    pub fn find_by_city(name: &str) -> Option<Location> {
+        ALL_LOCATIONS
+            .iter()
+            .find(|location| location.name() == name)
+            .copied()
+    }
+
     pub fn flag_name(&self) -> &'static str {
         match self {
             Location::Online => "Online",
@@ -329,8 +336,14 @@ impl EventCollector {
         {
             return Some(Location::Online);
         }
-        // Doesn't seem to be an online event. We will use latitude and
-        // longitude to figure out the city instead
+        // Doesn't seem to be an online event.
+        // Check if we know the city by name
+        if let Some(city) = &venue.city {
+            if let Some(location) = Location::find_by_city(city) {
+                return Some(location);
+            }
+        }
+        // We will use latitude and longitude to figure out the city instead
         let point = Point::new(venue.lng, venue.lat);
         let location = Location::closest(point);
         Some(location)
