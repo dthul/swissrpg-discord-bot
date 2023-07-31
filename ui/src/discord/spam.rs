@@ -71,10 +71,9 @@ async fn get_spam_list(
     let redis_connection = cmdctx.async_redis_connection().await?;
     let word_list: Vec<String> = redis_connection.lrange("spam_word_list", 0, -1).await?;
     let word_matcher = AhoCorasickBuilder::new()
-        .auto_configure(&word_list)
         .ascii_case_insensitive(true)
-        .dfa(true)
-        .build(&word_list);
+        .build(&word_list)
+        .expect("Failed to build the aho-corasick matcher");
     let spam_list = Arc::new((word_list, word_matcher));
     cmdctx
         .ctx

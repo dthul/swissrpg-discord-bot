@@ -13,7 +13,7 @@ bottest = ["lib/bottest"]
 
 [dependencies]
 lib = { path = "../lib", package = "swissrpg-lib" }
-aho-corasick = "0.7"
+aho-corasick = "1.0"
 askama = { git = "https://github.com/djc/askama", rev = "1b18bab91ba773425e521abc276a1278e0d61f3c" }
 askama_axum = { git = "https://github.com/djc/askama", rev = "1b18bab91ba773425e521abc276a1278e0d61f3c" }
 async-stripe = { version = "0.22", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
