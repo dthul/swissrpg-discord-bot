@@ -13,6 +13,7 @@ pub mod stripe;
 pub mod tasks;
 pub mod urls;
 
+use base64::{engine::general_purpose, Engine as _};
 use db::EventSeriesId;
 pub use error::BoxedError;
 use rand::Rng;
@@ -28,7 +29,7 @@ pub fn new_random_id_raw(num_bytes: u32) -> Vec<u8> {
 
 pub fn new_random_id(num_bytes: u32) -> String {
     let random_bytes = new_random_id_raw(num_bytes);
-    base64::encode_config(&random_bytes, base64::URL_SAFE_NO_PAD)
+    general_purpose::URL_SAFE_NO_PAD.encode(&random_bytes)
 }
 
 pub struct ChannelRoles {

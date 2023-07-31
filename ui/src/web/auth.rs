@@ -10,6 +10,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use base64::{engine::general_purpose, Engine as _};
 use cookie::{Cookie, CookieJar, Key, SameSite};
 use lib::db::MemberId;
 use redis::AsyncCommands;
@@ -119,7 +120,7 @@ async fn auth_handler_post(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    let session_id_encoded = base64::encode_config(session_id, base64::URL_SAFE_NO_PAD);
+    let session_id_encoded = general_purpose::URL_SAFE_NO_PAD.encode(session_id);
     let auth_cookie = Cookie::build(AUTH_COOKIE_NAME, session_id_encoded)
         .same_site(SameSite::Strict)
         .secure(true)
@@ -216,7 +217,8 @@ async fn logout_handler(
         Some(cookie) => cookie,
     };
     let session_id_encoded = auth_cookie.value();
-    let session_id = base64::decode_config(session_id_encoded, base64::URL_SAFE_NO_PAD)
+    let session_id = general_purpose::URL_SAFE_NO_PAD
+        .decode(session_id_encoded)
         .map_err(|_| WebError::Unauthorized(None))?;
     sqlx::query!(
         r#"DELETE FROM web_session WHERE session_id = $1"#,
@@ -249,7 +251,8 @@ pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, Web
         Some(cookie) => cookie,
     };
     let session_id_encoded = auth_cookie.value();
-    let session_id = base64::decode_config(session_id_encoded, base64::URL_SAFE_NO_PAD)
+    let session_id = general_purpose::URL_SAFE_NO_PAD
+        .decode(session_id_encoded)
         .map_err(|_| WebError::Unauthorized(None))?;
     let (session_db_id, member_id, last_used) = match sqlx::query!(
         r#"SELECT id, member_id, last_used FROM web_session WHERE session_id = $1"#,

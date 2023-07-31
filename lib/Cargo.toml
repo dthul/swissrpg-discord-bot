@@ -14,7 +14,7 @@ bottest = []
 [dependencies]
 askama = { git = "https://github.com/djc/askama", rev = "1b18bab91ba773425e521abc276a1278e0d61f3c" }
 async-stripe = { version = "0.22", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
-base64 = "0.13.0"
+base64 = "0.21"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 chrono-tz = "0.8"
 # cynic = { version = "1.0", features = ["reqwest"] }
