@@ -4,9 +4,10 @@ use serenity::model::id::UserId;
 
 #[command]
 #[regex(
-    r"whois\s+(?:{mention_pattern}|{username_tag_pattern}|{meetup_id_pattern})",
+    r"whois\s+(?:{mention_pattern}|{username_tag_pattern}|{username_pattern}|{meetup_id_pattern})",
     mention_pattern,
     username_tag_pattern,
+    username_pattern,
     meetup_id_pattern
 )]
 #[level(admin)]
@@ -15,7 +16,7 @@ use serenity::model::id::UserId;
     "_(needs proper mention)_ shows the Meetup profile of the mentioned Discord user"
 )]
 #[help(
-    "whois `some-discord-username#1234`",
+    "whois `some-discord-username`",
     "_(no mention)_ shows the Meetup profile of the mentioned Discord user"
 )]
 #[help(
@@ -47,6 +48,10 @@ fn whois<'a>(
         let username_tag = capture.as_str();
         // Look up by Discord username and tag
         whois_by_discord_username_tag(context, &username_tag).await?;
+    } else if let Some(capture) = captures.name("discord_username") {
+        let username = capture.as_str();
+        // Look up by Discord username and tag
+        whois_by_discord_username_tag(context, &username).await?;
     } else if let Some(capture) = captures.name("meetup_user_id") {
         // Look up by Meetup ID
         let meetup_id = capture.as_str();

@@ -70,6 +70,7 @@ static ALL_COMMANDS: &[&Command] = &[
 
 const MENTION_PATTERN: &'static str = r"(?:<@!?(?P<mention_id>[0-9]+)>)";
 const USERNAME_TAG_PATTERN: &'static str = r"(?P<discord_username_tag>[^@#:]{2,32}#[0-9]+)";
+const USERNAME_PATTERN: &'static str = r"(?P<discord_username>[A-Za-z0-9_\.]{2,32})";
 const MEETUP_ID_PATTERN: &'static str = r"(?P<meetup_user_id>[0-9]+)";
 
 pub(crate) enum CommandLevel {
@@ -81,6 +82,7 @@ pub(crate) enum CommandLevel {
 pub struct RegexParts<'a> {
     mention_pattern: &'a str,
     username_tag_pattern: &'a str,
+    username_pattern: &'a str,
     meetup_id_pattern: &'a str,
 }
 
@@ -342,6 +344,7 @@ pub(crate) fn prepare_commands(
     let regex_parts = RegexParts {
         mention_pattern: MENTION_PATTERN,
         username_tag_pattern: USERNAME_TAG_PATTERN,
+        username_pattern: USERNAME_PATTERN,
         meetup_id_pattern: MEETUP_ID_PATTERN,
     };
     let bot_mention = format!(
