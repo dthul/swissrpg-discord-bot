@@ -35,6 +35,13 @@ That is:
     docker build --platform linux/amd64 -f swissrpg-backupper.Dockerfile -t swissrpg-backupper .
     docker save swissrpg-backupper | gzip | pv | ssh root@167.235.157.111 docker load
 
+# Update the running Docker container
+
+Stop and remove the existing container, then check below for the `run` command that will recreate the container.
+
+    docker stop swissrpg-app
+    docker rm swissrpg-app
+
 # Create User Accounts on Host
 
     useradd -M --user-group bot
@@ -122,6 +129,7 @@ Start the Redis container:
       --network-alias swissrpg-redis \
       -v swissrpg-redis-data:/data \
       -v /etc/passwd:/etc/passwd:ro \
+      --restart unless-stopped \
       redis:7 \
       redis-server \
       --save 900 1 \
@@ -159,7 +167,7 @@ Start the app container:
       -v /etc/passwd:/etc/passwd:ro \
       --env-file secrets-prod.sh \
       -e "BOT_ENV=prod" \
-      --restart on-failure \
+      --restart unless-stopped \
       swissrpg-app
 
 Optionally start the test app container:
@@ -172,7 +180,7 @@ Optionally start the test app container:
       -v /etc/passwd:/etc/passwd:ro \
       --env-file secrets-test.sh \
       -e "BOT_ENV=test" \
-      --restart on-failure \
+      --restart unless-stopped \
       swissrpg-app-test
 
 # Backups

@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=docker run -it --rm \
+ExecStart=/bin/bash -c \
+    'docker run --rm \
     --name swissrpg-backupper \
     --user "$(id -u redis):$(id -g redis)" \
     --network swissrpg-net \
@@ -15,4 +16,4 @@ ExecStart=docker run -it --rm \
     -e "AWS_SHARED_CREDENTIALS_FILE=/.aws/credentials" \
     -e "REDIS_DATA_ROOT=/var/lib/redis" \
     --env-file /root/secrets-backup.sh \
-    swissrpg-backupper
+    swissrpg-backupper'
