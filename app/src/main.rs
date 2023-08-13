@@ -42,10 +42,16 @@ fn main() {
     if stripe_webhook_signing_secret.is_none() {
         eprintln!("No Stripe webhook signing secret set. Will not listen to Stripe webhooks.");
     }
-    let api_key = env::var("API_KEY").ok();
-    if api_key.is_none() {
-        eprintln!("No API key set. Will not listen to API requests.");
-    }
+    let api_keys = match env::var("API_KEYS").ok() {
+        None => {
+            eprintln!("No API keys set. Will not listen to API requests.");
+            vec![]
+        }
+        Some(api_keys) => api_keys
+            .split(',')
+            .map(|key| key.trim().to_string())
+            .collect(),
+    };
     let static_file_directory = env::var("STATIC_FILE_DIRECTORY").ok();
 
     // Connect to the local Redis server
@@ -169,7 +175,7 @@ fn main() {
         bot_name,
         stripe_webhook_signing_secret,
         stripe_client.clone(),
-        api_key,
+        api_keys,
         static_file_directory,
         abort_web_server_signal,
     );

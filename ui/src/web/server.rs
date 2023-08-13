@@ -21,7 +21,7 @@ pub struct State {
     pub bot_name: String,
     pub stripe_webhook_secret: Option<String>,
     pub stripe_client: Arc<stripe::Client>,
-    pub api_key: Option<String>,
+    pub api_keys: Vec<String>,
 }
 
 #[derive(Template)]
@@ -42,7 +42,7 @@ pub fn create_server(
     bot_name: String,
     stripe_webhook_secret: Option<String>,
     stripe_client: Arc<stripe::Client>,
-    api_key: Option<String>,
+    api_keys: Vec<String>,
     static_file_directory: String,
     shutdown_signal: impl Future<Output = ()> + Send + 'static,
 ) -> impl Future<Output = ()> + Send + 'static {
@@ -55,7 +55,7 @@ pub fn create_server(
         bot_name,
         stripe_webhook_secret,
         stripe_client,
-        api_key,
+        api_keys,
     });
     let linking_routes = linking::create_routes();
     let schedule_session_routes = schedule_session::create_routes();

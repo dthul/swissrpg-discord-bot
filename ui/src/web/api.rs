@@ -117,10 +117,10 @@ where
         let Extension(state): Extension<Arc<State>> = Extension::from_request_parts(parts, state)
             .await
             .map_err(|err| err.into_response())?;
-        match &state.api_key {
-            None => Err(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-            Some(key) if *key == api_key.0 => Ok(ApiKeyIsValid),
-            Some(_) => Err(StatusCode::UNAUTHORIZED.into_response()),
+        if state.api_keys.iter().any(|key| *key == *api_key) {
+            Ok(ApiKeyIsValid)
+        } else {
+            Err(StatusCode::UNAUTHORIZED.into_response())
         }
     }
 }
