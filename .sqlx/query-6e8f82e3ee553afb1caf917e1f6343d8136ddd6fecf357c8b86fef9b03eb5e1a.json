@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT \"member\".id as \"id!\", \"member\".meetup_id, \"member\".discord_id, \"member\".discord_nick\n            FROM meetup_event\n            INNER JOIN event ON meetup_event.event_id = event.id\n            INNER JOIN event_participant ON event.id = event_participant.event_id\n            INNER JOIN \"member\" ON event_participant.member_id = \"member\".id\n            WHERE meetup_event.meetup_id = ANY($1)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "meetup_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "discord_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "discord_nick",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "6e8f82e3ee553afb1caf917e1f6343d8136ddd6fecf357c8b86fef9b03eb5e1a"
+}

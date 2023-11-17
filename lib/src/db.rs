@@ -357,6 +357,42 @@ pub async fn get_events_participants(
     Ok(members)
 }
 
+// Return a list of members attending the specified Meetup events.
+// If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
+pub async fn get_meetup_events_participants(
+    meetup_event_ids: &[String],
+    hosts: bool,
+    db_connection: &sqlx::PgPool,
+) -> Result<Vec<Member>, crate::meetup::Error> {
+    // Find all members RSVP'd to the specified Meetup events
+    let members = if hosts {
+        sqlx::query_as!(
+            MemberQueryHelper,
+            r#"SELECT "member".id as "id!", "member".meetup_id, "member".discord_id, "member".discord_nick
+            FROM meetup_event
+            INNER JOIN event ON meetup_event.event_id = event.id
+            INNER JOIN event_host ON event.id = event_host.event_id
+            INNER JOIN "member" ON event_host.member_id = "member".id
+            WHERE meetup_event.meetup_id = ANY($1)
+            "#,
+            meetup_event_ids
+        ).map(Into::into).fetch_all(db_connection).await?
+    } else {
+        sqlx::query_as!(
+            MemberQueryHelper,
+            r#"SELECT "member".id as "id!", "member".meetup_id, "member".discord_id, "member".discord_nick
+            FROM meetup_event
+            INNER JOIN event ON meetup_event.event_id = event.id
+            INNER JOIN event_participant ON event.id = event_participant.event_id
+            INNER JOIN "member" ON event_participant.member_id = "member".id
+            WHERE meetup_event.meetup_id = ANY($1)
+            "#,
+            meetup_event_ids
+        ).map(Into::into).fetch_all(db_connection).await?
+    };
+    Ok(members)
+}
+
 // Try to translate Meetup user IDs to Members. Returns mappings from
 // the Meetup ID to a Member or None if the user is unknown. The order of
 // the mapping is the same as the input order.

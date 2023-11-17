@@ -2,23 +2,28 @@ use std::{ops::Deref, sync::Arc};
 
 use axum::{
     async_trait,
-    extract::{Extension, FromRequestParts, TypedHeader},
+    extract::{Extension, FromRequestParts, Path, TypedHeader},
     headers::Header,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
-    Router,
+    Json, Router,
 };
 use hyper::http::request::Parts;
 use lazy_static::lazy_static;
+use lib::db::get_meetup_events_participants;
+use serde::Serialize;
+use serenity::model::prelude::UserId;
 
 use super::{server::State, WebError};
 
 pub fn create_routes() -> Router {
-    Router::new().route(
-        "/check_discord_username",
-        get(check_discord_username_handler),
-    )
+    Router::new()
+        .route(
+            "/check_discord_username",
+            get(check_discord_username_handler),
+        )
+        .route("/list_players/:meetup_event_id", get(list_players_handler))
 }
 
 struct ApiKeyHeader(String);
@@ -133,7 +138,8 @@ async fn check_discord_username_handler(
     let id = lib::tasks::subscription_roles::discord_username_to_id(
         &state.discord_cache_http,
         &discord_username.0,
-    )?;
+    )
+    .await?;
     if id.is_none() {
         // The username seems to be invalid, return a 204 HTTP code
         Ok(StatusCode::NO_CONTENT)
@@ -141,4 +147,37 @@ async fn check_discord_username_handler(
         // The username could be matched to an ID, return a 200 HTTP code
         Ok(StatusCode::OK)
     }
+}
+
+#[derive(Serialize)]
+struct ListPlayersEntry {
+    meetup_id: Option<u64>,
+    discord_id: Option<UserId>,
+    discord_nick: Option<String>,
+    is_host: bool,
+}
+
+async fn list_players_handler(
+    _: ApiKeyIsValid,
+    Path(meetup_event_id): Path<String>,
+    Extension(state): Extension<Arc<State>>,
+) -> Result<Json<Vec<ListPlayersEntry>>, WebError> {
+    let meetup_event_ids = &[meetup_event_id];
+    let players =
+        get_meetup_events_participants(meetup_event_ids, /*hosts*/ false, &state.pool).await?;
+    let hosts =
+        get_meetup_events_participants(meetup_event_ids, /*hosts*/ true, &state.pool).await?;
+    let players = players.into_iter().map(|player| ListPlayersEntry {
+        meetup_id: player.meetup_id,
+        discord_id: player.discord_id,
+        discord_nick: player.discord_nick,
+        is_host: false,
+    });
+    let hosts = hosts.into_iter().map(|host| ListPlayersEntry {
+        meetup_id: host.meetup_id,
+        discord_id: host.discord_id,
+        discord_nick: host.discord_nick,
+        is_host: true,
+    });
+    Ok(Json(hosts.chain(players).collect()))
 }

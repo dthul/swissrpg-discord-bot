@@ -1,6 +1,6 @@
-FROM --platform=$BUILDPLATFORM rust:1.65.0-slim-buster AS chef
+FROM --platform=$BUILDPLATFORM rust:1.71-slim-bookworm AS chef
 RUN rustup target add x86_64-unknown-linux-gnu
-RUN cargo install cargo-chef
+RUN cargo install cargo-chef --locked
 RUN apt-get update && \
     apt-get install -y gcc-x86-64-linux-gnu && \
     rm -rf /var/lib/apt/lists/*
@@ -26,10 +26,11 @@ COPY app ./app
 COPY command_macro ./command_macro
 COPY lib ./lib
 COPY ui ./ui
+COPY .sqlx ./.sqlx
 COPY .env Cargo.lock Cargo.toml ./
 RUN cargo build --features "bottest" --release --target x86_64-unknown-linux-gnu --bin swissrpg-app
 
-FROM debian:buster-slim AS runtime
+FROM debian:bookworm-slim AS runtime
 WORKDIR /usr/src/swissrpg-app-test
 RUN apt update && apt install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/src/swissrpg-app-test/target/x86_64-unknown-linux-gnu/release/swissrpg-app /usr/local/bin/swissrpg-app-test
