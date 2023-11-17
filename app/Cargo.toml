@@ -14,7 +14,7 @@ bottest = ["lib/bottest", "ui/bottest"]
 [dependencies]
 lib = { path = "../lib", package = "swissrpg-lib" }
 ui = { path = "../ui", package = "swissrpg-ui" }
-async-stripe = { version = "0.22", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
+async-stripe = { version = "0.25", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"

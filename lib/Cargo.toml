@@ -13,7 +13,7 @@ bottest = []
 
 [dependencies]
 askama = "0.12"
-async-stripe = { version = "0.22", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
+async-stripe = { version = "0.25", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
 base64 = "0.21"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 chrono-tz = "0.8"
@@ -22,11 +22,11 @@ chrono-tz = "0.8"
 # cynic = { git = "https://github.com/dthul/cynic", branch = "v1.0.0" }
 futures = "0.3"
 futures-util = "0.3"
-geo = "0.26"
+geo = { version = "0.27", default-features = false }
 graphql_client = "0.13"
 hyper = "0.14"
 iso8601 = "0.6"
-itertools = "0.11"
+itertools = "0.12"
 lazy_static = "1.4"
 oauth2 = "4.0"
 rand = "0.8"

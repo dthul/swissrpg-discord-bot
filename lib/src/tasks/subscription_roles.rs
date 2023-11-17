@@ -332,7 +332,8 @@ async fn ensure_customer_has_discord_id(
 ) -> Result<Option<UserId>, crate::meetup::Error> {
     let discord_id = customer
         .metadata
-        .get("_hyperion_discord_id")
+        .as_ref()
+        .and_then(|m| m.get("_hyperion_discord_id"))
         .map(|id| id.parse::<u64>())
         .transpose()
         .unwrap_or(None);
@@ -342,7 +343,7 @@ async fn ensure_customer_has_discord_id(
         // No Discord ID is stored in the Stripe metadata.
         // Check for a Discord username, use that to look up the ID and store
         // it in the Stripe metadata.
-        let discord_username = match customer.metadata.get("Discord") {
+        let discord_username = match customer.metadata.as_ref().and_then(|m| m.get("Discord")) {
             None => return Ok(None),
             Some(username) => username,
         };
