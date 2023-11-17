@@ -4,6 +4,7 @@ use std::{
 };
 
 use lazy_static::lazy_static;
+use serenity::futures::StreamExt;
 use serenity::{
     http::CacheHttp,
     model::id::{RoleId, UserId},
@@ -345,7 +346,7 @@ async fn ensure_customer_has_discord_id(
             None => return Ok(None),
             Some(username) => username,
         };
-        let discord_id = match discord_username_to_id(discord_api, discord_username)? {
+        let discord_id = match discord_username_to_id(discord_api, discord_username).await? {
             Some(id) => id,
             None => {
                 eprintln!(
@@ -383,39 +384,23 @@ async fn ensure_customer_has_discord_id(
 }
 
 // TODO: move to discord utils
-pub fn discord_username_to_id(
+pub async fn discord_username_to_id(
     discord_api: &crate::discord::CacheAndHttp,
     username: &str,
 ) -> Result<Option<UserId>, crate::meetup::Error> {
-    let guild = match crate::discord::sync::ids::GUILD_ID.to_guild_cached(&discord_api.cache) {
-        Some(guild) => guild,
-        None => {
-            eprintln!(
-                "discord_username_to_id: Could not find a guild with ID {}",
-                crate::discord::sync::ids::GUILD_ID
-            );
-            return Err(simple_error::SimpleError::new("Guild not found").into());
+    let mut members = crate::discord::sync::ids::GUILD_ID
+        .members_iter(discord_api.http())
+        .boxed();
+    while let Some(member_result) = members.next().await {
+        let member = member_result?;
+        if member.user.name == username
+            || &format!("{}#{:04}", member.user.name, member.user.discriminator) == username
+        {
+            return Ok(Some(member.user.id));
         }
-    };
-    let discord_id = match guild.member_named(username.trim()).and_then(|member| {
-        // Serenity does fuzzy matching.
-        // We want to filter any results which don't match exactly.
-        if &format!("{}#{:04}", member.user.name, member.user.discriminator) != username {
-            None
-        } else {
-            Some(member)
-        }
-    }) {
-        Some(member) => Some(member.user.id),
-        None => {
-            eprintln!(
-                "Subscription roles: Could not find a Discord ID for username {}",
-                username
-            );
-            None
-        }
-    };
-    Ok(discord_id)
+    }
+    eprintln!("Could not find a Discord ID for username {}", username);
+    Ok(None)
 }
 
 // TODO: move to discord utils

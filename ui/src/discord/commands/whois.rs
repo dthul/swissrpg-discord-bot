@@ -4,7 +4,7 @@ use serenity::model::id::UserId;
 
 #[command]
 #[regex(
-    r"whois\s+(?:{mention_pattern}|{username_tag_pattern}|{username_pattern}|{meetup_id_pattern})",
+    r"whois\s+(?:{mention_pattern}|{username_tag_pattern}|{username_pattern}|meetup\s+{meetup_id_pattern})",
     mention_pattern,
     username_tag_pattern,
     username_pattern,
@@ -20,7 +20,7 @@ use serenity::model::id::UserId;
     "_(no mention)_ shows the Meetup profile of the mentioned Discord user"
 )]
 #[help(
-    "whois `meetup-ID`",
+    "whois meetup `meetup-ID`",
     "shows the Discord user linked to the provided Meetup profile"
 )]
 fn whois<'a>(
