@@ -12,14 +12,14 @@ use serenity::model::{
 #[derive(Clone)]
 pub struct CacheAndHttp {
     pub cache: Arc<serenity::cache::Cache>,
-    pub http: Arc<serenity::http::client::Http>,
+    pub http: Arc<serenity::http::Http>,
 }
 
 impl serenity::http::CacheHttp for CacheAndHttp {
     fn cache(&self) -> Option<&Arc<serenity::cache::Cache>> {
         Some(&self.cache)
     }
-    fn http(&self) -> &serenity::http::client::Http {
+    fn http(&self) -> &serenity::http::Http {
         &self.http
     }
 }
@@ -109,7 +109,7 @@ pub async fn add_channel_user_permissions(
     new_permission_overwrites.allow |= permissions;
     if new_permission_overwrites.allow != current_permission_overwrites.allow {
         channel
-            .create_permission(&discord_api.http, &new_permission_overwrites)
+            .create_permission(&discord_api.http, new_permission_overwrites)
             .await?;
         Ok(true)
     } else {
@@ -153,7 +153,7 @@ pub async fn remove_channel_user_permissions(
                 .await?;
         } else {
             channel
-                .create_permission(&discord_api.http, &new_permission_overwrites)
+                .create_permission(&discord_api.http, new_permission_overwrites)
                 .await?;
         }
         Ok(true)

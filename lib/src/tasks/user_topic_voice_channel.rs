@@ -1,5 +1,5 @@
 use redis::AsyncCommands;
-use serenity::model::channel::Channel;
+use serenity::{builder::EditChannel, model::channel::Channel};
 use std::time::Duration;
 
 pub const DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME: &str = "Your topic (ask Hyperion)";
@@ -58,7 +58,7 @@ async fn reset_user_topic_voice_channel(
         return Ok(());
     }
     // Check if the voice channel is empty
-    if !voice_channel.members(&discord_api.cache).await?.is_empty() {
+    if !voice_channel.members(&discord_api.cache)?.is_empty() {
         return Ok(());
     }
     // Check if the voice channel has not been renamed very recently
@@ -87,9 +87,10 @@ async fn reset_user_topic_voice_channel(
     // We don't want that, we want to fail fast. That's why we wrap the renaming
     // call into a timeout which will abort the request if it is not answered
     // quickly enough.
-    let rename_channel_future = voice_channel.edit(discord_api, |c| {
-        c.name(DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME)
-    });
+    let rename_channel_future = voice_channel.edit(
+        discord_api,
+        EditChannel::new().name(DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME),
+    );
     match tokio::time::timeout(Duration::from_secs(10), rename_channel_future).await {
         Err(_) => eprintln!("User topic voice channel reset: channel edit request timed out"),
         Ok(e @ Err(_)) => e?,

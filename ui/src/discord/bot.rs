@@ -144,7 +144,7 @@ impl Handler {
                 cmdctx
                     .msg
                     .channel_id
-                    .say(&cmdctx.ctx, strings::INVALID_COMMAND(bot_id.0))
+                    .say(&cmdctx.ctx, strings::INVALID_COMMAND(bot_id))
                     .await
                     .ok();
                 return Ok(());

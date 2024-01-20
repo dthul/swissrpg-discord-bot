@@ -30,7 +30,7 @@ fn end_adventure<'a>(
     // Check if there is a channel expiration time in the future
     let expiration_time = sqlx::query_scalar!(
         r#"SELECT expiration_time FROM event_series_text_channel WHERE discord_id = $1"#,
-        context.msg.channel_id.0 as i64
+        context.msg.channel_id.get() as i64
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -58,7 +58,7 @@ fn end_adventure<'a>(
     let new_deletion_time = chrono::Utc::now() + chrono::Duration::hours(8);
     let current_deletion_time = sqlx::query_scalar!(
         r#"SELECT deletion_time FROM event_series_text_channel WHERE discord_id = $1"#,
-        context.msg.channel_id.0 as i64
+        context.msg.channel_id.get() as i64
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -81,7 +81,7 @@ fn end_adventure<'a>(
     let channel_roles = lib::get_channel_roles(context.msg.channel_id, &mut tx).await?;
     sqlx::query!(
         r#"UPDATE event_series_text_channel SET deletion_time = $2 WHERE discord_id = $1"#,
-        context.msg.channel_id.0 as i64,
+        context.msg.channel_id.get() as i64,
         new_deletion_time
     )
     .execute(&mut *tx)
@@ -90,7 +90,7 @@ fn end_adventure<'a>(
     if let Some(voice_channel_id) = voice_channel_id {
         sqlx::query!(
             r#"UPDATE event_series_voice_channel SET deletion_time = $2 WHERE discord_id = $1"#,
-            voice_channel_id.0 as i64,
+            voice_channel_id.get() as i64,
             new_deletion_time
         )
         .execute(&mut *tx)
@@ -99,7 +99,7 @@ fn end_adventure<'a>(
     if let Some(channel_roles) = channel_roles {
         sqlx::query!(
             r#"UPDATE event_series_role SET deletion_time = $2 WHERE discord_id = $1"#,
-            channel_roles.user.0 as i64,
+            channel_roles.user.get() as i64,
             new_deletion_time
         )
         .execute(&mut *tx)
@@ -107,7 +107,7 @@ fn end_adventure<'a>(
         if let Some(host_role_id) = channel_roles.host {
             sqlx::query!(
                 r#"UPDATE event_series_host_role SET deletion_time = $2 WHERE discord_id = $1"#,
-                host_role_id.0 as i64,
+                host_role_id.get() as i64,
                 new_deletion_time
             )
             .execute(&mut *tx)

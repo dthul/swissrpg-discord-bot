@@ -1,6 +1,11 @@
+use std::num::NonZeroU64;
+
 use command_macro::command;
 use lib::discord::CacheAndHttp;
-use serenity::model::{channel::PermissionOverwriteType, id::UserId, permissions::Permissions};
+use serenity::{
+    all::Mentionable,
+    model::{channel::PermissionOverwriteType, id::UserId, permissions::Permissions},
+};
 
 #[command]
 #[regex(r"add\s+{mention_pattern}", mention_pattern)]
@@ -17,8 +22,8 @@ fn add_user<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<u64>() {
-        Ok(id) => id,
+    let discord_id = match discord_id.parse::<NonZeroU64>() {
+        Ok(id) => UserId::from(id),
         _ => {
             context
                 .msg
@@ -50,8 +55,8 @@ fn add_host<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<u64>() {
-        Ok(id) => id,
+    let discord_id = match discord_id.parse::<NonZeroU64>() {
+        Ok(id) => UserId::from(id),
         _ => {
             context
                 .msg
@@ -83,8 +88,8 @@ fn remove_user<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<u64>() {
-        Ok(id) => id,
+    let discord_id = match discord_id.parse::<NonZeroU64>() {
+        Ok(id) => UserId::from(id),
         _ => {
             context
                 .msg
@@ -116,8 +121,8 @@ fn remove_host<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<u64>() {
-        Ok(id) => id,
+    let discord_id = match discord_id.parse::<NonZeroU64>() {
+        Ok(id) => UserId::from(id),
         _ => {
             context
                 .msg
@@ -136,7 +141,7 @@ fn remove_host<'a>(
 
 async fn channel_add_or_remove_user_impl(
     context: &mut super::CommandContext,
-    discord_id: u64,
+    discord_id: UserId,
     add: bool,
     as_host: bool,
 ) -> Result<(), lib::meetup::Error> {
@@ -200,9 +205,9 @@ async fn channel_add_or_remove_user_impl(
                 .ctx
                 .http
                 .add_member_role(
-                    lib::discord::sync::ids::GUILD_ID.0,
+                    lib::discord::sync::ids::GUILD_ID,
                     discord_id,
-                    channel_roles.user.0,
+                    channel_roles.user,
                     Some("Role assignment due to 'add user' command"),
                 )
                 .await
@@ -212,7 +217,7 @@ async fn channel_add_or_remove_user_impl(
                     context
                         .msg
                         .channel_id
-                        .say(&context.ctx, format!("Welcome <@{}>!", discord_id))
+                        .say(&context.ctx, format!("Welcome {}!", discord_id.mention()))
                         .await
                         .ok();
                 }
@@ -234,7 +239,7 @@ async fn channel_add_or_remove_user_impl(
                 match lib::discord::add_channel_user_permissions(
                     &discord_api,
                     context.msg.channel_id,
-                    UserId(discord_id),
+                    discord_id,
                     new_permissions,
                 )
                 .await
@@ -275,7 +280,7 @@ async fn channel_add_or_remove_user_impl(
                     if let Err(err) = lib::discord::add_channel_user_permissions(
                         &discord_api,
                         voice_channel_id,
-                        UserId(discord_id),
+                        discord_id,
                         new_permissions,
                     )
                     .await
@@ -300,9 +305,9 @@ async fn channel_add_or_remove_user_impl(
                     .ctx
                     .http
                     .remove_member_role(
-                        lib::discord::sync::ids::GUILD_ID.0,
+                        lib::discord::sync::ids::GUILD_ID,
                         discord_id,
-                        host_role.0,
+                        host_role,
                         Some("Role removal due to 'remove user' command"),
                     )
                     .await
@@ -323,7 +328,7 @@ async fn channel_add_or_remove_user_impl(
                 if let Err(err) = lib::discord::remove_channel_user_permissions(
                     &discord_api,
                     context.msg.channel_id,
-                    UserId(discord_id),
+                    discord_id,
                     permissions_to_remove,
                 )
                 .await
@@ -348,7 +353,7 @@ async fn channel_add_or_remove_user_impl(
                     if let Err(err) = lib::discord::remove_channel_user_permissions(
                         &discord_api,
                         voice_channel_id,
-                        UserId(discord_id),
+                        discord_id,
                         permissions_to_remove,
                     )
                     .await
@@ -371,10 +376,7 @@ async fn channel_add_or_remove_user_impl(
                 if let Err(err) = context
                     .msg
                     .channel_id
-                    .delete_permission(
-                        &context.ctx,
-                        PermissionOverwriteType::Member(UserId(discord_id)),
-                    )
+                    .delete_permission(&context.ctx, PermissionOverwriteType::Member(discord_id))
                     .await
                 {
                     eprintln!("Could not remove channel permissions:\n{:#?}", err);
@@ -393,7 +395,7 @@ async fn channel_add_or_remove_user_impl(
                     if let Err(err) = voice_channel_id
                         .delete_permission(
                             &context.ctx,
-                            PermissionOverwriteType::Member(UserId(discord_id)),
+                            PermissionOverwriteType::Member(discord_id),
                         )
                         .await
                     {
@@ -413,9 +415,9 @@ async fn channel_add_or_remove_user_impl(
                     .ctx
                     .http
                     .remove_member_role(
-                        lib::discord::sync::ids::GUILD_ID.0,
+                        lib::discord::sync::ids::GUILD_ID,
                         discord_id,
-                        channel_roles.user.0,
+                        channel_roles.user,
                         Some("Role removal due to 'remove user' command"),
                     )
                     .await
@@ -442,8 +444,7 @@ async fn channel_add_or_remove_user_impl(
                     context.msg.channel_id
                 ),
                 Some(series_id) => {
-                    let member =
-                        lib::db::discord_ids_to_members(&[UserId(discord_id)], &pool).await?;
+                    let member = lib::db::discord_ids_to_members(&[discord_id], &pool).await?;
                     if let Some((_, Some(member))) = member.first() {
                         if as_host {
                             sqlx::query!(
@@ -478,7 +479,7 @@ async fn channel_add_or_remove_user_impl(
             let permissions_changed = lib::discord::add_channel_user_permissions(
                 &discord_api,
                 context.msg.channel_id,
-                UserId(discord_id),
+                discord_id,
                 new_permissions,
             )
             .await?;
@@ -486,7 +487,7 @@ async fn channel_add_or_remove_user_impl(
                 context
                     .msg
                     .channel_id
-                    .say(&context.ctx, format!("Welcome <@{}>!", discord_id))
+                    .say(&context.ctx, format!("Welcome {}!", discord_id.mention()))
                     .await
                     .ok();
             }
@@ -494,13 +495,9 @@ async fn channel_add_or_remove_user_impl(
         } else {
             // Assume that users with the VIEW_CHANNEL, MANAGE_MESSAGES and
             // MENTION_EVERYONE permission are channel hosts
-            let target_is_host = lib::discord::is_host(
-                &discord_api,
-                context.msg.channel_id,
-                UserId(discord_id),
-                &pool,
-            )
-            .await?;
+            let target_is_host =
+                lib::discord::is_host(&discord_api, context.msg.channel_id, discord_id, &pool)
+                    .await?;
             if target_is_host && !is_bot_admin {
                 context
                     .msg
@@ -522,7 +519,7 @@ async fn channel_add_or_remove_user_impl(
             lib::discord::remove_channel_user_permissions(
                 &discord_api,
                 context.msg.channel_id,
-                UserId(discord_id),
+                discord_id,
                 permissions_to_remove,
             )
             .await?;

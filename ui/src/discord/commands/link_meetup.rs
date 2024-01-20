@@ -2,8 +2,12 @@ use command_macro::command;
 use lib::{
     LinkingAction, LinkingMemberDiscord, LinkingMemberMeetup, LinkingResult, UnlinkingResult,
 };
-use serenity::model::id::UserId;
-use std::borrow::Cow;
+use serenity::{
+    all::Mentionable,
+    builder::{CreateEmbed, CreateMessage},
+    model::id::UserId,
+};
+use std::{borrow::Cow, num::NonZeroU64};
 
 #[command]
 #[regex(r"link[ -]?meetup")]
@@ -17,7 +21,7 @@ fn link_meetup<'a>(
     // and issue a warning
     let linked_meetup_id = sqlx::query!(
         r#"SELECT meetup_id FROM "member" WHERE discord_id = $1"#,
-        context.msg.author.id.0 as i64
+        context.msg.author.id.get() as i64
     )
     .map(|row| row.meetup_id.map(|id| id as u64))
     .fetch_optional(&pool)
@@ -25,15 +29,15 @@ fn link_meetup<'a>(
     .flatten();
     if let Some(linked_meetup_id) = linked_meetup_id {
         let bot_id = context.bot_id().await?;
+        let message_builder =
+            CreateMessage::new().content(lib::strings::DISCORD_ALREADY_LINKED_MESSAGE(
+                &format!("https://www.meetup.com/members/{}/", linked_meetup_id),
+                bot_id,
+            ));
         context
             .msg
             .author
-            .direct_message(&context.ctx, |message| {
-                message.content(lib::strings::DISCORD_ALREADY_LINKED_MESSAGE(
-                    &format!("https://www.meetup.com/members/{}/", linked_meetup_id),
-                    bot_id.0,
-                ))
-            })
+            .direct_message(&context.ctx, message_builder)
             .await
             .ok();
         return Ok(());
@@ -44,12 +48,11 @@ fn link_meetup<'a>(
         user_id,
     )
     .await?;
+    let message_builder = CreateMessage::new().content(lib::strings::MEETUP_LINKING_MESSAGE(&url));
     let dm = context
         .msg
         .author
-        .direct_message(&context.ctx, |message| {
-            message.content(lib::strings::MEETUP_LINKING_MESSAGE(&url))
-        })
+        .direct_message(&context.ctx, message_builder)
         .await;
     match dm {
         Ok(_) => {
@@ -95,8 +98,9 @@ fn link_meetup_bot_admin<'a>(
     let discord_id = captures.name("mention_id").unwrap().as_str();
     let meetup_id = captures.name("meetupid").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let (discord_id, meetup_id) = match (discord_id.parse::<u64>(), meetup_id.parse::<u64>()) {
-        (Ok(id1), Ok(id2)) => (UserId(id1), id2),
+    let (discord_id, meetup_id) = match (discord_id.parse::<NonZeroU64>(), meetup_id.parse::<u64>())
+    {
+        (Ok(id1), Ok(id2)) => (UserId::from(id1), id2),
         _ => {
             let _ = context.msg.channel_id.say(
                 &context.ctx,
@@ -120,8 +124,8 @@ fn link_meetup_bot_admin<'a>(
                 .say(
                     &context.ctx,
                     format!(
-                        "All good, this Meetup account was already linked to <@{}>",
-                        discord_id
+                        "All good, this Meetup account was already linked to {}",
+                        discord_id.mention()
                     ),
                 )
                 .await
@@ -131,19 +135,16 @@ fn link_meetup_bot_admin<'a>(
             action: LinkingAction::Linked | LinkingAction::NewMember | LinkingAction::MergedMember,
             ..
         } => {
+            let message_builder = CreateMessage::new().embed(
+                CreateEmbed::new().title("Linked Meetup account").description(format!(
+                    "Successfully linked {} to this Meetup account: https://www.meetup.com/members/{}/",
+                    discord_id.mention(), meetup_id
+                ))
+            );
             let _ = context
-            .msg
-            .channel_id
-            .send_message(&context.ctx, |message| {
-                message.embed(|embed| {
-                    embed.title("Linked Meetup account");
-                    embed.description(format!(
-                        "Successfully linked <@{}> to this Meetup account: https://www.meetup.com/members/{}/",
-                        discord_id, meetup_id
-                    ));
-                    embed
-                })
-            });
+                .msg
+                .channel_id
+                .send_message(&context.ctx, message_builder);
         }
         LinkingResult::Conflict {
             member_with_meetup:
@@ -188,8 +189,8 @@ fn unlink_meetup_bot_admin<'a>(
 ) -> super::CommandResult<'a> {
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<u64>() {
-        Ok(id) => UserId(id),
+    let discord_id = match discord_id.parse::<NonZeroU64>() {
+        Ok(id) => UserId::from(id),
         _ => {
             let _ = context.msg.channel_id.say(
                 &context.ctx,
@@ -213,17 +214,17 @@ async fn unlink_meetup_impl(
     match result {
         UnlinkingResult::Success => {
             let message = if is_bot_admin_command {
-                format!("Unlinked <@{}>'s Meetup account", user_id)
+                format!("Unlinked {}'s Meetup account", user_id.mention())
             } else {
-                lib::strings::MEETUP_UNLINK_SUCCESS(context.bot_id().await?.0)
+                lib::strings::MEETUP_UNLINK_SUCCESS(context.bot_id().await?)
             };
             context.msg.channel_id.say(&context.ctx, message).await.ok();
         }
         UnlinkingResult::NotLinked => {
             let message = if is_bot_admin_command {
                 Cow::Owned(format!(
-                    "There was seemingly no meetup account linked to <@{}>",
-                    user_id
+                    "There was seemingly no meetup account linked to {}",
+                    user_id.mention()
                 ))
             } else {
                 Cow::Borrowed(lib::strings::MEETUP_UNLINK_NOT_LINKED)
