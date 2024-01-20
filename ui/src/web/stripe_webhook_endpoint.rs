@@ -128,7 +128,11 @@ async fn handle_new_subscription(
     // since the webhook is sometimes faster than the customer metadata is updated
     tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
     let customer = stripe::Customer::retrieve(stripe_client, &customer.id, &[]).await?;
-    if let Some(username) = customer.metadata.as_ref().and_then(|m| m.get("Discord")) {
+    if let Some(username) = customer
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("Discord"))
+    {
         // Try to find the Discord user associated with this subscription
         let id =
             lib::tasks::subscription_roles::discord_username_to_id(discord_api, username).await?;

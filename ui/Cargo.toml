@@ -16,7 +16,7 @@ lib = { path = "../lib", package = "swissrpg-lib" }
 aho-corasick = "1.0"
 askama = "0.12"
 askama_axum = "0.3"
-async-stripe = { version = "0.25", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
+async-stripe = { version = "0.29", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
 axum = { version = "0.6", features=["headers"] }
 assert-impl = "0.1"
 base64 = "0.21"
@@ -33,7 +33,7 @@ num-traits = "0.2"
 oauth2 = "4.0"
 once_cell = "1.5"
 rand = "0.8"
-redis = { version = "0.23", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.24", default-features = false, features = ["tokio-comp"] }
 regex = "1"
 serde = "1.0"
 serde_json = "1.0"
