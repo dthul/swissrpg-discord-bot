@@ -23,7 +23,7 @@ base64 = "0.21"
 command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 chrono-tz = "0.8"
-cookie = { version = "0.17", features = ["private"] }
+cookie = { version = "0.18", features = ["private"] }
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"

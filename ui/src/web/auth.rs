@@ -121,13 +121,12 @@ async fn auth_handler_post(
     .await?;
     tx.commit().await?;
     let session_id_encoded = general_purpose::URL_SAFE_NO_PAD.encode(session_id);
-    let auth_cookie = Cookie::build(AUTH_COOKIE_NAME, session_id_encoded)
+    let auth_cookie = Cookie::build((AUTH_COOKIE_NAME, session_id_encoded))
         .same_site(SameSite::Strict)
         .secure(true)
         .http_only(true)
-        .path("/")
         // .max_age(cookie::time::Duration::days(2))
-        .finish();
+        .path("/");
     let key = get_or_create_cookie_key(&*state).await?;
     let mut jar = CookieJar::new();
     jar.private_mut(&key).add(auth_cookie);
@@ -185,13 +184,12 @@ struct RemoveAuthCookie<T: IntoResponse>(pub T);
 
 impl<T: IntoResponse> IntoResponse for RemoveAuthCookie<T> {
     fn into_response(self) -> Response {
-        let deletion_cookie = Cookie::build(AUTH_COOKIE_NAME, "")
+        let deletion_cookie = Cookie::build((AUTH_COOKIE_NAME, ""))
             .same_site(SameSite::Strict)
             .secure(true)
             .http_only(true)
             .path("/")
-            .expires(cookie::time::OffsetDateTime::now_utc() - cookie::time::Duration::weeks(50))
-            .finish();
+            .expires(cookie::time::OffsetDateTime::now_utc() - cookie::time::Duration::weeks(50));
         let mut response = self.0.into_response();
         if let Ok(deletion_cookie_value) = deletion_cookie.to_string().parse::<HeaderValue>() {
             response
@@ -216,7 +214,7 @@ async fn logout_handler(
         None => return Err(WebError::Unauthorized(None)),
         Some(cookie) => cookie,
     };
-    let session_id_encoded = auth_cookie.value();
+    let session_id_encoded = auth_cookie.value_trimmed();
     let session_id = general_purpose::URL_SAFE_NO_PAD
         .decode(session_id_encoded)
         .map_err(|_| WebError::Unauthorized(None))?;
@@ -250,7 +248,7 @@ pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, Web
         None => return Err(WebError::Unauthorized(None)),
         Some(cookie) => cookie,
     };
-    let session_id_encoded = auth_cookie.value();
+    let session_id_encoded = auth_cookie.value_trimmed();
     let session_id = general_purpose::URL_SAFE_NO_PAD
         .decode(session_id_encoded)
         .map_err(|_| WebError::Unauthorized(None))?;

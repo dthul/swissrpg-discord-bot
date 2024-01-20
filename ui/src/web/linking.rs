@@ -59,12 +59,12 @@ async fn generate_csrf_cookie(
     let _: () = redis_connection
         .set_ex(&redis_csrf_key, csrf_state, 3600)
         .await?;
-    Ok(Cookie::build("csrf_user_id", random_csrf_user_id)
+    Ok(Cookie::build(("csrf_user_id", random_csrf_user_id))
         .domain(lib::urls::DOMAIN)
         .http_only(true)
         .same_site(cookie::SameSite::Lax)
         .max_age(cookie::time::Duration::hours(1))
-        .finish())
+        .build())
 }
 
 async fn check_csrf_cookie(
@@ -90,7 +90,7 @@ async fn check_csrf_cookie(
         None => return Ok(false),
         Some(csrf_user_id_cookie) => csrf_user_id_cookie,
     };
-    let redis_csrf_key = format!("csrf:{}", csrf_user_id_cookie.value());
+    let redis_csrf_key = format!("csrf:{}", csrf_user_id_cookie.value_trimmed());
     let csrf_stored_state: Option<String> = redis_connection.get(&redis_csrf_key).await?;
     let csrf_stored_state: String = match csrf_stored_state {
         None => return Ok(false),
