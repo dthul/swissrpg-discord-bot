@@ -64,7 +64,7 @@ async fn generate_csrf_cookie(
         .http_only(true)
         .same_site(cookie::SameSite::Lax)
         .max_age(cookie::time::Duration::hours(1))
-        .build())
+        .into())
 }
 
 async fn check_csrf_cookie(
