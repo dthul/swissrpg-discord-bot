@@ -71,7 +71,7 @@ pub async fn sync_discord(
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
-    bot_id: u64,
+    bot_id: UserId,
 ) -> Result<(), crate::meetup::Error> {
     let event_series_ids = sqlx::query!("SELECT id FROM event_series")
         .map(|row| db::EventSeriesId(row.id))
@@ -118,7 +118,7 @@ async fn sync_event_series(
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
-    bot_id: u64,
+    bot_id: UserId,
 ) -> Result<(), crate::meetup::Error> {
     // Only sync event series that have events in the future
     let next_event = match db::get_next_event_in_series(db_connection, series_id).await? {
@@ -558,7 +558,7 @@ async fn sync_channel(
     channel_type: ChannelType,
     channel_name: &str,
     event_series_id: db::EventSeriesId,
-    bot_id: u64,
+    bot_id: UserId,
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
@@ -636,7 +636,7 @@ async fn sync_channel_impl(
     channel_type: ChannelType,
     channel_name: &str,
     event_series_id: db::EventSeriesId,
-    bot_id: u64,
+    bot_id: UserId,
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
@@ -677,7 +677,7 @@ async fn sync_channel_impl(
             PermissionOverwrite {
                 allow: Permissions::VIEW_CHANNEL,
                 deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Member(UserId::new(bot_id)),
+                kind: PermissionOverwriteType::Member(bot_id),
             },
         ],
         ChannelType::Voice => vec![
@@ -689,7 +689,7 @@ async fn sync_channel_impl(
             PermissionOverwrite {
                 allow: Permissions::CONNECT,
                 deny: Permissions::empty(),
-                kind: PermissionOverwriteType::Member(UserId::new(bot_id)),
+                kind: PermissionOverwriteType::Member(bot_id),
             },
         ],
     };
@@ -800,7 +800,7 @@ async fn sync_channel_permissions(
     channel_type: ChannelType,
     role_id: RoleId,
     discord_host_ids: &[UserId],
-    bot_id: u64,
+    bot_id: UserId,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // Make this channel private.
@@ -818,7 +818,7 @@ async fn sync_channel_permissions(
                 PermissionOverwrite {
                     allow: Permissions::VIEW_CHANNEL,
                     deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Member(UserId::new(bot_id)),
+                    kind: PermissionOverwriteType::Member(bot_id),
                 },
                 PermissionOverwrite {
                     allow: Permissions::VIEW_CHANNEL,
@@ -861,7 +861,7 @@ async fn sync_channel_permissions(
                 PermissionOverwrite {
                     allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
                     deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Member(UserId::new(bot_id)),
+                    kind: PermissionOverwriteType::Member(bot_id),
                 },
                 PermissionOverwrite {
                     allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,

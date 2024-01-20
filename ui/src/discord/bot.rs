@@ -6,9 +6,11 @@ use std::sync::{
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use serenity::{
+    all::{ApplicationId, GuildMemberUpdateEvent},
     async_trait,
+    builder::CreateMessage,
     model::{
-        application::interaction::Interaction,
+        application::Interaction,
         channel::Message,
         gateway::{GatewayIntents, Ready},
         guild::Member,
@@ -22,7 +24,7 @@ use super::commands::{CommandContext, PreparedCommands};
 
 pub async fn create_discord_client(
     discord_token: &str,
-    application_id: u64,
+    application_id: ApplicationId,
     redis_client: redis::Client,
     pool: sqlx::PgPool,
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
@@ -50,12 +52,11 @@ pub async fn create_discord_client(
 
     // We will fetch the bot's id.
     let (bot_id, bot_name) = client
-        .cache_and_http
         .http
         .get_current_user()
         .await
-        .map(|info| (info.id, info.name))?;
-    println!("Bot ID: {}", bot_id.0);
+        .map(|info| (info.id, info.name.clone()))?;
+    println!("Bot ID: {}", bot_id);
     println!("Bot name: {}", bot_name);
 
     // Prepare the commands
@@ -328,10 +329,13 @@ impl EventHandler for Handler {
         &self,
         ctx: Context,
         _old_if_available: Option<Member>,
-        new: Member,
+        _new: Option<Member>,
+        event: GuildMemberUpdateEvent,
     ) {
-        let nick = new.nick.as_deref().unwrap_or(new.user.name.as_str());
-        Self::update_member_nick(&ctx, new.user.id, nick).await.ok();
+        let nick = event.nick.as_deref().unwrap_or(event.user.name.as_str());
+        Self::update_member_nick(&ctx, event.user.id, nick)
+            .await
+            .ok();
     }
 
     async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
@@ -342,10 +346,7 @@ impl EventHandler for Handler {
                 return;
             }
         };
-        let members = match ctx
-            .cache
-            .guild_field(guild_id, |guild| guild.members.clone())
-        {
+        let members = match ctx.cache.guild(guild_id).map(|guild| guild.members.clone()) {
             Some(members) => members,
             None => return,
         };
@@ -369,7 +370,7 @@ impl EventHandler for Handler {
         // In contrast to the message handler we don't need to check that this
         // is indeed a command.
         let interaction = match interaction {
-            Interaction::ApplicationCommand(inner) => inner,
+            Interaction::Command(inner) => inner,
             _ => return,
         };
 
@@ -406,11 +407,9 @@ impl EventHandler for Handler {
 
 impl Handler {
     async fn send_welcome_message(ctx: &Context, user: &User) {
-        user.direct_message(ctx, |message_builder| {
-            message_builder.content(strings::WELCOME_MESSAGE)
-        })
-        .await
-        .ok();
+        user.direct_message(ctx, CreateMessage::new().content(strings::WELCOME_MESSAGE))
+            .await
+            .ok();
     }
 
     async fn update_member_nick(

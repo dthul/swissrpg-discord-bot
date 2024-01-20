@@ -46,7 +46,7 @@ pub async fn create_recurring_syncing_task(
                 &mut redis_connection,
                 &db_connection,
                 &discord_api,
-                bot_id.get(),
+                bot_id,
             )
             .await
             {

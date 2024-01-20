@@ -14,7 +14,7 @@ fn sync_discord<'a>(
     let bot_id = context.bot_id().await?;
     // Spawn the syncing task
     tokio::spawn(async move {
-        lib::discord::sync::sync_discord(&mut redis_connection, &pool, &mut discord_api, bot_id.0)
+        lib::discord::sync::sync_discord(&mut redis_connection, &pool, &mut discord_api, bot_id)
             .await
     });
     context
