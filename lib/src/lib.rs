@@ -2,6 +2,7 @@
 #![warn(rust_2018_idioms)]
 pub mod db;
 pub mod discord;
+pub mod end_adventure;
 pub mod error;
 pub mod flow;
 mod free_spots;
@@ -133,6 +134,17 @@ pub async fn get_channel_series(
     .fetch_optional(&mut **db_connection)
     .await?;
     Ok(series_id.map(|id| EventSeriesId(id)))
+}
+
+pub async fn is_game_channel(
+    channel_id: ChannelId,
+    db_connection: &mut sqlx::PgConnection,
+) -> Result<bool, meetup::Error> {
+    let is_game_channel = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) > 0 AS "is_game_channel!" FROM event_series_text_channel WHERE discord_id = $1"#,
+        channel_id.get() as i64
+    ).fetch_one(db_connection).await?;
+    Ok(is_game_channel)
 }
 
 pub struct LinkingMemberMeetup {

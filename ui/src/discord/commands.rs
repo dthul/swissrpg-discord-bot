@@ -303,19 +303,12 @@ impl CommandContext {
         &mut self,
         tx: Option<&mut sqlx::Transaction<'_, sqlx::Postgres>>,
     ) -> Result<bool, lib::meetup::Error> {
-        let channel_id = self.msg.channel_id;
-        let query = sqlx::query_scalar!(
-            r#"SELECT COUNT(*) > 0 AS "is_game_channel!" FROM event_series_text_channel WHERE discord_id = $1"#,
-            channel_id.get() as i64
-        );
-        let res = match tx {
-            Some(tx) => query.fetch_one(&mut **tx).await?,
-            None => {
-                let pool = self.pool().await?;
-                query.fetch_one(&pool).await?
-            }
-        };
-        Ok(res)
+        if let Some(tx) = tx {
+            lib::is_game_channel(self.msg.channel_id, tx).await
+        } else {
+            let mut connection = self.pool().await?.acquire().await?;
+            lib::is_game_channel(self.msg.channel_id, &mut connection).await
+        }
     }
 
     pub async fn is_managed_channel(&mut self) -> Result<bool, lib::meetup::Error> {
