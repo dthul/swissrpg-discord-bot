@@ -6,7 +6,7 @@ use serenity::{all::ChannelId, model::channel::Channel};
 #[regex(r"end\s*all")]
 #[level(admin)]
 #[help("end all", "ends all expired adventure channels")]
-fn end_adventure<'a>(
+fn end_all<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {

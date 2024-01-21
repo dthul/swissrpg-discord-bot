@@ -57,6 +57,8 @@ static ALL_COMMANDS: &[&Command] = &[
     &schedule_session::SCHEDULE_SESSION_COMMAND,
     &whois::WHOIS_COMMAND,
     &list_players::LIST_PLAYERS_COMMAND,
+    #[cfg(feature = "bottest")]
+    &end_all::END_ALL_COMMAND,
     &list_subscriptions::LIST_SUBSCRIPTIONS_COMMAND,
     &sync_subscriptions::SYNC_SUBSCRIPTIONS_COMMAND,
     &numcached::NUMCACHED_COMMAND,
