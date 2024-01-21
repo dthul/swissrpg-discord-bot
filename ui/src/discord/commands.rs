@@ -15,6 +15,8 @@ mod add_user;
 // mod clone_event;
 mod count_inactive;
 mod end_adventure;
+#[cfg(feature = "bottest")]
+mod end_all;
 mod help;
 mod link_meetup;
 mod list_players;
