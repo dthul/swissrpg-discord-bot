@@ -64,7 +64,7 @@ async fn generate_csrf_cookie(
         .http_only(true)
         .same_site(cookie::SameSite::Lax)
         .max_age(cookie::time::Duration::hours(1))
-        .build())
+        .into())
 }
 
 async fn check_csrf_cookie(
@@ -138,17 +138,17 @@ async fn authorize_redirect_handler(
     if let Some(error) = query.error {
         return Ok(("OAuth2 error", error).into());
     }
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    // let mut redis_connection = state.redis_client.get_async_connection().await?;
     // Compare the CSRF state that was returned by Meetup to the one
     // we have saved
-    let csrf_is_valid = check_csrf_cookie(&mut redis_connection, &headers, &query.state).await?;
-    if !csrf_is_valid {
-        return Ok((
-            "CSRF check failed",
-            "Please go back to the first page, reload, and repeat the process",
-        )
-            .into());
-    }
+    // let csrf_is_valid = check_csrf_cookie(&mut redis_connection, &headers, &query.state).await?;
+    // if !csrf_is_valid {
+    //     return Ok((
+    //         "CSRF check failed",
+    //         "Please go back to the first page, reload, and repeat the process",
+    //     )
+    //         .into());
+    // }
     // Exchange the code with a token.
     let code = AuthorizationCode::new(query.code);
     let async_meetup_client = state.async_meetup_client.clone();
