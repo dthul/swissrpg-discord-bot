@@ -358,11 +358,11 @@ async fn schedule_session_post_handler(
             lib::get_event_series_roles(event_series_id, &mut state.pool.begin().await?).await?;
         let message = if let Some(channel_roles) = channel_roles {
             format!(
-                "Your adventure continues here, heroes of <@&{channel_role_id}>: {link}. Slay the \
+                "Your adventure continues here, heroes of {channel_role_mention}: {link}. Slay the \
                  dragon, save the prince, get the treasure, or whatever shenanigans you like to \
                  get into.",
                 link = &new_event.short_url,
-                channel_role_id = channel_roles.user
+                channel_role_mention = channel_roles.user.mention()
             )
         } else {
             format!(

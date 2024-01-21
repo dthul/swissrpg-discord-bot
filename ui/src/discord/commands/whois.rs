@@ -176,13 +176,16 @@ async fn whois_by_meetup_id(
         )] => {
             let message = if let Some(discord_nick) = discord_nick {
                 format!(
-                    "https://www.meetup.com/members/{}/ is linked to <@{}> ({})",
-                    meetup_id, discord_id, discord_nick
+                    "https://www.meetup.com/members/{}/ is linked to {} ({})",
+                    meetup_id,
+                    discord_id.mention(),
+                    discord_nick
                 )
             } else {
                 format!(
-                    "https://www.meetup.com/members/{}/ is linked to <@{}>",
-                    meetup_id, discord_id
+                    "https://www.meetup.com/members/{}/ is linked to {}",
+                    meetup_id,
+                    discord_id.mention()
                 )
             };
             context.msg.channel_id.say(&context.ctx, message).await.ok();

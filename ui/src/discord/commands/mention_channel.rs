@@ -16,7 +16,7 @@ fn mention_channel<'a>(
         context
             .msg
             .channel_id
-            .say(context.ctx, format!("<@&{}>", channel_roles.user))
+            .say(context.ctx, channel_roles.user.mention().to_string())
             .await
             .ok();
     } else {
