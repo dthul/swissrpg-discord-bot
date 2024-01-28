@@ -13,7 +13,11 @@ fn end_all<'a>(
     let pool = context.pool().await?;
     // Find all channels which can be ended
     let channel_ids = sqlx::query!(
-        r#"SELECT discord_id FROM event_series_text_channel WHERE expiration_time < $1 AND deletion_time IS NULL"#,
+        r#"SELECT discord_id FROM event_series_text_channel WHERE
+        deleted IS NULL AND
+        expiration_time < $1 AND
+        (snooze_until IS NULL OR snooze_until < $1) AND
+        deletion_time IS NULL"#,
         chrono::Utc::now(),
     )
     .map(|row| ChannelId::new(row.discord_id as u64))
