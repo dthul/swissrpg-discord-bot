@@ -10,6 +10,7 @@ use serenity::{
     },
 };
 use simple_error::SimpleError;
+use tracing::{debug, error, info};
 
 #[cfg(feature = "bottest")]
 pub mod ids {
@@ -59,6 +60,7 @@ lazy_static! {
 }
 
 // Syncs Discord with the state of the database
+#[tracing::instrument(skip(redis_connection, db_connection, discord_api))]
 pub async fn sync_discord(
     redis_connection: &mut redis::aio::Connection,
     db_connection: &sqlx::PgPool,
@@ -81,7 +83,7 @@ pub async fn sync_discord(
         .await
         {
             some_failed = true;
-            eprintln!("Discord event series syncing task failed: {}", err);
+            error!("Discord event series syncing task failed: {}", err);
         }
     }
     if some_failed {
@@ -105,6 +107,7 @@ For each event series:
   - assign the users (including hosts) the player role
   - assign the hosts the host role
 */
+#[tracing::instrument(skip(redis_connection, db_connection, discord_api))]
 async fn sync_event_series(
     series_id: db::EventSeriesId,
     redis_connection: &mut redis::aio::Connection,
@@ -116,11 +119,6 @@ async fn sync_event_series(
     let next_event = match db::get_next_event_in_series(db_connection, series_id).await? {
         Some(event) => event,
         None => {
-            // println!(
-            //     "Event series \"{}\" seems to have no upcoming events associated with it, not \
-            //      syncing to Discord",
-            //     series_id
-            // );
             return Ok(());
         }
     };
@@ -207,7 +205,7 @@ async fn sync_event_series(
             match res {
                 Ok(user) => Some(user),
                 Err(err) => {
-                    eprintln!(
+                    error!(
                         "Error converting Discord host ID to Discord user object: {}",
                         err
                     );
@@ -264,7 +262,7 @@ async fn sync_event_series(
     )
     .await
     {
-        eprintln!(
+        error!(
             "Error in sync_channel_permissions (for text channel):\n{:#?}",
             err
         );
@@ -283,7 +281,7 @@ async fn sync_event_series(
         .await
         {
             Err(err) => {
-                eprintln!("Error in sync_channel (for voice channel):\n{:#?}", err);
+                error!("Error in sync_channel (for voice channel):\n{:#?}", err);
                 None
             }
             Ok(voice_channel_id) => {
@@ -297,7 +295,7 @@ async fn sync_event_series(
                 )
                 .await
                 {
-                    eprintln!(
+                    error!(
                         "Error in sync_channel_permissions (for voice channel):\n{:#?}",
                         err
                     );
@@ -353,6 +351,7 @@ async fn sync_event_series(
     Ok(())
 }
 
+#[tracing::instrument(skip(redis_connection, db_connection, discord_api))]
 async fn sync_role(
     role_name: &str,
     is_host_role: bool,
@@ -422,6 +421,7 @@ async fn sync_role(
     }
 }
 
+#[tracing::instrument(skip(redis_connection, db_connection, discord_api))]
 async fn sync_role_impl(
     role_name: &str,
     is_host_role: bool,
@@ -460,7 +460,7 @@ async fn sync_role_impl(
                 .permissions(Permissions::empty())
         })
         .await?;
-    println!(
+    info!(
         "Discord event sync: created new temporary channel role {} \"{}\"",
         temp_channel_role.id.0, &temp_channel_role.name
     );
@@ -498,15 +498,15 @@ async fn sync_role_impl(
     // In case the transaction failed delete the temporary role from Discord
     match any_err {
         Some(err) => {
-            println!("Trying to delete temporary channel role");
+            debug!("Trying to delete temporary channel role");
             match discord_api
                 .http()
                 .delete_role(GUILD_ID.0, temp_channel_role.id.0)
                 .await
             {
-                Ok(_) => println!("Successfully deleted temporary channel role"),
+                Ok(_) => info!("Successfully deleted temporary channel role"),
                 Err(_) => {
-                    eprintln!(
+                    error!(
                         "Could not delete temporary channel role {}",
                         temp_channel_role.id.0
                     );
@@ -515,12 +515,12 @@ async fn sync_role_impl(
                         .sadd("orphaned_discord_roles", temp_channel_role.id.0)
                         .await
                     {
-                        Err(_) => eprintln!(
+                        Err(_) => error!(
                             "Could not record orphaned channel role {}",
                             temp_channel_role.id.0
                         ),
                         Ok(()) => {
-                            println!("Recorded orphaned channel role {}", temp_channel_role.id.0)
+                            info!("Recorded orphaned channel role {}", temp_channel_role.id.0)
                         }
                     }
                 }
@@ -528,7 +528,7 @@ async fn sync_role_impl(
             Err(err.into())
         }
         None => {
-            println!("Persisted new channel role {}", temp_channel_role.id.0);
+            info!("Persisted new channel role {}", temp_channel_role.id.0);
             // Return the new channel role
             Ok(temp_channel_role.id)
         }
@@ -541,6 +541,7 @@ pub(crate) enum ChannelType {
     Voice,
 }
 
+#[tracing::instrument(skip(redis_connection, db_connection, discord_api))]
 async fn sync_channel(
     channel_type: ChannelType,
     channel_name: &str,
@@ -621,6 +622,7 @@ async fn sync_channel(
     }
 }
 
+#[tracing::instrument(skip(redis_connection, db_connection, discord_api))]
 async fn sync_channel_impl(
     channel_type: ChannelType,
     channel_name: &str,
@@ -695,7 +697,7 @@ async fn sync_channel_impl(
                 .permissions(permission_overwrites)
         })
         .await?;
-    println!(
+    info!(
         "Discord event sync: created new temporary channel {} \"{}\"",
         temp_channel.id.0, &temp_channel.name
     );
@@ -739,11 +741,11 @@ async fn sync_channel_impl(
     // In case the transaction failed delete the temporary channel from Discord
     match any_err {
         Some(err) => {
-            println!("Trying to delete temporary channel");
+            debug!("Trying to delete temporary channel");
             match discord_api.http().delete_channel(temp_channel.id.0).await {
-                Ok(_) => println!("Successfully deleted temporary channel"),
+                Ok(_) => info!("Successfully deleted temporary channel"),
                 Err(_) => {
-                    eprintln!("Could not delete temporary channel {}", temp_channel.id.0);
+                    error!("Could not delete temporary channel {}", temp_channel.id.0);
                     // Try to persist the information to Redis that we have an orphaned channel now
                     let redis_orphaned_channels_key = match channel_type {
                         ChannelType::Text => "orphaned_discord_channels",
@@ -754,16 +756,16 @@ async fn sync_channel_impl(
                         .await
                     {
                         Err(_) => {
-                            eprintln!("Could not record orphaned channel {}", temp_channel.id.0)
+                            error!("Could not record orphaned channel {}", temp_channel.id.0)
                         }
-                        Ok(()) => println!("Recorded orphaned channel {}", temp_channel.id.0),
+                        Ok(()) => info!("Recorded orphaned channel {}", temp_channel.id.0),
                     }
                 }
             }
             Err(err.into())
         }
         None => {
-            println!("Persisted new channel {}", temp_channel.id.0);
+            info!("Persisted new channel {}", temp_channel.id.0);
             // Return the new channel
             Ok(temp_channel.id)
         }
@@ -774,6 +776,7 @@ async fn sync_channel_impl(
 // overwrites for the channel's role and host role.
 // Specifically does not remove any additional permission overwrites
 // that the channel might have.
+#[tracing::instrument(skip(discord_api))]
 async fn sync_channel_permissions(
     channel_id: ChannelId,
     channel_type: ChannelType,
@@ -881,6 +884,7 @@ async fn sync_channel_permissions(
     Ok(())
 }
 
+#[tracing::instrument(skip(db_connection, discord_api))]
 async fn sync_role_assignments_permissions(
     discord_user_ids: &[UserId],
     discord_host_ids: &[UserId],
@@ -931,22 +935,22 @@ async fn sync_role_assignments_permissions(
                             .await
                         {
                             Ok(_) => {
-                                println!("Assigned user {} to role {}", user_id, user_role.0);
+                                info!("Assigned user {} to role {}", user_id, user_role.0);
                                 newly_added_user_ids.push(user_id);
                             }
-                            Err(err) => eprintln!(
+                            Err(err) => error!(
                                 "Could not assign user {} to role {}: {}",
                                 user_id, user_role.0, err
                             ),
                         }
                     }
                 }
-                Err(err) => eprintln!(
+                Err(err) => error!(
                     "Could not figure out whether the user {} already has role {}: {}",
                     user.id, user_role.0, err
                 ),
             },
-            Err(err) => eprintln!("Could not find the user {}: {}", user_id, err),
+            Err(err) => error!("Could not find the user {}: {}", user_id, err),
         }
     }
     // Assign direct permissions to hosts
@@ -968,10 +972,10 @@ async fn sync_role_assignments_permissions(
         .await
         {
             Ok(true) => {
-                println!("Assigned user {} host permissions in text channel", host_id);
+                info!("Assigned user {} host permissions in text channel", host_id);
                 newly_added_host_ids.push(host_id);
             }
-            Err(err) => eprintln!(
+            Err(err) => error!(
                 "Could not assign user {} host permissions in text channel:\n{:#?}",
                 host_id, err
             ),
@@ -994,12 +998,12 @@ async fn sync_role_assignments_permissions(
             .await
             {
                 Ok(true) => {
-                    println!(
+                    info!(
                         "Assigned user {} host permissions in voice channel",
                         host_id
                     );
                 }
-                Err(err) => eprintln!(
+                Err(err) => error!(
                     "Could not assign user {} host permissions in voice channel:\n{:#?}",
                     host_id, err
                 ),
@@ -1015,7 +1019,7 @@ async fn sync_role_assignments_permissions(
             })
             .await
         {
-            eprintln!(
+            error!(
                 "Could not announce new hosts in channel {}:\n{:#?}",
                 channel_id.0, err
             );
@@ -1029,7 +1033,7 @@ async fn sync_role_assignments_permissions(
             })
             .await
         {
-            eprintln!(
+            error!(
                 "Could not announce new players in channel {}:\n{:#?}",
                 channel_id.0, err
             );
@@ -1038,6 +1042,7 @@ async fn sync_role_assignments_permissions(
     Ok(())
 }
 
+#[tracing::instrument(skip(db_connection, discord_api))]
 async fn sync_game_master_role(
     event_series_id: db::EventSeriesId,
     db_connection: &sqlx::PgPool,
@@ -1073,25 +1078,26 @@ async fn sync_game_master_role(
                             )
                             .await
                         {
-                            Ok(_) => println!("Assigned user {} to the game master role", host_id),
-                            Err(err) => eprintln!(
+                            Ok(_) => info!("Assigned user {} to the game master role", host_id),
+                            Err(err) => error!(
                                 "Could not assign user {} to the game master role: {}",
                                 host_id, err
                             ),
                         }
                     }
                 }
-                Err(err) => eprintln!(
+                Err(err) => error!(
                     "Could not figure out whether the user {} already has the game master role: {}",
                     user.id, err
                 ),
             },
-            Err(err) => eprintln!("Could not find the host user {}: {}", host_id, err),
+            Err(err) => error!("Could not find the host user {}: {}", host_id, err),
         }
     }
     Ok(())
 }
 
+#[tracing::instrument(skip(discord_api))]
 async fn sync_channel_topic(
     channel_id: ChannelId,
     next_event: &db::Event,
@@ -1127,6 +1133,7 @@ async fn sync_channel_topic(
     Ok(())
 }
 
+#[tracing::instrument(skip(db_connection, discord_api))]
 async fn sync_channel_category(
     series_id: db::EventSeriesId,
     channel_type: ChannelType,
@@ -1152,7 +1159,7 @@ async fn sync_channel_category(
             "campaign" => categories.extend_from_slice(CAMPAIGN_CATEGORY_IDS),
             "adventure" => categories.extend_from_slice(ONE_SHOT_CATEGORY_IDS),
             _ => {
-                eprintln!(
+                error!(
                     "Event series {} does not have a type of 'campaign' or 'adventure'",
                     series_id.0
                 );

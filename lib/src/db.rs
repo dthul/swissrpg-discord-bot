@@ -73,6 +73,7 @@ pub struct DiscordChannelId(pub u64);
 #[sqlx(transparent)]
 pub struct MemberId(pub i32);
 
+#[derive(Debug)]
 pub struct MeetupEvent {
     pub id: MeetupEventId,
     pub meetup_id: String,
@@ -80,6 +81,7 @@ pub struct MeetupEvent {
     pub urlname: String,
 }
 
+#[derive(Debug)]
 pub struct Event {
     pub id: EventId,
     pub title: String,
