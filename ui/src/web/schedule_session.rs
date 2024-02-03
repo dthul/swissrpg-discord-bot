@@ -11,6 +11,7 @@ use axum::{
 use chrono::{offset::TimeZone, Datelike, NaiveDateTime, Timelike};
 use chrono_tz::Europe;
 use lib::{db, DefaultStr};
+use serenity::all::Mentionable;
 
 use super::{server::State, MessageTemplate, WebError};
 
@@ -348,7 +349,7 @@ async fn schedule_session_post_handler(
             if let Ok(Some(channel_id)) =
                 lib::get_series_text_channel(event_series_id, &mut tx).await
             {
-                sqlx::query!(r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#, channel_id.0 as i64).execute(&mut *tx).await.ok();
+                sqlx::query!(r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#, channel_id.get() as i64).execute(&mut *tx).await.ok();
                 tx.commit().await.ok();
             }
         }
@@ -357,11 +358,11 @@ async fn schedule_session_post_handler(
             lib::get_event_series_roles(event_series_id, &mut state.pool.begin().await?).await?;
         let message = if let Some(channel_roles) = channel_roles {
             format!(
-                "Your adventure continues here, heroes of <@&{channel_role_id}>: {link}. Slay the \
+                "Your adventure continues here, heroes of {channel_role_mention}: {link}. Slay the \
                  dragon, save the prince, get the treasure, or whatever shenanigans you like to \
                  get into.",
                 link = &new_event.short_url,
-                channel_role_id = channel_roles.user
+                channel_role_mention = channel_roles.user.mention()
             )
         } else {
             format!(
@@ -387,10 +388,10 @@ async fn schedule_session_post_handler(
         // If RSVPs were not transferred, announce the new session in the bot alerts channel
         if is_open_game {
             let message = format!(
-                "<@&{organiser_id}>, a new session has been scheduled:\n{link}.\nPlease announce \
+                "{organiser_mention}, a new session has been scheduled:\n{link}.\nPlease announce \
                  this session for new players to join. Don't forget to **open RSVPs** when you do \
                  that.",
-                organiser_id = lib::discord::sync::ids::ORGANISER_ID.0,
+                organiser_mention = lib::discord::sync::ids::ORGANISER_ID.mention(),
                 link = &new_event.event_url,
             );
             if let Err(err) =

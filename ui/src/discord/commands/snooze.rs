@@ -35,7 +35,7 @@ fn snooze<'a>(
         // Remove the snooze
         sqlx::query!(
             r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#,
-            context.msg.channel_id.0 as i64
+            context.msg.channel_id.get() as i64
         )
         .execute(&pool)
         .await?;
@@ -50,7 +50,7 @@ fn snooze<'a>(
         // Set a new snooze date
         sqlx::query!(
             r#"UPDATE event_series_text_channel SET snooze_until = $2 WHERE discord_id = $1"#,
-            context.msg.channel_id.0 as i64,
+            context.msg.channel_id.get() as i64,
             snooze_until
         )
         .execute(&pool)

@@ -31,7 +31,7 @@ fn manage_channel<'a>(
     }
     sqlx::query!(
         r#"INSERT INTO managed_channel (discord_id) VALUES ($1) ON CONFLICT DO NOTHING"#,
-        channel_id.0 as i64
+        channel_id.get() as i64
     )
     .execute(&mut *tx)
     .await?;
@@ -62,7 +62,7 @@ fn manage_channel<'a>(
     channel
         .create_permission(
             &context.ctx,
-            &PermissionOverwrite {
+            PermissionOverwrite {
                 allow: Permissions::VIEW_CHANNEL,
                 deny: Permissions::empty(),
                 kind: PermissionOverwriteType::Member(bot_id),
@@ -70,7 +70,7 @@ fn manage_channel<'a>(
         )
         .await?;
     // Step 3: Grant all current users access to the channel
-    let mut current_channel_members = channel.members(&context.ctx).await?;
+    let mut current_channel_members = channel.members(&context.ctx)?;
     for member in &mut current_channel_members {
         // Don't explicitly grant access to admins
         let is_admin = {
@@ -86,7 +86,7 @@ fn manage_channel<'a>(
         channel
             .create_permission(
                 &context.ctx,
-                &PermissionOverwrite {
+                PermissionOverwrite {
                     allow: Permissions::VIEW_CHANNEL,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Member(member.user.id),

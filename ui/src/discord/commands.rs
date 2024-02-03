@@ -15,6 +15,8 @@ mod add_user;
 // mod clone_event;
 mod count_inactive;
 mod end_adventure;
+#[cfg(feature = "bottest")]
+mod end_all;
 mod help;
 mod link_meetup;
 mod list_players;
@@ -55,6 +57,8 @@ static ALL_COMMANDS: &[&Command] = &[
     &schedule_session::SCHEDULE_SESSION_COMMAND,
     &whois::WHOIS_COMMAND,
     &list_players::LIST_PLAYERS_COMMAND,
+    #[cfg(feature = "bottest")]
+    &end_all::END_ALL_COMMAND,
     &list_subscriptions::LIST_SUBSCRIPTIONS_COMMAND,
     &sync_subscriptions::SYNC_SUBSCRIPTIONS_COMMAND,
     &numcached::NUMCACHED_COMMAND,
@@ -303,27 +307,20 @@ impl CommandContext {
         &mut self,
         tx: Option<&mut sqlx::Transaction<'_, sqlx::Postgres>>,
     ) -> Result<bool, lib::meetup::Error> {
-        let channel_id = self.msg.channel_id.0;
-        let query = sqlx::query_scalar!(
-            r#"SELECT COUNT(*) > 0 AS "is_game_channel!" FROM event_series_text_channel WHERE discord_id = $1"#,
-            channel_id as i64
-        );
-        let res = match tx {
-            Some(tx) => query.fetch_one(&mut **tx).await?,
-            None => {
-                let pool = self.pool().await?;
-                query.fetch_one(&pool).await?
-            }
-        };
-        Ok(res)
+        if let Some(tx) = tx {
+            lib::is_game_channel(self.msg.channel_id, tx).await
+        } else {
+            let mut connection = self.pool().await?.acquire().await?;
+            lib::is_game_channel(self.msg.channel_id, &mut connection).await
+        }
     }
 
     pub async fn is_managed_channel(&mut self) -> Result<bool, lib::meetup::Error> {
-        let channel_id = self.msg.channel_id.0;
+        let channel_id = self.msg.channel_id;
         let pool = self.pool().await?;
         Ok(sqlx::query_scalar!(
             r#"SELECT COUNT(*) > 0 AS "is_managed_channel!" FROM managed_channel WHERE discord_id = $1"#,
-            channel_id as i64
+            channel_id.get() as i64
         )
         .fetch_one(&pool)
         .await?)
@@ -349,7 +346,7 @@ pub(crate) fn prepare_commands(
     };
     let bot_mention = format!(
         r"(?:<@!?{bot_id}>|(@|#)(?i){bot_name})",
-        bot_id = bot_id.0,
+        bot_id = bot_id.get(),
         bot_name = regex::escape(bot_name)
     );
     let mut commands = vec![];

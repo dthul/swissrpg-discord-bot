@@ -8,8 +8,10 @@ pub fn numcached<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&context.ctx) {
-        let num_cached_members = guild.members.len();
+    let num_cached_members = lib::discord::sync::ids::GUILD_ID
+        .to_guild_cached(&context.ctx)
+        .map(|guild| guild.members.len());
+    if let Some(num_cached_members) = num_cached_members {
         context
             .msg
             .channel_id

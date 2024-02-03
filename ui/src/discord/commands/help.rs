@@ -1,6 +1,10 @@
 use super::CommandLevel;
 use command_macro::command;
-use serenity::model::id::UserId;
+use serenity::{
+    all::Mentionable,
+    builder::{CreateEmbed, CreateMessage},
+    model::id::UserId,
+};
 use std::fmt::Write;
 
 // TODO: auto-generate the help command
@@ -14,46 +18,43 @@ fn help<'a>(
     let bot_id = context.bot_id().await?;
     let help_texts = compile_help_texts(bot_id);
     let is_bot_admin = context.is_admin().await.unwrap_or(false);
+    let message_builder = CreateMessage::new()
+        .content(lib::strings::HELP_MESSAGE_INTRO(bot_id))
+        .embed(
+            CreateEmbed::new()
+                .colour(serenity::all::Colour::BLUE)
+                .title(lib::strings::HELP_MESSAGE_PLAYER_EMBED_TITLE)
+                .description(&help_texts.user),
+        );
     context
         .msg
         .author
-        .direct_message(&context.ctx, |message_builder| {
-            message_builder
-                .content(lib::strings::HELP_MESSAGE_INTRO(bot_id.0))
-                .embed(|embed_builder| {
-                    embed_builder
-                        .colour(serenity::utils::Colour::BLUE)
-                        .title(lib::strings::HELP_MESSAGE_PLAYER_EMBED_TITLE)
-                        .description(&help_texts.user)
-                })
-        })
+        .direct_message(&context.ctx, message_builder)
         .await
         .ok();
+    let message_builder = CreateMessage::new().embed(
+        CreateEmbed::new()
+            .colour(serenity::all::Colour::DARK_GREEN)
+            .title(lib::strings::HELP_MESSAGE_GM_EMBED_TITLE)
+            .description(&help_texts.gm),
+    );
     context
         .msg
         .author
-        .direct_message(&context.ctx, |message_builder| {
-            message_builder.embed(|embed_builder| {
-                embed_builder
-                    .colour(serenity::utils::Colour::DARK_GREEN)
-                    .title(lib::strings::HELP_MESSAGE_GM_EMBED_TITLE)
-                    .description(&help_texts.gm)
-            })
-        })
+        .direct_message(&context.ctx, message_builder)
         .await
         .ok();
+    let message_builder = CreateMessage::new().embed(
+        CreateEmbed::new()
+            .colour(serenity::all::Colour::from_rgb(255, 23, 68))
+            .title(lib::strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
+            .description(&help_texts.admin),
+    );
     if is_bot_admin {
         context
             .msg
             .author
-            .direct_message(&context.ctx, |message_builder| {
-                message_builder.embed(|embed_builder| {
-                    embed_builder
-                        .colour(serenity::utils::Colour::from_rgb(255, 23, 68))
-                        .title(lib::strings::HELP_MESSAGE_ADMIN_EMBED_TITLE)
-                        .description(&help_texts.admin)
-                })
-            })
+            .direct_message(&context.ctx, message_builder)
             .await
             .ok();
     }
@@ -80,8 +81,10 @@ fn compile_help_texts(bot_id: UserId) -> HelpTexts {
         for entry in command.help {
             writeln!(
                 target,
-                ":white_small_square: **<@{}> {}** — {}",
-                bot_id.0, entry.command, entry.explanation
+                ":white_small_square: **{} {}** — {}",
+                bot_id.mention(),
+                entry.command,
+                entry.explanation
             )
             .ok();
         }
