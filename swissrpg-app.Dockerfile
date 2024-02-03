@@ -28,6 +28,8 @@ COPY lib ./lib
 COPY ui ./ui
 COPY .sqlx ./.sqlx
 COPY .env Cargo.lock Cargo.toml ./
+# The next step will fail if Git LFS backed files haven't been downloaded
+RUN ! sed -n '/^version/p;q' ui/src/web/html/static/SwissRPG-logo-128.png | grep git-lfs
 RUN cargo build --release --target x86_64-unknown-linux-gnu --bin swissrpg-app
 
 FROM debian:bookworm-slim AS runtime
