@@ -25,18 +25,18 @@ lazy_static! {
 pub mod ids {
     use super::*;
     // Test server:
-    pub const CHAMPION_ID: RoleId = RoleId(670250507436294144);
-    pub const INSIDER_ID: RoleId = RoleId(670250754422079488);
-    pub const GM_CHAMPION_ID: RoleId = RoleId(671107703703207940);
+    pub const CHAMPION_ID: RoleId = RoleId::new(670250507436294144);
+    pub const INSIDER_ID: RoleId = RoleId::new(670250754422079488);
+    pub const GM_CHAMPION_ID: RoleId = RoleId::new(671107703703207940);
 }
 
 #[cfg(not(feature = "bottest"))]
 pub mod ids {
     use super::*;
     // SwissRPG server:
-    pub const CHAMPION_ID: RoleId = RoleId(670197555166052362);
-    pub const INSIDER_ID: RoleId = RoleId(670201953883783169);
-    pub const GM_CHAMPION_ID: RoleId = RoleId(671111220119470093);
+    pub const CHAMPION_ID: RoleId = RoleId::new(670197555166052362);
+    pub const INSIDER_ID: RoleId = RoleId::new(670201953883783169);
+    pub const GM_CHAMPION_ID: RoleId = RoleId::new(671111220119470093);
 }
 
 pub async fn stripe_subscriptions_refresh_task(
@@ -135,9 +135,8 @@ pub async fn update_roles(
     let mut current_gms = vec![];
     let members = discord_api
         .cache
-        .guild_field(crate::discord::sync::ids::GUILD_ID, |guild| {
-            guild.members.clone()
-        })
+        .guild(crate::discord::sync::ids::GUILD_ID)
+        .map(|guild| guild.members.clone())
         .ok_or_else(|| simple_error::SimpleError::new("Did not find guild in cache"))?;
     for (&user_id, member) in &members {
         let is_champion = member.roles.contains(&ids::CHAMPION_ID);
@@ -338,7 +337,7 @@ async fn ensure_customer_has_discord_id(
         .transpose()
         .unwrap_or(None);
     if let Some(discord_id) = discord_id {
-        Ok(Some(UserId(discord_id)))
+        Ok(Some(UserId::new(discord_id)))
     } else {
         // No Discord ID is stored in the Stripe metadata.
         // Check for a Discord username, use that to look up the ID and store
@@ -399,7 +398,11 @@ pub async fn discord_username_to_id(
     while let Some(member_result) = members.next().await {
         let member = member_result?;
         if member.user.name == username
-            || &format!("{}#{:04}", member.user.name, member.user.discriminator) == username
+            || &format!(
+                "{}#{:04}",
+                member.user.name,
+                member.user.discriminator.map(|d| d.get()).unwrap_or(0)
+            ) == username
         {
             return Ok(Some(member.user.id));
         }
@@ -418,21 +421,21 @@ pub async fn add_member_role(
     match discord_api
         .http()
         .add_member_role(
-            crate::discord::sync::ids::GUILD_ID.0,
-            user_id.0,
-            role_id.0,
+            crate::discord::sync::ids::GUILD_ID,
+            user_id,
+            role_id,
             audit_log_reason,
         )
         .await
     {
         Ok(_) => {
-            println!("Assigned user {} to role {}", user_id.0, role_id.0);
+            println!("Assigned user {} to role {}", user_id, role_id);
             Ok(())
         }
         Err(err) => {
             eprintln!(
                 "Could not assign user {} to role {}:\n{:#?}",
-                user_id.0, role_id.0, err
+                user_id, role_id, err
             );
             Err(err.into())
         }
@@ -449,21 +452,21 @@ async fn remove_member_role(
     match discord_api
         .http()
         .remove_member_role(
-            crate::discord::sync::ids::GUILD_ID.0,
-            user_id.0,
-            role_id.0,
+            crate::discord::sync::ids::GUILD_ID,
+            user_id,
+            role_id,
             audit_log_reason,
         )
         .await
     {
         Ok(_) => {
-            println!("Removed role {} from user {}", role_id.0, user_id.0);
+            println!("Removed role {} from user {}", role_id, user_id);
             Ok(())
         }
         Err(err) => {
             eprintln!(
                 "Could not remove role {} from user {}:\n{:#?}",
-                role_id.0, user_id.0, err
+                role_id, user_id, err
             );
             Err(err.into())
         }

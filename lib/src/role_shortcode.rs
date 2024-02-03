@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use futures_util::lock::Mutex;
-use serenity::model::id::RoleId;
+use serenity::{all::Mentionable, builder::CreateMessage, model::id::RoleId};
 use simple_error::SimpleError;
 
 use super::free_spots::EventCollector;
@@ -32,7 +32,7 @@ impl EventCollector {
                 for captures in role_captures {
                     if let Some(role_id) = captures.name("role_id") {
                         match role_id.as_str().parse::<u64>() {
-                            Ok(id) => roles.push(RoleId(id)),
+                            Ok(id) => roles.push(RoleId::new(id)),
                             _ => eprintln!(
                                 "Meetup event {} specifies invalid role id {}",
                                 event.id,
@@ -125,12 +125,14 @@ impl EventCollector {
                             let role_text = role_id
                                 .to_role_cached(&discord_api.cache)
                                 .map(|role| format!("**{}**", role.name))
-                                .unwrap_or_else(|| format!("<@&{}>", role_id.0));
+                                .unwrap_or_else(|| role_id.mention().to_string());
                             // Let the user know about the new role
                             if let Ok(user) = discord_user_id.to_user(discord_api).await {
-                                user.direct_message(discord_api, |m| {
-                                    m.content(crate::strings::NEW_ROLE_ASSIGNED_DM(&role_text))
-                                })
+                                user.direct_message(
+                                    discord_api,
+                                    CreateMessage::new()
+                                        .content(crate::strings::NEW_ROLE_ASSIGNED_DM(&role_text)),
+                                )
                                 .await
                                 .ok();
                             }

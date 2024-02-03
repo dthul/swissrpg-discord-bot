@@ -1,4 +1,5 @@
 use command_macro::command;
+use serenity::builder::CreateMessage;
 
 #[command]
 #[regex(r"schedule\s*session")]
@@ -34,12 +35,13 @@ fn schedule_session<'a>(
     context
         .msg
         .author
-        .direct_message(&context.ctx, |message_builder| {
-            message_builder.content(format!(
+        .direct_message(
+            &context.ctx,
+            CreateMessage::new().content(format!(
                 "Use the following link to schedule your next session:\n{}",
                 link
-            ))
-        })
+            )),
+        )
         .await
         .ok();
     context.msg.react(&context.ctx, '\u{2705}').await.ok();

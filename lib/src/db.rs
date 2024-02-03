@@ -177,7 +177,7 @@ impl From<EventQueryHelper> for Event {
             description: row.description,
             time: row.start_time,
             is_online: row.is_online,
-            discord_category: row.discord_category_id.map(|id| ChannelId(id as u64)),
+            discord_category: row.discord_category_id.map(|id| ChannelId::new(id as u64)),
             meetup_event: meetup_event,
         }
     }
@@ -188,7 +188,7 @@ impl From<MemberQueryHelper> for Member {
         Member {
             id: MemberId(row.id),
             meetup_id: row.meetup_id.map(|id| id as u64),
-            discord_id: row.discord_id.map(|id| UserId(id as u64)),
+            discord_id: row.discord_id.map(|id| UserId::new(id as u64)),
             discord_nick: row.discord_nick,
         }
     }
@@ -304,7 +304,7 @@ pub async fn get_or_create_member_for_discord_id(
 ) -> Result<MemberId, crate::meetup::Error> {
     let member_id = sqlx::query!(
         r#"SELECT id FROM "member" WHERE discord_id = $1"#,
-        discord_id.0 as i64
+        discord_id.get() as i64
     )
     .map(|row| MemberId(row.id))
     .fetch_optional(&mut **tx)
@@ -315,7 +315,7 @@ pub async fn get_or_create_member_for_discord_id(
         // Create a new member entry for this (so far unknown) Meetup user
         let member_id = sqlx::query!(
             r#"INSERT INTO "member" (discord_id) VALUES ($1) RETURNING id"#,
-            discord_id.0 as i64
+            discord_id.get() as i64
         )
         .map(|row| MemberId(row.id))
         .fetch_one(&mut **tx)
@@ -414,7 +414,7 @@ pub async fn meetup_ids_to_members(
             (row.query_meetup_id as u64, Some(MemberWithMeetup {
                 id: MemberId(id),
                 meetup_id: row.query_meetup_id as u64,
-                discord_id: row.discord_id.map(|id| UserId(id as u64)),
+                discord_id: row.discord_id.map(|id| UserId::new(id as u64)),
                 discord_nick: row.discord_nick,
             }))
         } else {
@@ -435,7 +435,7 @@ pub async fn discord_ids_to_members(
 ) -> Result<Vec<(UserId, Option<MemberWithDiscord>)>, crate::meetup::Error> {
     let discord_user_ids: Vec<i64> = discord_user_ids
         .into_iter()
-        .map(|&id| id.0 as i64)
+        .map(|&id| id.get() as i64)
         .collect();
     let members = sqlx::query!(
         r#"SELECT query_discord_id AS "query_discord_id!", "member".id as "id?", "member".meetup_id, "member".discord_nick
@@ -445,14 +445,14 @@ pub async fn discord_ids_to_members(
     )
     .map(|row| {
         if let Some(id) = row.id {
-            (UserId(row.query_discord_id as u64), Some(MemberWithDiscord {
+            (UserId::new(row.query_discord_id as u64), Some(MemberWithDiscord {
                 id: MemberId(id),
                 meetup_id: row.meetup_id.map(|id| id as u64),
-                discord_id: UserId(row.query_discord_id as u64),
+                discord_id: UserId::new(row.query_discord_id as u64),
                 discord_nick: row.discord_nick,
             }))
         } else {
-            (UserId(row.query_discord_id as u64), None)
+            (UserId::new(row.query_discord_id as u64), None)
         }
     })
     .fetch_all(db_connection)

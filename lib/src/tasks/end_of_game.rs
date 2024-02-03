@@ -1,9 +1,12 @@
 use crate::{db, discord::sync::ChannelType, strings};
 use chrono::{NaiveTime, TimeZone};
-use serenity::model::{
-    channel::GuildChannel,
-    guild::Role,
-    id::{ChannelId, RoleId, UserId},
+use serenity::{
+    builder::CreateMessage,
+    model::{
+        channel::GuildChannel,
+        guild::Role,
+        id::{ChannelId, RoleId, UserId},
+    },
 };
 use simple_error::SimpleError;
 use std::collections::HashMap;
@@ -74,7 +77,7 @@ pub async fn end_of_game_task(
         FROM event_series_text_channel
         WHERE deleted IS NULL"#
     )
-    .map(|row| ChannelId(row.discord_text_channel_id as u64))
+    .map(|row| ChannelId::new(row.discord_text_channel_id as u64))
     .fetch_all(db_connection)
     .await?;
     for channel in discord_channels {
@@ -115,7 +118,7 @@ pub async fn end_of_game_task(
         FROM event_series_voice_channel
         WHERE deleted IS NULL AND deletion_time IS NOT NULL"#
     )
-    .map(|row| ChannelId(row.discord_voice_channel_id as u64))
+    .map(|row| ChannelId::new(row.discord_voice_channel_id as u64))
     .fetch_all(db_connection)
     .await?;
     for channel in discord_voice_channels {
@@ -141,7 +144,7 @@ pub async fn end_of_game_task(
             FROM event_series_role
             WHERE deleted IS NULL AND deletion_time IS NOT NULL"#
     )
-    .map(|row| RoleId(row.discord_role_id as u64))
+    .map(|row| RoleId::new(row.discord_role_id as u64))
     .fetch_all(db_connection)
     .await?;
     for role in discord_roles {
@@ -158,7 +161,7 @@ pub async fn end_of_game_task(
             FROM event_series_host_role
             WHERE deleted IS NULL AND deletion_time IS NOT NULL"#
     )
-    .map(|row| RoleId(row.discord_role_id as u64))
+    .map(|row| RoleId::new(row.discord_role_id as u64))
     .fetch_all(db_connection)
     .await?;
     for role in discord_host_roles {
@@ -182,10 +185,14 @@ async fn update_series_channel_expiration(
     db_connection: &sqlx::PgPool,
 ) -> Result<(), crate::meetup::Error> {
     let res = sqlx::query!(r#"SELECT discord_text_channel_id, discord_voice_channel_id, discord_role_id, discord_host_role_id FROM event_series WHERE id = $1"#, series_id.0).fetch_one(db_connection).await?;
-    let discord_text_channel_id = res.discord_text_channel_id.map(|id| ChannelId(id as u64));
-    let discord_voice_channel_id = res.discord_voice_channel_id.map(|id| ChannelId(id as u64));
-    let discord_role_id = res.discord_role_id.map(|id| RoleId(id as u64));
-    let discord_host_role_id = res.discord_host_role_id.map(|id| RoleId(id as u64));
+    let discord_text_channel_id = res
+        .discord_text_channel_id
+        .map(|id| ChannelId::new(id as u64));
+    let discord_voice_channel_id = res
+        .discord_voice_channel_id
+        .map(|id| ChannelId::new(id as u64));
+    let discord_role_id = res.discord_role_id.map(|id| RoleId::new(id as u64));
+    let discord_host_role_id = res.discord_host_role_id.map(|id| RoleId::new(id as u64));
     let discord_text_channel_id = if let Some(id) = discord_text_channel_id {
         id
     } else {
@@ -200,7 +207,7 @@ async fn update_series_channel_expiration(
     // Query the channel's current expiration time
     let current_expiration_time = sqlx::query_scalar!(
         r#"SELECT expiration_time FROM event_series_text_channel WHERE discord_id = $1"#,
-        discord_text_channel_id.0 as i64
+        discord_text_channel_id.get() as i64
     )
     .fetch_one(db_connection)
     .await?;
@@ -226,7 +233,7 @@ async fn update_series_channel_expiration(
         let mut tx = db_connection.begin().await?;
         sqlx::query!(
             r#"UPDATE event_series_text_channel SET expiration_time = $2, deletion_time = NULL WHERE discord_id = $1"#,
-            discord_text_channel_id.0 as i64,
+            discord_text_channel_id.get() as i64,
             new_expiration_time
         )
         .execute(&mut *tx)
@@ -234,7 +241,7 @@ async fn update_series_channel_expiration(
         if let Some(discord_voice_channel_id) = discord_voice_channel_id {
             sqlx::query!(
                 r#"UPDATE event_series_voice_channel SET deletion_time = NULL WHERE discord_id = $1"#,
-                discord_voice_channel_id.0 as i64
+                discord_voice_channel_id.get() as i64
             )
             .execute(&mut *tx)
             .await?;
@@ -242,7 +249,7 @@ async fn update_series_channel_expiration(
         if let Some(discord_role_id) = discord_role_id {
             sqlx::query!(
                 r#"UPDATE event_series_role SET deletion_time = NULL WHERE discord_id = $1"#,
-                discord_role_id.0 as i64
+                discord_role_id.get() as i64
             )
             .execute(&mut *tx)
             .await?;
@@ -250,7 +257,7 @@ async fn update_series_channel_expiration(
         if let Some(discord_host_role_id) = discord_host_role_id {
             sqlx::query!(
                 r#"UPDATE event_series_host_role SET deletion_time = NULL WHERE discord_id = $1"#,
-                discord_host_role_id.0 as i64
+                discord_host_role_id.get() as i64
             )
             .execute(&mut *tx)
             .await?;
@@ -258,7 +265,7 @@ async fn update_series_channel_expiration(
         tx.commit().await?;
         println!(
             "Set expiration time of channel {} to {}",
-            discord_text_channel_id.0, new_expiration_time
+            discord_text_channel_id, new_expiration_time
         );
     }
     Ok(())
@@ -274,7 +281,7 @@ async fn send_channel_expiration_reminder(
         r#"SELECT expiration_time, last_expiration_reminder_time, snooze_until, deletion_time
         FROM event_series_text_channel
         WHERE discord_id = $1"#,
-        channel_id.0 as i64
+        channel_id.get() as i64
     )
     .map(|row| {
         (
@@ -294,7 +301,7 @@ async fn send_channel_expiration_reminder(
         // Check if this is a one-shot or a campaign series
         let is_campaign = sqlx::query_scalar!(
             r#"SELECT "type" = 'campaign' as "is_campaign!" FROM event_series WHERE discord_text_channel_id = $1"#,
-            channel_id.0 as i64
+            channel_id.get() as i64
         )
         .fetch_one(db_connection)
         .await?;
@@ -333,16 +340,15 @@ async fn send_channel_expiration_reminder(
         let channel_roles =
             crate::get_channel_roles(channel_id, &mut db_connection.begin().await?).await?;
         let user_role = channel_roles.map(|roles| roles.user);
+        let message_builder = CreateMessage::new().content(if is_campaign {
+            strings::END_OF_CAMPAIGN_MESSAGE(bot_id, user_role)
+        } else {
+            strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role)
+        });
         channel_id
-            .send_message(&discord_api.http, |message_builder| {
-                if is_campaign {
-                    message_builder.content(strings::END_OF_CAMPAIGN_MESSAGE(bot_id, user_role))
-                } else {
-                    message_builder.content(strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role))
-                }
-            })
+            .send_message(&discord_api.http, message_builder)
             .await?;
-        sqlx::query!("UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1", channel_id.0 as i64).execute(db_connection).await?;
+        sqlx::query!("UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1", channel_id.get() as i64).execute(db_connection).await?;
         println!(
             "Updated channel's {} latest expiration reminder time",
             channel_id
@@ -368,10 +374,10 @@ async fn delete_marked_channel(
     let mark_channel_as_deleted = || async {
         match channel_type {
             ChannelType::Text => {
-                sqlx::query!("UPDATE event_series_text_channel SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())", channel_id.0 as i64).execute(db_connection).await
+                sqlx::query!("UPDATE event_series_text_channel SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())", channel_id.get() as i64).execute(db_connection).await
             },
             ChannelType::Voice => {
-                sqlx::query!("UPDATE event_series_voice_channel SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())", channel_id.0 as i64).execute(db_connection).await
+                sqlx::query!("UPDATE event_series_voice_channel SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())", channel_id.get() as i64).execute(db_connection).await
             }
         }
     };
@@ -387,7 +393,7 @@ async fn delete_marked_channel(
         ChannelType::Text => {
             sqlx::query_scalar!(
                 "SELECT deletion_time FROM event_series_text_channel WHERE discord_id = $1",
-                channel_id.0 as i64
+                channel_id.get() as i64
             )
             .fetch_one(db_connection)
             .await?
@@ -395,7 +401,7 @@ async fn delete_marked_channel(
         ChannelType::Voice => {
             sqlx::query_scalar!(
                 "SELECT deletion_time FROM event_series_voice_channel WHERE discord_id = $1",
-                channel_id.0 as i64
+                channel_id.get() as i64
             )
             .fetch_one(db_connection)
             .await?
@@ -424,9 +430,9 @@ async fn delete_marked_role(
 ) -> Result<DeletionStatus, crate::meetup::Error> {
     let mark_role_as_deleted = || async {
         if is_host_role {
-            sqlx::query!("UPDATE event_series_host_role SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())", role_id.0 as i64).execute(db_connection).await
+            sqlx::query!("UPDATE event_series_host_role SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())", role_id.get() as i64).execute(db_connection).await
         } else {
-            sqlx::query!("UPDATE event_series_role SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())", role_id.0 as i64).execute(db_connection).await
+            sqlx::query!("UPDATE event_series_role SET deleted = NOW() WHERE discord_id = $1 AND (deleted IS NULL OR deleted > NOW())", role_id.get() as i64).execute(db_connection).await
         }
     };
     // Check whether the role still exists on Discord
@@ -440,14 +446,14 @@ async fn delete_marked_role(
     let deletion_time = if is_host_role {
         sqlx::query_scalar!(
             "SELECT deletion_time FROM event_series_host_role WHERE discord_id = $1",
-            role_id.0 as i64
+            role_id.get() as i64
         )
         .fetch_one(db_connection)
         .await?
     } else {
         sqlx::query_scalar!(
             "SELECT deletion_time FROM event_series_role WHERE discord_id = $1",
-            role_id.0 as i64
+            role_id.get() as i64
         )
         .fetch_one(db_connection)
         .await?

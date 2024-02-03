@@ -4,7 +4,12 @@
 use crate::{meetup::newapi::UpcomingEventDetails, DefaultStr};
 use geo::{euclidean_distance::EuclideanDistance, Point};
 use lazy_static::lazy_static;
-use serenity::model::id::ChannelId;
+use serenity::{
+    builder::{
+        CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, EditMessage, GetMessages,
+    },
+    model::id::ChannelId,
+};
 use std::{collections::HashMap, fmt::Write};
 
 pub const CLOSED_PATTERN: &'static str = r"(?i)\\?\[\s*closed\s*\\?\]";
@@ -188,9 +193,7 @@ impl EventCollector {
         static_file_prefix: &str,
     ) -> Result<(), crate::meetup::Error> {
         let mut latest_messages = channel_id
-            .messages(&discord_api.http, |query| {
-                query.limit(2 * ALL_LOCATIONS.len() as u64)
-            })
+            .messages(&discord_api.http, GetMessages::new().limit(20))
             .await?;
         let relevant_events: Vec<&UpcomingEventDetails> = self
             .events
@@ -229,21 +232,21 @@ impl EventCollector {
             });
             if let Some(message) = location_message {
                 // Edit the existing message
-                message
-                    .edit(discord_api, |message| {
-                        message.embed(|embed| {
-                            Self::build_embed(static_file_prefix, *location, location_events, embed)
-                        })
-                    })
-                    .await?;
+                let message_builder = EditMessage::new().embed(Self::build_embed(
+                    static_file_prefix,
+                    *location,
+                    location_events,
+                ));
+                message.edit(discord_api, message_builder).await?;
             } else {
                 // Post a new message
+                let message_builder = CreateMessage::new().embed(Self::build_embed(
+                    static_file_prefix,
+                    *location,
+                    location_events,
+                ));
                 channel_id
-                    .send_message(&discord_api.http, |message| {
-                        message.embed(|embed| {
-                            Self::build_embed(static_file_prefix, *location, location_events, embed)
-                        })
-                    })
+                    .send_message(&discord_api.http, message_builder)
                     .await?;
             }
         }
@@ -254,8 +257,7 @@ impl EventCollector {
         static_file_prefix: &'_ str,
         location: Location,
         events: &'_ [&'_ UpcomingEventDetails],
-        embed_builder: &'a mut serenity::builder::CreateEmbed,
-    ) -> &'a mut serenity::builder::CreateEmbed {
+    ) -> serenity::builder::CreateEmbed {
         let footer_text = chrono::Utc::now()
             .with_timezone(&chrono_tz::Europe::Zurich)
             .format("Last update at %H:%M")
@@ -284,13 +286,12 @@ impl EventCollector {
             )
             .ok();
         }
-        embed_builder
-            .author(|author| {
-                author
-                    .name(location.name())
+        CreateEmbed::new()
+            .author(
+                CreateEmbedAuthor::new(location.name())
                     .icon_url(format!("{}SwissRPG-logo-128.png", static_file_prefix))
-                    .url(location.meetup_group_link())
-            })
+                    .url(location.meetup_group_link()),
+            )
             .thumbnail(format!(
                 "{}thumbnail_{}.png",
                 static_file_prefix,
@@ -303,7 +304,7 @@ impl EventCollector {
             })
             .description(description)
             .colour(location.color())
-            .footer(|footer| footer.text(&footer_text))
+            .footer(CreateEmbedFooter::new(footer_text))
     }
 
     // Returns all events for which a location can be determined, grouped by

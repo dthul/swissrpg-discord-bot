@@ -1,6 +1,6 @@
 use command_macro::command;
 use redis::{AsyncCommands, RedisResult};
-use serenity::model::channel::Channel;
+use serenity::{builder::EditChannel, model::channel::Channel};
 use std::time::Duration;
 
 #[command]
@@ -14,7 +14,7 @@ fn set_voice_topic<'a>(
     captures: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     // Indicate that something is happening
-    let _typing_indicator = context.msg.channel_id.start_typing(&context.ctx.http).ok();
+    let _typing_indicator = context.msg.channel_id.start_typing(&context.ctx.http);
     // Check if there is a user topic voice channel
     let voice_channel_id = if let Some(id) = lib::discord::sync::ids::USER_TOPIC_VOICE_CHANNEL_ID {
         id
@@ -78,7 +78,7 @@ fn set_voice_topic<'a>(
         };
     let has_default_name = voice_channel.name()
         == lib::tasks::user_topic_voice_channel::DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME;
-    let is_empty = voice_channel.members(&context.ctx).await?.is_empty();
+    let is_empty = voice_channel.members(&context.ctx)?.is_empty();
     if !has_default_name && !is_empty {
         // Someone is already using the voice channel
         context
@@ -96,7 +96,7 @@ fn set_voice_topic<'a>(
     // We wrap this request in a timeout to not block on the rate limit.
     match tokio::time::timeout(
         Duration::from_secs(5),
-        voice_channel.edit(&context.ctx, |c| c.name(topic)),
+        voice_channel.edit(&context.ctx, EditChannel::new().name(topic)),
     )
     .await
     {

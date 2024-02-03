@@ -19,7 +19,7 @@ futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"
 redis = { version = "0.24", default-features = false, features = ["tokio-comp"] }
-serenity = { version = "0.11", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
+serenity = { version = "0.12", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "unstable_discord_api"] }
 signal-hook = "0.3"
 sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }

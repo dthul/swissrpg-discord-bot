@@ -15,7 +15,7 @@ pub async fn say_in_event_series_channel(
         r#"SELECT discord_text_channel_id as "discord_text_channel_id!" FROM event_series WHERE id = $1"#,
         series_id.0
     )
-    .map(|row| ChannelId(row.discord_text_channel_id as u64))
+    .map(|row| ChannelId::new(row.discord_text_channel_id as u64))
     .fetch_one(db_connection)
     .await?;
     channel_id.say(&discord_cache_http.http, message).await?;
@@ -37,7 +37,7 @@ pub async fn say_in_event_channel(
         WHERE event.id = $1"#,
         event_id.0
     )
-    .map(|row| ChannelId(row.discord_text_channel_id as u64))
+    .map(|row| ChannelId::new(row.discord_text_channel_id as u64))
     .fetch_one(db_connection)
     .await?;
     channel_id.say(&discord_cache_http.http, message).await?;

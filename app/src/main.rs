@@ -3,6 +3,7 @@
 
 use std::{
     env,
+    num::NonZeroU64,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -10,6 +11,7 @@ use std::{
 };
 
 use futures::future;
+use serenity::all::ApplicationId;
 use sqlx::{postgres::PgPoolOptions, Executor};
 use tracing::{self, info, warn};
 
@@ -37,10 +39,12 @@ fn main() {
     let meetup_client_secret =
         env::var("MEETUP_CLIENT_SECRET").expect("Found no MEETUP_CLIENT_SECRET in environment");
     let discord_token = env::var("DISCORD_TOKEN").expect("Found no DISCORD_TOKEN in environment");
-    let discord_application_id: u64 = env::var("DISCORD_APPLICATION_ID")
-        .expect("Found no DISCORD_APPLICATION_ID in environment")
-        .parse()
-        .expect("Could not parse the DISCORD_APPLICATION_ID as a u64");
+    let discord_application_id = ApplicationId::from(
+        env::var("DISCORD_APPLICATION_ID")
+            .expect("Found no DISCORD_APPLICATION_ID in environment")
+            .parse::<NonZeroU64>()
+            .expect("Could not parse the DISCORD_APPLICATION_ID as a NonZeroU64"),
+    );
     let stripe_client_secret =
         env::var("STRIPE_CLIENT_SECRET").expect("Found no STRIPE_CLIENT_SECRET in environment");
     let stripe_webhook_signing_secret = env::var("STRIPE_WEBHOOK_SIGNING_SECRET").ok();
@@ -133,8 +137,8 @@ fn main() {
         ))
         .expect("Could not create the Discord bot");
     let discord_api = lib::discord::CacheAndHttp {
-        cache: bot.cache_and_http.cache.clone().into(),
-        http: bot.cache_and_http.http.clone(),
+        cache: bot.cache.clone().into(),
+        http: bot.http.clone(),
     };
     let bot_id = futures::executor::block_on(async {
         bot.data

@@ -1,4 +1,5 @@
 use command_macro::command;
+use serenity::builder::CreateMessage;
 
 #[command]
 #[regex(r"login")]
@@ -15,9 +16,10 @@ fn login<'a>(
     let dm = context
         .msg
         .author
-        .direct_message(&context.ctx, |message| {
-            message.content(lib::strings::LOGIN_LINK_MESSAGE(&url))
-        })
+        .direct_message(
+            &context.ctx,
+            CreateMessage::new().content(lib::strings::LOGIN_LINK_MESSAGE(&url)),
+        )
         .await;
     match dm {
         Ok(_) => {
