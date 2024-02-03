@@ -50,11 +50,11 @@ pub async fn message_hook(
         msg.push_line_safe(&cmdctx.msg.content);
         msg.push(format!(
             "https://discordapp.com/channels/{guild_id}/{channel_id}/{message_id}",
-            guild_id = lib::discord::sync::ids::GUILD_ID.0,
-            channel_id = cmdctx.msg.channel_id,
-            message_id = cmdctx.msg.id.0
+            guild_id = lib::discord::sync::ids::GUILD_ID.get(),
+            channel_id = cmdctx.msg.channel_id.get(),
+            message_id = cmdctx.msg.id.get()
         ));
-        alert_channel_id.say(&cmdctx.ctx, &msg).await?;
+        alert_channel_id.say(&cmdctx.ctx, msg.build()).await?;
     }
     Ok(())
 }
@@ -99,7 +99,7 @@ async fn get_game_channels_list(
     // Query the channel list from the database
     let pool = cmdctx.pool().await?;
     let channel_ids = sqlx::query!(r#"SELECT discord_id FROM event_series_text_channel"#)
-        .map(|row| ChannelId(row.discord_id as u64))
+        .map(|row| ChannelId::new(row.discord_id as u64))
         .fetch_all(&pool)
         .await?;
     let channels_list = Arc::new(GameChannelsList {

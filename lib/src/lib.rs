@@ -2,6 +2,7 @@
 #![warn(rust_2018_idioms)]
 pub mod db;
 pub mod discord;
+pub mod end_adventure;
 pub mod error;
 pub mod flow;
 mod free_spots;
@@ -49,8 +50,8 @@ pub async fn get_event_series_roles(
     .await?;
     match (row.discord_role_id, row.discord_host_role_id) {
         (Some(role), host_role) => Ok(Some(ChannelRoles {
-            user: RoleId(role as u64),
-            host: host_role.map(|role| RoleId(role as u64)),
+            user: RoleId::new(role as u64),
+            host: host_role.map(|role| RoleId::new(role as u64)),
         })),
         (None, None) => Ok(None),
         _ => {
@@ -66,7 +67,7 @@ pub async fn get_channel_roles(
     // Figure out whether this is a game channel
     let event_series_id = sqlx::query_scalar!(
         "SELECT id FROM event_series WHERE discord_text_channel_id = $1",
-        channel_id.0 as i64
+        channel_id.get() as i64
     )
     .fetch_optional(&mut **db_connection)
     .await?
@@ -89,7 +90,7 @@ pub async fn get_series_text_channel(
     .await?;
     Ok(discord_text_channel_id
         .flatten()
-        .map(|id| ChannelId(id as u64)))
+        .map(|id| ChannelId::new(id as u64)))
 }
 
 pub async fn get_series_voice_channel(
@@ -104,7 +105,7 @@ pub async fn get_series_voice_channel(
     .await?;
     Ok(discord_voice_channel_id
         .flatten()
-        .map(|id| ChannelId(id as u64)))
+        .map(|id| ChannelId::new(id as u64)))
 }
 
 pub async fn get_channel_voice_channel(
@@ -113,13 +114,13 @@ pub async fn get_channel_voice_channel(
 ) -> Result<Option<ChannelId>, crate::meetup::Error> {
     let discord_voice_channel_id = sqlx::query_scalar!(
         "SELECT discord_voice_channel_id FROM event_series WHERE discord_text_channel_id = $1",
-        channel_id.0 as i64
+        channel_id.get() as i64
     )
     .fetch_optional(&mut **db_connection)
     .await?;
     Ok(discord_voice_channel_id
         .flatten()
-        .map(|id| ChannelId(id as u64)))
+        .map(|id| ChannelId::new(id as u64)))
 }
 
 pub async fn get_channel_series(
@@ -128,11 +129,22 @@ pub async fn get_channel_series(
 ) -> Result<Option<EventSeriesId>, crate::meetup::Error> {
     let series_id = sqlx::query_scalar!(
         r#"SELECT id FROM event_series WHERE discord_text_channel_id = $1"#,
-        channel_id.0 as i64
+        channel_id.get() as i64
     )
     .fetch_optional(&mut **db_connection)
     .await?;
     Ok(series_id.map(|id| EventSeriesId(id)))
+}
+
+pub async fn is_game_channel(
+    channel_id: ChannelId,
+    db_connection: &mut sqlx::PgConnection,
+) -> Result<bool, meetup::Error> {
+    let is_game_channel = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) > 0 AS "is_game_channel!" FROM event_series_text_channel WHERE discord_id = $1"#,
+        channel_id.get() as i64
+    ).fetch_one(db_connection).await?;
+    Ok(is_game_channel)
 }
 
 pub struct LinkingMemberMeetup {
@@ -183,18 +195,18 @@ pub async fn link_discord_meetup(
     .map(|row| LinkingMemberMeetup {
         id: db::MemberId(row.id),
         meetup_id: row.meetup_id as u64,
-        discord_id: row.discord_id.map(|id| UserId(id as u64)),
+        discord_id: row.discord_id.map(|id| UserId::new(id as u64)),
     })
     .fetch_optional(&mut **db_connection)
     .await?;
     let member_discord = sqlx::query!(
         r#"SELECT id, meetup_id, discord_id as "discord_id!" FROM "member" WHERE discord_id = $1"#,
-        discord_id.0 as i64
+        discord_id.get() as i64
     )
     .map(|row| LinkingMemberDiscord {
         id: db::MemberId(row.id),
         meetup_id: row.meetup_id.map(|id| id as u64),
-        discord_id: UserId(row.discord_id as u64),
+        discord_id: UserId::new(row.discord_id as u64),
     })
     .fetch_optional(&mut **db_connection)
     .await?;
@@ -224,7 +236,7 @@ pub async fn link_discord_meetup(
             let new_member_id = sqlx::query_scalar!(
                 r#"INSERT INTO "member" (meetup_id, discord_id) VALUES ($1, $2) RETURNING id"#,
                 meetup_id as i64,
-                discord_id.0 as i64
+                discord_id.get() as i64
             )
             .fetch_one(&mut **db_connection)
             .await?;
@@ -240,7 +252,7 @@ pub async fn link_discord_meetup(
                 r#"UPDATE "member" SET meetup_id = $2, discord_id = $3 WHERE id = $1 RETURNING id"#,
                 id.0,
                 meetup_id as i64,
-                discord_id.0 as i64
+                discord_id.get() as i64
             )
             .fetch_one(&mut **db_connection)
             .await?;
@@ -331,7 +343,7 @@ pub async fn link_discord_meetup(
                 r#"UPDATE "member" SET meetup_id = $2 WHERE id = $1 AND meetup_id IS NULL AND discord_id = $3 RETURNING id"#,
                 member_id_with_discord.0,
                 meetup_id as i64,
-                discord_id.0 as i64
+                discord_id.get() as i64
             )
             .fetch_one(&mut **db_connection)
             .await?;
@@ -358,7 +370,7 @@ pub async fn unlink_meetup(
 ) -> Result<UnlinkingResult, crate::meetup::Error> {
     let meetup_id = sqlx::query!(
         r#"SELECT meetup_id FROM "member" WHERE discord_id = $1"#,
-        discord_id.0 as i64
+        discord_id.get() as i64
     )
     .map(|row| row.meetup_id.map(|id| id as u64))
     .fetch_one(&mut **db_connection)
@@ -368,7 +380,7 @@ pub async fn unlink_meetup(
     } else {
         sqlx::query!(
             r#"UPDATE "member" SET meetup_id = NULL WHERE discord_id = $1"#,
-            discord_id.0 as i64
+            discord_id.get() as i64
         )
         .execute(&mut **db_connection)
         .await?;

@@ -1,4 +1,7 @@
-use serenity::model::id::{ChannelId, RoleId, UserId};
+use serenity::{
+    all::Mentionable,
+    model::id::{ChannelId, RoleId, UserId},
+};
 
 // ***********************
 // *** Discord replies ***
@@ -12,24 +15,24 @@ pub const UNSPECIFIED_ERROR: &'static str =
     "Oops, something went wrong :dizzy_face: Please try again.";
 
 #[allow(non_snake_case)]
-pub fn INVALID_COMMAND(bot_id: u64) -> String {
+pub fn INVALID_COMMAND(bot_id: UserId) -> String {
     format!(
         "Sorry, but I did not get that. I only speak Halfling, Draconic, Abyssal, and Command \
-         (not Common).\nIf you also want to learn Command, type _<@{bot_id}> help_.",
-        bot_id = bot_id
+         (not Common).\nIf you also want to learn Command, type _{bot_mention} help_.",
+        bot_mention = bot_id.mention()
     )
 }
 
 #[allow(non_snake_case)]
-pub fn HELP_MESSAGE_INTRO(bot_id: u64) -> String {
+pub fn HELP_MESSAGE_INTRO(bot_id: UserId) -> String {
     format!(
         "Of course, I'm happy to serve (because I've been programmed to). Here are the commands I \
          understand.
          
 ***Note:*** *Unless specified, you can type all these commands in this private chat. Any commands \
-         you type in a channel should start with the mention of my name <@{bot_id}>, but be \
+         you type in a channel should start with the mention of my name {bot_mention}, but be \
          mindful not to spam the public channels please.*",
-        bot_id = bot_id
+        bot_mention = bot_id.mention()
     )
 }
 
@@ -57,28 +60,28 @@ Let's get you started. Just type **link meetup** below and we'll take it from th
 pub fn END_OF_ADVENTURE_MESSAGE(bot_id: UserId, channel_role_id: Option<RoleId>) -> String {
     if let Some(channel_role_id) = channel_role_id {
         format!(
-            "I hope everyone had fun on this adventure of <@&{channel_role_id}>.
+            "I hope everyone had fun on this adventure of {channel_role_mention}.
 Now that your adventure is over, it's time to close this channel.
 Can the GM please confirm this by typing here:
-***<@{bot_id}> end adventure***
+***{bot_mention} end adventure***
 This will set the channel for closure in the next 24 hours, which should be just enough time to \
              say thanks and goodbye.
 If the adventure is not done, you can schedule a new session by typing here:
-***<@{bot_id}> schedule session***",
-            bot_id = bot_id.0,
-            channel_role_id = channel_role_id.0
+***{bot_mention} schedule session***",
+            bot_mention = bot_id.mention(),
+            channel_role_mention = channel_role_id.mention()
         )
     } else {
         format!(
             "I hope everyone @here had fun on this adventure.
 Now that your adventure is over, it's time to close this channel.
 Can the GM please confirm this by typing here:
-***<@{bot_id}> end adventure***
+***{bot_mention} end adventure***
 This will set the channel for closure in the next 24 hours, which should be just enough time to \
              say thanks and goodbye.
 If the adventure is not done, you can schedule a new session by typing here:
-***<@{bot_id}> schedule session***",
-            bot_id = bot_id.0
+***{bot_mention} schedule session***",
+            bot_mention = bot_id.mention()
         )
     }
 }
@@ -89,26 +92,26 @@ If the adventure is not done, you can schedule a new session by typing here:
 pub fn END_OF_CAMPAIGN_MESSAGE(bot_id: UserId, channel_role_id: Option<RoleId>) -> String {
     if let Some(channel_role_id) = channel_role_id {
         format!(
-            "I hope everyone had fun at the last session of <@&{channel_role_id}>!
+            "I hope everyone had fun at the last session of {channel_role_mention}!
 Whenever you are ready, schedule your next session by typing:
-***<@{bot_id}> schedule session***
+***{bot_mention} schedule session***
 
 If your adventure is over, the Game Master can inform me of this by typing here:
-***<@{bot_id}> end adventure***
+***{bot_mention} end adventure***
 This will set the channel for closure in the next 24 hours, just enough to say thanks and goodbye.",
-            bot_id = bot_id.0,
-            channel_role_id = channel_role_id.0
+            bot_mention = bot_id.mention(),
+            channel_role_mention = channel_role_id.mention()
         )
     } else {
         format!(
             "I hope everyone @here had fun at the last session!
 Whenever you are ready, schedule your next session by typing:
-***<@{bot_id}> schedule session***
+***{bot_mention} schedule session***
 
 If your adventure is over, the Game Master can inform me of this by typing here:
-***<@{bot_id}> end adventure***
+***{bot_mention} end adventure***
 This will set the channel for closure in the next 24 hours, just enough to say thanks and goodbye.",
-            bot_id = bot_id.0
+            bot_mention = bot_id.mention(),
         )
     }
 }
@@ -128,20 +131,21 @@ pub fn MEETUP_LINKING_MESSAGE(linking_url: &str) -> String {
 }
 
 #[allow(non_snake_case)]
-pub fn DISCORD_ALREADY_LINKED_MESSAGE(meetup_profile_url: &str, bot_id: u64) -> String {
+pub fn DISCORD_ALREADY_LINKED_MESSAGE(meetup_profile_url: &str, bot_id: UserId) -> String {
     format!(
         "It seems you are already linked to the following Meetup profile: {}. If you would like \
-         to change this, please unlink your profile first by typing:\n<@{}> unlink meetup",
-        meetup_profile_url, bot_id
+         to change this, please unlink your profile first by typing:\n{} unlink meetup",
+        meetup_profile_url,
+        bot_id.mention()
     )
 }
 
 #[allow(non_snake_case)]
-pub fn MEETUP_UNLINK_SUCCESS(bot_id: u64) -> String {
+pub fn MEETUP_UNLINK_SUCCESS(bot_id: UserId) -> String {
     format!(
         "Your Meetup profile is now unlinked from your Discord profile. If you want to link it \
-         again, please type:\n<@{bot_id}> link meetup.",
-        bot_id = bot_id
+         again, please type:\n{bot_mention} link meetup.",
+        bot_mention = bot_id.mention()
     )
 }
 
@@ -177,8 +181,10 @@ pub fn CHANNEL_MARKED_FOR_CLOSING_ALERT(
     gm_id: UserId,
 ) -> String {
     format!(
-        "<@{}> just ended the adventure {} (<#{}>)!",
-        gm_id.0, channel_name, channel_id.0
+        "{} just ended the adventure {} ({})!",
+        gm_id.mention(),
+        channel_name,
+        channel_id.mention()
     )
 }
 
@@ -189,10 +195,7 @@ pub const CHANNEL_ROLE_REMOVE_ERROR: &'static str =
 
 #[allow(non_snake_case)]
 pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[UserId]) -> String {
-    let mentions = itertools::join(
-        discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
-        ", ",
-    );
+    let mentions = itertools::join(discord_user_ids.iter().map(|&id| id.mention()), ", ");
     format!(
         "Welcome {}! Please check this channel's pinned messages (if any) for basic information \
          about the adventure.",
@@ -202,10 +205,7 @@ pub fn CHANNEL_ADDED_PLAYERS(discord_user_ids: &[UserId]) -> String {
 
 #[allow(non_snake_case)]
 pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[UserId]) -> String {
-    let mentions = itertools::join(
-        discord_user_ids.iter().map(|&id| format!("<@{}>", id)),
-        ", ",
-    );
+    let mentions = itertools::join(discord_user_ids.iter().map(|&id| id.mention()), ", ");
     if discord_user_ids.len() > 1 {
         format!(
             "{} are the Game Masters of this channel! All hail to you!",
@@ -220,11 +220,11 @@ pub fn CHANNEL_ADDED_HOSTS(discord_user_ids: &[UserId]) -> String {
 }
 
 #[allow(non_snake_case)]
-pub fn CHANNEL_ADDED_NEW_HOST(discord_id: u64) -> String {
+pub fn CHANNEL_ADDED_NEW_HOST(discord_id: UserId) -> String {
     format!(
-        "<@{}> is now a Game Master for this channel. With great power comes great responsibility \
+        "{} is now a Game Master for this channel. With great power comes great responsibility \
          :spider:",
-        discord_id
+        discord_id.mention()
     )
 }
 

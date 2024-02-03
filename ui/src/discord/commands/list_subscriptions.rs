@@ -1,4 +1,5 @@
 use command_macro::command;
+use serenity::builder::CreateMessage;
 
 #[command]
 #[regex(r"list\s*subscriptions")]
@@ -11,9 +12,10 @@ fn list_subscriptions<'a>(
     context
         .msg
         .author
-        .direct_message(&context.ctx, |message_builder| {
-            message_builder.content("Sure! This might take a moment...")
-        })
+        .direct_message(
+            &context.ctx,
+            CreateMessage::new().content("Sure! This might take a moment..."),
+        )
         .await
         .ok();
     let stripe_client = context.stripe_client().await?;
@@ -41,9 +43,10 @@ fn list_subscriptions<'a>(
     context
         .msg
         .author
-        .direct_message(&context.ctx, |message_builder| {
-            message_builder.content(format!("Active subscriptions:\n{}", message))
-        })
+        .direct_message(
+            &context.ctx,
+            CreateMessage::new().content(format!("Active subscriptions:\n{}", message)),
+        )
         .await?;
     Ok(())
 }

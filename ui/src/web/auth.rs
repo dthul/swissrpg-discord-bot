@@ -15,7 +15,7 @@ use cookie::{Cookie, CookieJar, Key, SameSite};
 use lib::db::MemberId;
 use redis::AsyncCommands;
 use serde::Deserialize;
-use serenity::model::id::UserId;
+use serenity::{builder::CreateMessage, model::id::UserId};
 use simple_error::SimpleError;
 
 use super::{server::State, MessageTemplate, WebError};
@@ -42,7 +42,7 @@ pub async fn generate_login_link(
     let redis_key = format!("web_session_auth:{}:discord_user", auth_id);
     let mut pipe = redis::pipe();
     let _: () = pipe
-        .set(&redis_key, discord_id.0)
+        .set(&redis_key, discord_id.get())
         .ignore()
         .expire(&redis_key, 10 * 60)
         .query_async(redis_connection)
@@ -97,7 +97,7 @@ async fn auth_handler_post(
     pipe.get(&redis_key).del(&redis_key);
     let (discord_id, _): (Option<u64>, u32) = pipe.query_async(&mut redis_connection).await?;
     let discord_id = match discord_id {
-        Some(id) => UserId(id),
+        Some(id) => UserId::new(id),
         None => {
             let template: MessageTemplate = (
                 "This link seems to have expired",
@@ -142,9 +142,10 @@ async fn auth_handler_post(
     // Notify on Discord about new login
     // TODO: maybe only for admins
     if let Ok(user) = discord_id.to_user(&state.discord_cache_http).await {
-        user.direct_message(&state.discord_cache_http, |message| {
-            message.content("New web login registered")
-        })
+        user.direct_message(
+            &state.discord_cache_http,
+            CreateMessage::new().content("New web login registered"),
+        )
         .await
         .ok();
     }

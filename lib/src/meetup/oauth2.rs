@@ -16,7 +16,7 @@ pub async fn generate_meetup_linking_link(
     let linking_id = crate::new_random_id(16);
     // TODO: expire after a day or so? linking.rs adds a 10 min expiration after first opening
     let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);
-    if let Err::<(), _>(err) = redis_connection.set(&redis_key, discord_id.0).await {
+    if let Err::<(), _>(err) = redis_connection.set(&redis_key, discord_id.get()).await {
         return Err(SimpleError::new(format!(
             "Redis error when trying to generate Meetup linking link:\n{:#?}",
             err

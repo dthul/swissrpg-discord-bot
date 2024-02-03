@@ -275,7 +275,7 @@ async fn link_redirect_handler(
     pipe.get(&redis_key).del(&redis_key);
     let (discord_id, _): (Option<u64>, u32) = pipe.query_async(&mut redis_connection).await?;
     let discord_id = match discord_id {
-        Some(id) => UserId(id),
+        Some(id) => UserId::new(id),
         None => {
             return Ok((
                 lib::strings::OAUTH2_LINK_EXPIRED_TITLE,

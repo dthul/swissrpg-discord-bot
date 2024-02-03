@@ -1,6 +1,6 @@
 use command_macro::command;
 use lib::db;
-use serenity::futures::StreamExt;
+use serenity::{all::Mentionable, futures::StreamExt};
 use std::collections::HashMap;
 
 #[command]
@@ -146,7 +146,7 @@ fn list_players<'a>(
         reply += "Discord users signed up for an upcoming event:\n";
         for &(discord_id, meetup_id) in rsvpd_member_with_discord_id.values() {
             let is_in_channel = discord_player_ids.contains(&discord_id);
-            // If the user is in the channel try to not use the <@...> syntax
+            // If the user is in the channel try to not use a mention
             // in order not to unnecessarily ping them
             let user_mention = if is_in_channel {
                 match discord_id.to_user(&context.ctx).await {
@@ -157,10 +157,10 @@ fn list_players<'a>(
                         Some(nick) => nick,
                         None => user.name,
                     },
-                    Err(_) => format!("<@{discord_id}>", discord_id = discord_id.0),
+                    Err(_) => discord_id.mention().to_string(),
                 }
             } else {
-                format!("<@{discord_id}>", discord_id = discord_id.0)
+                discord_id.mention().to_string()
             };
             if let Some(meetup_id) = meetup_id {
                 reply +=
@@ -197,14 +197,14 @@ fn list_players<'a>(
                   upcoming event:\n";
         for &(discord_id, meetup_id) in channel_member_with_meetup_id.values() {
             reply += &format!(
-                "• <@{discord_id}> (<https://www.meetup.com/members/{meetup_id}/>)\n",
-                discord_id = discord_id.0,
+                "• {discord_mention} (<https://www.meetup.com/members/{meetup_id}/>)\n",
+                discord_mention = discord_id.mention(),
                 meetup_id = meetup_id
             );
         }
         if rsvpd_member_without_discord_id.is_empty() {
             for &discord_id in &channel_member_without_meetup_id {
-                reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
+                reply += &format!("• {}\n", discord_id.mention());
             }
         }
         reply += "\n\n";
@@ -215,7 +215,7 @@ fn list_players<'a>(
                   account. I cannot tell whether they signed up for an upcoming event \
                   or not:\n";
         for &discord_id in &channel_member_without_meetup_id {
-            reply += &format!("• <@{discord_id}>\n", discord_id = discord_id.0);
+            reply += &format!("• {}\n", discord_id.mention());
         }
     }
     const LIMIT: usize = serenity::constants::MESSAGE_CODE_LIMIT;

@@ -8,12 +8,16 @@ fn count_inactive<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&context.ctx) {
-        let num_inactive_users = &guild
-            .members
-            .iter()
-            .filter(|(_id, member)| member.roles.is_empty())
-            .count();
+    let num_inactive_users = lib::discord::sync::ids::GUILD_ID
+        .to_guild_cached(&context.ctx)
+        .map(|guild| {
+            guild
+                .members
+                .iter()
+                .filter(|(_id, member)| member.roles.is_empty())
+                .count()
+        });
+    if let Some(num_inactive_users) = num_inactive_users {
         context
             .msg
             .channel_id
@@ -30,7 +34,8 @@ fn count_inactive<'a>(
             .say(&context.ctx, "Could not find the guild")
             .await
             .ok();
-    }
+        return Ok(());
+    };
     Ok(())
 }
 
@@ -42,8 +47,10 @@ fn count_members<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    if let Some(guild) = lib::discord::sync::ids::GUILD_ID.to_guild_cached(&context.ctx) {
-        let num_members = &guild.members.len();
+    let num_members = lib::discord::sync::ids::GUILD_ID
+        .to_guild_cached(&context.ctx)
+        .map(|guild| guild.members.len());
+    if let Some(num_members) = num_members {
         context
             .msg
             .channel_id
