@@ -2814,6 +2814,7 @@ dependencies = [
  "swissrpg-lib",
  "tokio",
  "tower-http",
+ "tracing",
 ]
 
 [[package]]
