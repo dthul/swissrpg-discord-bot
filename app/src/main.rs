@@ -16,7 +16,7 @@ use sqlx::{postgres::PgPoolOptions, Executor};
 use tracing::{self, info, warn};
 
 fn main() {
-    let subscriber = tracing_subscriber::FmtSubscriber::new();
+    let subscriber = tracing_subscriber::fmt().compact().finish();
     // use that subscriber to process traces emitted after this point
     tracing::subscriber::set_global_default(subscriber)
         .expect("Could not initialise the tracing subscriber");
