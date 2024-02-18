@@ -21,7 +21,7 @@ pub struct AlphaNumericId(pub String);
 pub struct NumericId(pub u64);
 
 #[derive(Debug, Clone)]
-pub struct Duration(chrono::Duration);
+pub struct Duration(chrono::TimeDelta);
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -146,8 +146,8 @@ impl From<create_event_mutation::CreateEventMutationCreateEventErrors> for Paylo
     }
 }
 
-impl From<chrono::Duration> for Duration {
-    fn from(duration: chrono::Duration) -> Self {
+impl From<chrono::TimeDelta> for Duration {
+    fn from(duration: chrono::TimeDelta) -> Self {
         Duration(duration)
     }
 }

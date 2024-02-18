@@ -212,7 +212,7 @@ impl EventCollector {
                 !is_closed_event
             })
             // Discard events which are too far in the future
-            .filter(|event| event.date_time.0 < chrono::Utc::now() + chrono::Duration::days(30))
+            .filter(|event| event.date_time.0 < chrono::Utc::now() + chrono::TimeDelta::days(30))
             .collect();
         let mut localized_events = Self::localized_events(&relevant_events);
         for location in ALL_LOCATIONS {

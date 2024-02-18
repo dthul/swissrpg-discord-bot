@@ -30,7 +30,7 @@ pub async fn create_recurring_end_of_game_task(
         // Check if it is later than 6:30pm
         // In that case, run the task tomorrow
         if chrono::Utc::now() > task_time {
-            task_time = task_time + chrono::Duration::days(1);
+            task_time = task_time + chrono::TimeDelta::days(1);
         }
         task_time
     };
@@ -38,7 +38,7 @@ pub async fn create_recurring_end_of_game_task(
     // Do this once a day, starting from the specified time
     let mut interval_timer = tokio::time::interval_at(
         tokio::time::Instant::now() + wait_duration.to_std().unwrap_or_default(),
-        chrono::Duration::days(1).to_std().unwrap(),
+        chrono::TimeDelta::days(1).to_std().unwrap(),
     );
     // Run forever
     loop {
@@ -314,9 +314,9 @@ async fn send_channel_expiration_reminder(
         .await?;
         // We only remind a certain time after expiration
         let reminder_time = if is_campaign {
-            expiration_time + chrono::Duration::days(3)
+            expiration_time + chrono::TimeDelta::days(3)
         } else {
-            expiration_time + chrono::Duration::days(1)
+            expiration_time + chrono::TimeDelta::days(1)
         };
         let now = chrono::Utc::now();
         if reminder_time > now {
@@ -333,9 +333,9 @@ async fn send_channel_expiration_reminder(
             // Reminders will be sent with an interval of two days for
             // one-shots and four days for campaign channels
             let reminder_interval = if is_campaign {
-                chrono::Duration::days(4) - chrono::Duration::hours(2)
+                chrono::TimeDelta::days(4) - chrono::TimeDelta::hours(2)
             } else {
-                chrono::Duration::days(2) - chrono::Duration::hours(2)
+                chrono::TimeDelta::days(2) - chrono::TimeDelta::hours(2)
             };
             if last_reminder_time + reminder_interval > chrono::Utc::now() {
                 // We already sent a reminder recently

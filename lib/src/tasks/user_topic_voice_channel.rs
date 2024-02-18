@@ -76,7 +76,7 @@ async fn reset_user_topic_voice_channel(
         None => None,
     };
     if let Some(topic_time) = topic_time {
-        if chrono::Utc::now() - topic_time < chrono::Duration::minutes(2) {
+        if chrono::Utc::now() - topic_time < chrono::TimeDelta::minutes(2) {
             return Ok(());
         }
     }

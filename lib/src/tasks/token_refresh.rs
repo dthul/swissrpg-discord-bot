@@ -56,16 +56,16 @@ pub async fn organizer_token_refresh_task(
             Err(err) => {
                 error!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
                 // Try to refresh again in an hour
-                next_refresh_time = chrono::Utc::now() + chrono::Duration::hours(1);
+                next_refresh_time = chrono::Utc::now() + chrono::TimeDelta::hours(1);
             }
             Ok(Err(err)) => {
                 error!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
                 // Try to refresh again in an hour
-                next_refresh_time = chrono::Utc::now() + chrono::Duration::hours(1);
+                next_refresh_time = chrono::Utc::now() + chrono::TimeDelta::hours(1);
             }
             Ok(Ok(())) => {
                 // Refresh the access token in two days from now
-                next_refresh_time = chrono::Utc::now() + chrono::Duration::days(2);
+                next_refresh_time = chrono::Utc::now() + chrono::TimeDelta::days(2);
                 info!(
                     "Refreshed the organizer's Meetup OAuth token. Next refresh @ {}",
                     next_refresh_time.to_rfc3339()
@@ -189,7 +189,7 @@ async fn user_token_refresh_task_impl(
     .await?;
     if let Some(last_refresh_time) = last_refresh_time {
         // If the last refresh has been more recently than a month, skip it
-        if last_refresh_time + chrono::Duration::days(30) > chrono::Utc::now() {
+        if last_refresh_time + chrono::TimeDelta::days(30) > chrono::Utc::now() {
             return Ok(());
         }
     } else {

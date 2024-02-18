@@ -271,7 +271,7 @@ pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, Web
         Some(row) => row,
         None => return Ok(RemoveAuthCookie(WebError::Unauthorized(None)).into_response()),
     };
-    if last_used + chrono::Duration::days(2) < chrono::Utc::now() {
+    if last_used + chrono::TimeDelta::days(2) < chrono::Utc::now() {
         // Expired
         sqlx::query!(r#"DELETE FROM web_session WHERE id = $1"#, session_db_id)
             .execute(&state.pool)
@@ -282,7 +282,7 @@ pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, Web
         ))))
         .into_response());
     }
-    if last_used + chrono::Duration::hours(1) < chrono::Utc::now() {
+    if last_used + chrono::TimeDelta::hours(1) < chrono::Utc::now() {
         // Update last used time
         sqlx::query!(
             r#"UPDATE web_session SET last_used = NOW() WHERE id = $1"#,

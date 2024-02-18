@@ -276,7 +276,7 @@ async fn schedule_session_post_handler(
             continue;
         };
         let new_event_hook = Box::new(|mut new_event: lib::meetup::newapi::NewEvent| {
-            new_event.duration = Some(chrono::Duration::minutes(duration as i64).into());
+            new_event.duration = Some(chrono::TimeDelta::minutes(duration as i64).into());
             new_event.publish_status =
                 Some(lib::meetup::newapi::create_event_mutation::PublishStatus::PUBLISHED);
             let result = lib::flow::ScheduleSessionFlow::new_event_hook(
