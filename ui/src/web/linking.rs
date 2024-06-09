@@ -191,7 +191,7 @@ async fn authorize_redirect_handler(
         r#"INSERT INTO organizer_token (meetup_access_token, meetup_refresh_token, meetup_access_token_refresh_time) VALUES ($1, $2, $3)"#,
         token_res.access_token().secret(),
         token_res.refresh_token().map(|token| token.secret()),
-        chrono::Utc::now() + chrono::Duration::days(2))
+        chrono::Utc::now() + chrono::TimeDelta::days(2))
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;

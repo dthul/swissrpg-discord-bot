@@ -10,6 +10,7 @@ pub enum EndAdventureResult {
     NewlyMarkedForDeletion(DateTime<chrono::Utc>),
 }
 
+#[tracing::instrument(skip(db_connection))]
 pub async fn end_adventure(
     channel_id: ChannelId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -35,7 +36,7 @@ pub async fn end_adventure(
         return Ok(EndAdventureResult::NotYetExpired);
     }
     // Schedule this channel for deletion
-    let new_deletion_time = chrono::Utc::now() + chrono::Duration::hours(8);
+    let new_deletion_time = chrono::Utc::now() + chrono::TimeDelta::hours(8);
     let current_deletion_time = sqlx::query_scalar!(
         r#"SELECT deletion_time FROM event_series_text_channel WHERE discord_id = $1"#,
         channel_id.get() as i64

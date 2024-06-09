@@ -46,7 +46,7 @@ fn snooze<'a>(
             .await
             .ok();
     } else {
-        let snooze_until = chrono::Utc::now() + chrono::Duration::days(num_days as i64);
+        let snooze_until = chrono::Utc::now() + chrono::TimeDelta::days(num_days as i64);
         // Set a new snooze date
         sqlx::query!(
             r#"UPDATE event_series_text_channel SET snooze_until = $2 WHERE discord_id = $1"#,
