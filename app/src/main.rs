@@ -11,15 +11,13 @@ use std::{
 };
 
 use futures::future;
+// use opentelemetry::trace::Tracer;
 use serenity::all::ApplicationId;
 use sqlx::{postgres::PgPoolOptions, Executor};
-use tracing::{self, info, warn};
+use tracing::{self, debug, error, info, warn};
+use tracing_subscriber::layer::SubscriberExt;
 
 fn main() {
-    let subscriber = tracing_subscriber::fmt().compact().finish();
-    // use that subscriber to process traces emitted after this point
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Could not initialise the tracing subscriber");
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
     let is_test_environment = match environment.as_str() {
         "prod" => false,
@@ -86,6 +84,36 @@ fn main() {
         .enable_time()
         .build()
         .expect("Could not create tokio runtime");
+
+    // Tracing
+    // We set up both a simple stdout logger, as well as an OTLP exporter
+    let stdout_layer = tracing_subscriber::fmt::layer().compact();
+    let otlp_exporter = opentelemetry_otlp::new_exporter()
+        .http()
+        .with_http_client(reqwest::Client::new());
+    let otlp_tracer = {
+        let _runtime_guard = async_runtime.enter();
+        match opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_exporter(otlp_exporter)
+            .install_batch(opentelemetry_sdk::runtime::Tokio)
+        {
+            Ok(otlp_tracer) => Some(otlp_tracer),
+            Err(err) => {
+                eprintln!("Could not create OLTP tracer:\n{:#?}", err);
+                None
+            }
+        }
+    };
+    let otlp_layer =
+        otlp_tracer.map(|otlp_tracer| tracing_opentelemetry::layer().with_tracer(otlp_tracer));
+    // Combine both the stdout and the OTLP layer into a single subscriber
+    let subscriber = tracing_subscriber::Registry::default()
+        .with(stdout_layer)
+        .with(otlp_layer);
+    // Use that combined subscriber to process traces emitted after this point
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Could not initialise the tracing subscriber");
 
     // Connect to the local Postgres server
     let pool = loop {
@@ -261,8 +289,8 @@ fn main() {
             // Wait for SIGINT or SIGTERM to arrive
             for signal in &mut signals {
                 match signal {
-                    signal_hook::consts::SIGINT => println!("Received SIGINT. Shutting down."),
-                    signal_hook::consts::SIGTERM => println!("Received SIGTERM. Shutting down."),
+                    signal_hook::consts::SIGINT => info!("Received SIGINT. Shutting down."),
+                    signal_hook::consts::SIGTERM => info!("Received SIGTERM. Shutting down."),
                     _ => unreachable!(),
                 }
                 // Finally, tell the main thread to exit
@@ -278,37 +306,37 @@ fn main() {
         let _runtime_guard = async_runtime.enter();
         tokio::spawn(async {
             let _ = organizer_token_refresh_task.await;
-            println!("Organizer token refresh task shut down.");
+            debug!("Organizer token refresh task shut down.");
         });
         // tokio::spawn(async {
         //     let _ = users_token_refresh_task.await;
-        //     println!("User token refresh task shut down.");
+        //     debug!("User token refresh task shut down.");
         // });
         tokio::spawn(async {
             let _ = end_of_game_task.await;
-            println!("End of game task shut down.");
+            debug!("End of game task shut down.");
         });
         tokio::spawn(async {
             let _ = user_topic_voice_channel_reset_task.await;
-            println!("User topic voice channel reset task shut down.");
+            debug!("User topic voice channel reset task shut down.");
         });
         tokio::spawn(async {
             let _ = syncing_task.await;
-            println!("Syncing task shut down.");
+            debug!("Syncing task shut down.");
         });
         tokio::spawn(async {
             let _ = stripe_subscription_refresh_task.await;
-            println!("Stripe subscription refresh task shut down.");
+            debug!("Stripe subscription refresh task shut down.");
         });
         tokio::spawn(async {
             web_server.await;
-            println!("Web server shut down.");
+            debug!("Web server shut down.");
         });
         tokio::spawn(async move {
             if let Err(why) = bot.start().await {
-                println!("Client error: {:#?}", why);
+                error!("Client error: {:#?}", why);
             }
-            println!("Discord client shut down.");
+            debug!("Discord client shut down.");
         });
     }
 
