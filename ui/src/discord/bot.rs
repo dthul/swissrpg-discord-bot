@@ -24,6 +24,7 @@ use tracing::{error, info};
 use super::commands::{CommandContext, PreparedCommands};
 
 #[tracing::instrument(skip(
+    discord_token,
     redis_client,
     pool,
     async_meetup_client,
