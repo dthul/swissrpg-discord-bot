@@ -1,10 +1,9 @@
-use std::num::NonZeroU64;
-
 use command_macro::command;
 use lib::discord::CacheAndHttp;
 use serenity::{
     all::Mentionable,
     model::{channel::PermissionOverwriteType, id::UserId, permissions::Permissions},
+    nonmax::NonMaxU64,
 };
 
 #[command]
@@ -22,8 +21,8 @@ fn add_user<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
-        Ok(id) => UserId::from(id),
+    let discord_id = match discord_id.parse::<NonMaxU64>() {
+        Ok(id) => UserId::from(id.get()),
         _ => {
             context
                 .msg
@@ -58,8 +57,8 @@ fn add_host<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
-        Ok(id) => UserId::from(id),
+    let discord_id = match discord_id.parse::<NonMaxU64>() {
+        Ok(id) => UserId::from(id.get()),
         _ => {
             context
                 .msg
@@ -94,8 +93,8 @@ fn remove_user<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
-        Ok(id) => UserId::from(id),
+    let discord_id = match discord_id.parse::<NonMaxU64>() {
+        Ok(id) => UserId::from(id.get()),
         _ => {
             context
                 .msg
@@ -130,8 +129,8 @@ fn remove_host<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
-        Ok(id) => UserId::from(id),
+    let discord_id = match discord_id.parse::<NonMaxU64>() {
+        Ok(id) => UserId::from(id.get()),
         _ => {
             context
                 .msg
