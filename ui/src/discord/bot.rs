@@ -1,6 +1,6 @@
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, OnceLock,
 };
 
 use futures_util::lock::Mutex as AsyncMutex;
@@ -21,6 +21,7 @@ use serenity::{
 };
 
 use super::commands::{CommandContext, PreparedCommands};
+use super::spam::{GameChannelsList, SpamList};
 
 pub struct UserData {
     pub bot_id: UserId,
@@ -32,6 +33,8 @@ pub struct UserData {
     pub stripe_client: Arc<stripe::Client>,
     pub shutdown_signal: Arc<AtomicBool>,
     pub prepared_commands: Arc<PreparedCommands>,
+    pub spam_list: OnceLock<SpamList>,
+    pub games_list: RwLock<Arc<GameChannelsList>>,
 }
 
 pub async fn create_discord_client(
@@ -81,6 +84,8 @@ pub async fn create_discord_client(
         stripe_client: stripe_client,
         shutdown_signal: shutdown_signal,
         prepared_commands: prepared_commands,
+        spam_list: Default::default(),
+        games_list: Default::default(),
     }))
     .await?;
 
@@ -218,7 +223,7 @@ impl EventHandler for Handler {
                 cmdctx
                     .msg
                     .channel_id
-                    .say(&cmdctx.ctx, lib::strings::UNSPECIFIED_ERROR)
+                    .say(&cmdctx.ctx.http, lib::strings::UNSPECIFIED_ERROR)
                     .await
                     .ok();
                 return;
@@ -237,7 +242,7 @@ impl EventHandler for Handler {
         }
         if shutdown_signal {
             let _ = cmdctx.msg.channel_id.say(
-                &cmdctx.ctx,
+                &cmdctx.ctx.http,
                 "Sorry, I can not help you right now. I am about to shut down!",
             );
             return;
@@ -249,7 +254,7 @@ impl EventHandler for Handler {
             let _ = cmdctx
                 .msg
                 .channel_id
-                .say(&cmdctx.ctx, lib::strings::UNSPECIFIED_ERROR);
+                .say(&cmdctx.ctx.http, lib::strings::UNSPECIFIED_ERROR);
         }
     }
 
@@ -292,7 +297,7 @@ impl EventHandler for Handler {
 
     async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
         let guild_id = match guilds.as_slice() {
-            [guild] => guild,
+            [guild] => *guild,
             _ => {
                 eprintln!("cache_ready event received not exactly one guild");
                 return;
@@ -303,9 +308,11 @@ impl EventHandler for Handler {
             None => return,
         };
         println!("Updating {} cached member nicks", members.len());
-        for (user_id, member) in members {
+        for member in members {
             let nick = member.nick.as_deref().unwrap_or(member.user.name.as_str());
-            Self::update_member_nick(&ctx, user_id, nick).await.ok();
+            Self::update_member_nick(&ctx, member.user.id, nick)
+                .await
+                .ok();
         }
     }
 
@@ -335,21 +342,21 @@ impl EventHandler for Handler {
             "link-meetup" => {
                 interaction
                     .channel_id
-                    .say(&ctx, "Yessir! Linking Meetup")
+                    .say(ctx.http(), "Yessir! Linking Meetup")
                     .await
                     .ok();
             }
             "unlink-meetup" => {
                 interaction
                     .channel_id
-                    .say(&ctx, "Un-linking Meetup")
+                    .say(ctx.http(), "Un-linking Meetup")
                     .await
                     .ok();
             }
             _ => {
                 interaction
                     .channel_id
-                    .say(&ctx, "Unknown command")
+                    .say(ctx.http(), "Unknown command")
                     .await
                     .ok();
             }
