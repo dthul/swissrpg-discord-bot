@@ -6,7 +6,7 @@ use std::{future::Future, pin::Pin};
 pub fn closure_type_helper<
     T: redis::FromRedisValue + Send + 'static,
     F: for<'c> FnMut(
-        &'c mut redis::aio::Connection,
+        &'c mut redis::aio::MultiplexedConnection,
         redis::Pipeline,
     ) -> Pin<Box<dyn Future<Output = redis::RedisResult<Option<T>>> + Send + 'c>>,
 >(
@@ -20,11 +20,11 @@ pub async fn async_redis_transaction<
     K: redis::ToRedisArgs,
     T: redis::FromRedisValue + Send + 'static,
     F: for<'c> FnMut(
-        &'c mut redis::aio::Connection,
+        &'c mut redis::aio::MultiplexedConnection,
         redis::Pipeline,
     ) -> Pin<Box<dyn Future<Output = redis::RedisResult<Option<T>>> + Send + 'c>>,
 >(
-    con: &mut redis::aio::Connection,
+    con: &mut redis::aio::MultiplexedConnection,
     keys: &[K],
     mut func: F,
 ) -> redis::RedisResult<T> {
@@ -112,14 +112,14 @@ impl<'a> Drop for Lock<'a> {
 }
 
 pub struct AsyncLock<'a> {
-    redis_connection: &'a mut redis::aio::Connection,
+    redis_connection: &'a mut redis::aio::MultiplexedConnection,
     lockname: &'a str,
     identifier: u64,
 }
 
 impl<'a> AsyncLock<'a> {
     pub async fn acquire_with_timeout(
-        redis_connection: &'a mut redis::aio::Connection,
+        redis_connection: &'a mut redis::aio::MultiplexedConnection,
         lockname: &'a str,
         acquire_timeout: std::time::Duration,
         lock_timeout: std::time::Duration,
@@ -173,7 +173,7 @@ impl<'a> AsyncLock<'a> {
         Ok(())
     }
 
-    pub fn con(&mut self) -> &mut redis::aio::Connection {
+    pub fn con(&mut self) -> &mut redis::aio::MultiplexedConnection {
         self.redis_connection
     }
 }

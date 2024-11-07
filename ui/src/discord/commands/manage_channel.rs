@@ -24,7 +24,7 @@ fn manage_channel<'a>(
         context
             .msg
             .channel_id
-            .say(&context.ctx, "Can not manage this channel")
+            .say(&context.ctx.http, "Can not manage this channel")
             .await
             .ok();
         return Ok(());
@@ -41,7 +41,7 @@ fn manage_channel<'a>(
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, "Can not manage this channel")
+                .say(&context.ctx.http, "Can not manage this channel")
                 .await
                 .ok();
             return Ok(());
@@ -51,7 +51,7 @@ fn manage_channel<'a>(
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, "Error when trying to manage this channel")
+                .say(&context.ctx.http, "Error when trying to manage this channel")
                 .await
                 .ok();
             return Ok(());

@@ -52,7 +52,7 @@ fn end_all<'a>(
         tx.commit().await?;
         match end_adventure_result {
             EndAdventureResult::NewlyMarkedForDeletion(_) => channel_id
-                .say(&context.ctx, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
+                .say(&context.ctx.http, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
                 .await
                 .ok(),
             EndAdventureResult::NotAGameChannel

@@ -22,7 +22,7 @@ fn schedule_session<'a>(
         context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
+            .say(&context.ctx.http, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
             .await
             .ok();
         return Ok(());

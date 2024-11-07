@@ -68,7 +68,7 @@ lazy_static! {
 
 // Syncs Discord with the state of the database
 pub async fn sync_discord(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
     bot_id: UserId,
@@ -115,7 +115,7 @@ For each event series:
 */
 async fn sync_event_series(
     series_id: db::EventSeriesId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
     bot_id: UserId,
@@ -365,7 +365,7 @@ async fn sync_role(
     role_name: &str,
     is_host_role: bool,
     event_series: db::EventSeriesId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
@@ -432,7 +432,7 @@ async fn sync_role_impl(
     role_name: &str,
     is_host_role: bool,
     series_id: db::EventSeriesId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
@@ -559,7 +559,7 @@ async fn sync_channel(
     channel_name: &str,
     event_series_id: db::EventSeriesId,
     bot_id: UserId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
 ) -> Result<ChannelId, crate::meetup::Error> {
@@ -581,7 +581,7 @@ async fn sync_channel(
         )
         .await?;
         // Make sure that the channel ID that was returned actually exists on Discord
-        let channel_exists = match channel.to_channel(discord_api).await {
+        let channel_exists = match channel.to_channel(discord_api, Some(GUILD_ID)).await {
             Ok(_) => true,
             Err(err) => {
                 if let serenity::Error::Http(http_err) = &err {
@@ -637,7 +637,7 @@ async fn sync_channel_impl(
     channel_name: &str,
     event_series_id: db::EventSeriesId,
     bot_id: UserId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
 ) -> Result<ChannelId, crate::meetup::Error> {
@@ -894,7 +894,7 @@ async fn sync_channel_permissions(
     };
     for permission_overwrite in permission_overwrites {
         channel_id
-            .create_permission(discord_api.http(), permission_overwrite)
+            .create_permission(discord_api.http(), permission_overwrite, None)
             .await?;
     }
     Ok(())
@@ -1126,7 +1126,7 @@ async fn sync_channel_topic(
                 .format("%d.%m.%Y %H:%M")
         ),
     };
-    let channel = channel_id.to_channel(discord_api).await?;
+    let channel = channel_id.to_channel(discord_api, Some(GUILD_ID)).await?;
     if let serenity::model::channel::Channel::Guild(channel) = channel {
         let topic_needs_update = if let Some(current_topic) = channel.topic {
             current_topic != topic
@@ -1176,7 +1176,7 @@ async fn sync_channel_category(
         },
         ChannelType::Voice => categories.extend_from_slice(VOICE_CHANNELS_CATEGORY_IDS),
     }
-    let channel = channel_id.to_channel(discord_api).await?;
+    let channel = channel_id.to_channel(discord_api, Some(GUILD_ID)).await?;
     if let serenity::model::channel::Channel::Guild(channel) = channel {
         let category_needs_update = match channel.parent_id {
             Some(channel_category) => {

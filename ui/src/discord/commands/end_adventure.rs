@@ -23,19 +23,19 @@ fn end_adventure<'a>(
         EndAdventureResult::NotAGameChannel => context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
+            .say(&context.ctx.http, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
             .await
             .ok(),
         EndAdventureResult::NoExpirationTime => context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_NO_EXPIRATION)
+            .say(&context.ctx.http, lib::strings::CHANNEL_NO_EXPIRATION)
             .await
             .ok(),
         EndAdventureResult::NotYetExpired => context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_NOT_YET_CLOSEABLE)
+            .say(&context.ctx.http, lib::strings::CHANNEL_NOT_YET_CLOSEABLE)
             .await
             .ok(),
         EndAdventureResult::AlreadyMarkedForDeletion(_) => context
@@ -50,7 +50,7 @@ fn end_adventure<'a>(
         EndAdventureResult::NewlyMarkedForDeletion(_) => context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
+            .say(&context.ctx.http, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
             .await
             .ok(),
     };

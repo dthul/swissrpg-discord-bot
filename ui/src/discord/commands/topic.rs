@@ -22,7 +22,7 @@ fn set_voice_topic<'a>(
         context
             .msg
             .channel_id
-            .say(&context.ctx, "No voice channel has been configured")
+            .say(&context.ctx.http, "No voice channel has been configured")
             .await?;
         return Ok(());
     };
@@ -33,7 +33,7 @@ fn set_voice_topic<'a>(
         context
             .msg
             .channel_id
-            .say(&context.ctx, "I had trouble parsing the new topic")
+            .say(&context.ctx.http, "I had trouble parsing the new topic")
             .await?;
         return Ok(());
     };

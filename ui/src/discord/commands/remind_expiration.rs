@@ -21,7 +21,7 @@ fn remind_expiration<'a>(
     context
         .msg
         .channel_id
-        .say(&context.ctx, "Started expiration reminder task")
+        .say(&context.ctx.http, "Started expiration reminder task")
         .await
         .ok();
     Ok(())

@@ -97,7 +97,7 @@ async fn get_game_channels_list(
     }
     // There is no games list in the data map yet or it is outdated -> query it and store it in the data map
     // Query the channel list from the database
-    let pool = cmdctx.pool().await?;
+    let pool = cmdctx.pool();
     let channel_ids = sqlx::query!(r#"SELECT discord_id FROM event_series_text_channel"#)
         .map(|row| ChannelId::new(row.discord_id as u64))
         .fetch_all(&pool)

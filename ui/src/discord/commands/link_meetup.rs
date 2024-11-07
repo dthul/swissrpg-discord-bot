@@ -170,7 +170,12 @@ fn link_meetup_bot_admin<'a>(
             Meetup ID: {meetup_id2:?}\n\
             Discord ID: {discord_id2:?}");
             // TODO: answer in DM?
-            context.msg.channel_id.say(&context.ctx, message).await.ok();
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx.http, message)
+                .await
+                .ok();
         }
     };
     Ok(())
@@ -207,7 +212,7 @@ async fn unlink_meetup_impl(
     is_bot_admin_command: bool,
     user_id: UserId,
 ) -> Result<(), lib::meetup::Error> {
-    let pool = context.pool().await?;
+    let pool = context.pool();
     let mut tx = pool.begin().await?;
     let result = lib::unlink_meetup(user_id, &mut tx).await?;
     tx.commit().await?;
@@ -216,9 +221,14 @@ async fn unlink_meetup_impl(
             let message = if is_bot_admin_command {
                 format!("Unlinked {}'s Meetup account", user_id.mention())
             } else {
-                lib::strings::MEETUP_UNLINK_SUCCESS(context.bot_id().await?)
+                lib::strings::MEETUP_UNLINK_SUCCESS(context.bot_id())
             };
-            context.msg.channel_id.say(&context.ctx, message).await.ok();
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx.http, message)
+                .await
+                .ok();
         }
         UnlinkingResult::NotLinked => {
             let message = if is_bot_admin_command {
@@ -229,7 +239,12 @@ async fn unlink_meetup_impl(
             } else {
                 Cow::Borrowed(lib::strings::MEETUP_UNLINK_NOT_LINKED)
             };
-            context.msg.channel_id.say(&context.ctx, message).await.ok();
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx.http, message)
+                .await
+                .ok();
         }
     }
     Ok(())

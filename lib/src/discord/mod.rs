@@ -3,11 +3,15 @@ pub mod util;
 
 use std::sync::Arc;
 
-use serenity::model::{
-    channel::{Channel, PermissionOverwrite, PermissionOverwriteType},
-    id::{ChannelId, UserId},
-    permissions::Permissions,
+use serenity::{
+    all::CacheHttp,
+    model::{
+        channel::{Channel, PermissionOverwrite, PermissionOverwriteType},
+        id::{ChannelId, UserId},
+        permissions::Permissions,
+    },
 };
+use sync::ids::GUILD_ID;
 
 #[derive(Clone)]
 pub struct CacheAndHttp {
@@ -24,8 +28,8 @@ impl serenity::http::CacheHttp for CacheAndHttp {
     }
 }
 
-impl From<&serenity::client::Context> for CacheAndHttp {
-    fn from(ctx: &serenity::client::Context) -> Self {
+impl From<&serenity::gateway::client::Context> for CacheAndHttp {
+    fn from(ctx: &serenity::gateway::client::Context) -> Self {
         CacheAndHttp {
             cache: ctx.cache.clone(),
             http: ctx.http.clone(),
@@ -34,12 +38,14 @@ impl From<&serenity::client::Context> for CacheAndHttp {
 }
 
 pub async fn is_host(
-    discord_api: &CacheAndHttp,
+    discord_api: impl CacheHttp,
     channel_id: ChannelId,
     user_id: UserId,
     db_connection: &sqlx::PgPool,
 ) -> Result<bool, crate::meetup::Error> {
-    let channel = if let Channel::Guild(channel) = channel_id.to_channel(discord_api).await? {
+    let channel = if let Channel::Guild(channel) =
+        channel_id.to_channel(&discord_api, Some(GUILD_ID)).await?
+    {
         channel
     } else {
         return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
@@ -67,9 +73,9 @@ pub async fn is_host(
             ..
         }) = channel_roles
         {
-            let user = user_id.to_user(discord_api).await?;
+            let user = user_id.to_user(&discord_api).await?;
             let is_host = user
-                .has_role(discord_api, sync::ids::GUILD_ID, host_role)
+                .has_role(&discord_api, sync::ids::GUILD_ID, host_role)
                 .await
                 .unwrap_or(false);
             return Ok(is_host);
@@ -90,7 +96,9 @@ pub async fn add_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Channel::Guild(channel) = channel_id.to_channel(discord_api).await? {
+    let channel = if let Channel::Guild(channel) =
+        channel_id.to_channel(discord_api, Some(GUILD_ID)).await?
+    {
         channel
     } else {
         return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
@@ -109,7 +117,7 @@ pub async fn add_channel_user_permissions(
     new_permission_overwrites.allow |= permissions;
     if new_permission_overwrites.allow != current_permission_overwrites.allow {
         channel
-            .create_permission(&discord_api.http, new_permission_overwrites)
+            .create_permission(&discord_api.http, new_permission_overwrites, None)
             .await?;
         Ok(true)
     } else {
@@ -127,7 +135,9 @@ pub async fn remove_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Channel::Guild(channel) = channel_id.to_channel(discord_api).await? {
+    let channel = if let Channel::Guild(channel) =
+        channel_id.to_channel(discord_api, Some(GUILD_ID)).await?
+    {
         channel
     } else {
         return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
@@ -149,11 +159,11 @@ pub async fn remove_channel_user_permissions(
             && new_permission_overwrites.deny == Permissions::empty()
         {
             channel
-                .delete_permission(&discord_api.http, new_permission_overwrites.kind)
+                .delete_permission(&discord_api.http, new_permission_overwrites.kind, None)
                 .await?;
         } else {
             channel
-                .create_permission(&discord_api.http, new_permission_overwrites)
+                .create_permission(&discord_api.http, new_permission_overwrites, None)
                 .await?;
         }
         Ok(true)

@@ -253,11 +253,11 @@ impl EventCollector {
         Ok(())
     }
 
-    fn build_embed<'a>(
+    fn build_embed(
         static_file_prefix: &'_ str,
         location: Location,
         events: &'_ [&'_ UpcomingEventDetails],
-    ) -> serenity::builder::CreateEmbed {
+    ) -> serenity::builder::CreateEmbed<'static> {
         let footer_text = chrono::Utc::now()
             .with_timezone(&chrono_tz::Europe::Zurich)
             .format("Last update at %H:%M")

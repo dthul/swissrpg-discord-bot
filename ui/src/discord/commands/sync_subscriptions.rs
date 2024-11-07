@@ -13,6 +13,6 @@ fn sync_subscriptions<'a>(
     tokio::spawn(async move {
         lib::tasks::subscription_roles::update_roles(&discord_api, &stripe_client).await
     });
-    let _ = context.msg.channel_id.say(&context.ctx, "Copy that");
+    let _ = context.msg.channel_id.say(&context.ctx.http, "Copy that");
     Ok(())
 }
